@@ -947,7 +947,9 @@ var FOOD_GUIDE = {
 // isTrainingDay: true=只展示训练日，false=只展示休息日，undefined=展示两版
 // nTrain: 训练日 calcNutrition 返回值（可选，用于展示训练日食谱）
 // nEasy: 轻松训练日 calcNutrition 返回值（可选，马拉松按跑量分层用）
-function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, nEasy) {
+// longDay: 指定单日渲染时是否为长距离日（马拉松用）
+// dayLabel: 指定单日渲染时的标题文本（如"周一 轻松跑"）
+function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, nEasy, longDay, dayLabel) {
   // 根据营养数据计算蛋白质/碳水乘数
   function calcMul(n) {
     if (!n) return { pMul: 1, cMul: 1 };
@@ -1121,12 +1123,19 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, 
     html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据你的身体数据自动计算</div>';
     html += '</div>';
   } else {
-    // 指定某一版
+    // 指定某一版（单日渲染）
     var n = isTrainingDay ? (nTrain || nRest) : nRest;
-    var meals = makeMeals(isTrainingDay, n);
-    var title = isTrainingDay ? '🔥 训练日示例食谱' : '😴 休息日示例食谱';
+    var meals = makeMeals(isTrainingDay, n, longDay);
+    var title;
+    if (dayLabel) {
+      title = dayLabel;
+    } else if (isTrainingDay) {
+      title = (goal === 'marathon' && longDay) ? '🔥 长距离日示例食谱' : '🔥 训练日示例食谱';
+    } else {
+      title = '😴 休息日示例食谱';
+    }
     html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
-    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">'+title+'（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">'+title+'（'+n.protein+'g蛋白 / '+n.carb+'g碳水 / '+n.targetCal+'kcal）</div>';
     html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
     meals.forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
     html += '</div></div>';
@@ -1701,6 +1710,9 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
       avgTrainBurn = Math.round(dayCalBurns.reduce(function(a,b){return a+b;},0) / dayCalBurns.length);
       maxTrainBurn = Math.max.apply(null, dayCalBurns);
     }
+    // 存储营养上下文，供 chip 切换时重新渲染食谱
+    _lastNutriCtx = { weight: weight, height: height, age: age, gender: gender || 'male', goal: goal,
+                      nRest: nutrition, nTrain: nutritionTrain, nEasy: nutritionEasy, dayCalBurns: dayCalBurns };
     html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain, nutritionEasy);
   }
   var trainSchedule = schedule.filter(function(s){ return s.isTraining; });
@@ -2272,7 +2284,7 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
     html += '<div class="nutri-dynamic" style="margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:10px;">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
         '<span style="font-size:12px;font-weight:600;color:var(--text);">🔥 训练日 / 😴 休息日 热量对比</span>'+
-        '<span style="font-size:11px;color:var(--text3);">点击日程切换</span></div>';
+        '<span style="font-size:11px;color:var(--text3);">点击日程切换食谱</span></div>';
 
     // 日程 chip 条
     html += '<div class="nutri-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
@@ -2325,12 +2337,17 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
       '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
   });
 
-  // 动态示例食谱：训练日 + 休息日 两版
+  // 动态示例食谱：训练日 + 休息日 两版（包裹容器，供 chip 切换时动态替换）
+  html += '<div id="'+nutriPanelId+'_meals">';
   html += renderDynamicMealPlan(n, goal, undefined, nTrain, dayCalBurns, nEasy);
+  html += '</div>';
 
   html += '</div></div>';
   return html;
 }
+
+// 营养面板日程切换：存储上次生成的营养上下文
+var _lastNutriCtx = null;
 
 // 营养面板日程切换
 // restCal: 休息日热量，trainCal: 训练日热量（用于默认展示）
@@ -2374,6 +2391,28 @@ function selectNutriDay(panelId, idx, restCal, trainCal) {
   }
   trainEl.textContent = totalTrainBurn;
   labelEl.textContent = label;
+
+  // 联动刷新示例食谱
+  var mealsEl = document.getElementById(panelId + '_meals');
+  if (!mealsEl || !_lastNutriCtx) return;
+  var ctx = _lastNutriCtx;
+  if (idx < 0) {
+    // 平均：恢复默认多版本展示（休息日+训练日 / 马拉松三档）
+    mealsEl.innerHTML = renderDynamicMealPlan(ctx.nRest, ctx.goal, undefined, ctx.nTrain, ctx.dayCalBurns, ctx.nEasy);
+  } else {
+    // 指定日程：按该日消耗重新计算营养并渲染单日食谱
+    var selChip2 = panel.querySelector('.nutri-chip[data-ni="'+idx+'"]');
+    var burn = parseInt(selChip2 ? selChip2.getAttribute('data-burn') : 0) || 0;
+    var dayName = (selChip2 ? selChip2.getAttribute('data-name') : '') || '';
+    var isTraining = burn > 0;
+    var dayN = isTraining
+      ? calcNutrition(ctx.weight, ctx.height, ctx.age, ctx.gender, ctx.goal, burn)
+      : ctx.nRest;
+    if (!dayN) return;
+    var isLong = burn >= 800;
+    var dayLabel = dayName ? (isTraining ? '🔥 ' + dayName : '😴 ' + dayName) : null;
+    mealsEl.innerHTML = renderDynamicMealPlan(dayN, ctx.goal, isTraining, dayN, null, null, isLong, dayLabel);
+  }
 }
 
 function renderTipsBanner(tips) {
