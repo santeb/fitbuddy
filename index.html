@@ -1417,32 +1417,35 @@ function calcNutrition(weight, height, age, gender, goal, dayCalBurn) {
   var activityCal = isTrainingDay ? dayCalBurn : 0;
   var targetCal, protein, carb, fat;
   if (goal === "muscle") {
-    targetCal = tdee + (isTrainingDay ? 300 + activityCal : 200); // 休息日少一点
-    protein = weight * 2.0; carb = weight * (isTrainingDay ? 3.5 + Math.min(activityCal / 300, 1) : 3.0); fat = weight * 1;
+    // 增肌：休息日4.0，训练日4.0~6.0（每300kcal+1，封顶+2）
+    targetCal = tdee + (isTrainingDay ? 300 + activityCal : 200);
+    protein = weight * 2.0; carb = weight * (isTrainingDay ? 4.0 + Math.min(activityCal / 300, 2) : 4.0); fat = weight * 1;
   }
   else if (goal === "strength") {
+    // 力量：休息日4.0，训练日4.0~5.5（每300kcal+1，封顶+1.5）
     targetCal = tdee + (isTrainingDay ? 200 + activityCal : 100);
-    protein = weight * 1.8; carb = weight * (isTrainingDay ? 3.5 + Math.min(activityCal / 300, 1) : 3.0); fat = weight * 1;
+    protein = weight * 1.8; carb = weight * (isTrainingDay ? 4.0 + Math.min(activityCal / 300, 1.5) : 4.0); fat = weight * 1;
   }
   else if (goal === "cut") {
-    // 减脂：训练日允许更大热量（因为有消耗），休息日控制更严
+    // 减脂：休息日2.0，训练日2.0~3.0（每400kcal+1，封顶+1）
     targetCal = tdee + (isTrainingDay ? -200 + activityCal : -450);
-    protein = weight * 1.8; carb = weight * (isTrainingDay ? 1.5 + Math.min(activityCal / 400, 1) : 1.0); fat = weight * 0.8;
+    protein = weight * 1.8; carb = weight * (isTrainingDay ? 2.0 + Math.min(activityCal / 400, 1) : 2.0); fat = weight * 0.8;
   }
   else if (goal === "marathon") {
+    // 马拉松：休息日5.0，训练日5.0~9.0（每300kcal+1，封顶+4）
     targetCal = tdee + (isTrainingDay ? 200 + activityCal : 100);
     protein = weight * 1.4;
-    // 碳水随跑量递增：基础5g/kg + 训练消耗每300kcal加1g/kg（封顶+4g/kg）
     carb = weight * (isTrainingDay ? 5 + Math.min(activityCal / 300, 4) : 5);
     fat = weight * 1;
   }
   else if (goal === "cardio") {
+    // 心肺：休息日4.5，训练日4.5~6.5（每300kcal+1，封顶+2）
     targetCal = tdee + (isTrainingDay ? 100 + activityCal : 0);
-    protein = weight * 1.4; carb = weight * (isTrainingDay ? 4.0 + Math.min(activityCal / 300, 1.5) : 3.5); fat = weight * 1;
+    protein = weight * 1.4; carb = weight * (isTrainingDay ? 4.5 + Math.min(activityCal / 300, 2) : 4.5); fat = weight * 1;
   }
   else {
     targetCal = tdee + activityCal;
-    protein = weight * 1.4; carb = weight * (isTrainingDay ? 2.5 + Math.min(activityCal / 300, 1) : 2.5); fat = weight * 0.8;
+    protein = weight * 1.4; carb = weight * (isTrainingDay ? 3.0 + Math.min(activityCal / 300, 1) : 3.0); fat = weight * 0.8;
   }
   // 保证最低摄入
   targetCal = Math.max(targetCal, 1200);
