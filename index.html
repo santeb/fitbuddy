@@ -2231,7 +2231,7 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
   });
 
   // 动态示例食谱：训练日 + 休息日 两版
-  html += renderDynamicMealPlan(nRest, goal, undefined, nTrain);
+  html += renderDynamicMealPlan(n, goal, undefined, nTrain);
 
   html += '</div></div>';
   return html;
