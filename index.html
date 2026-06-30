@@ -791,6 +791,11 @@ function renderPaceResult() {
   var h = parseInt(document.getElementById('paceH').value) || 4;
   var m = parseInt(document.getElementById('paceM').value) || 30;
   var paces = calcMarathonPaces(h, m);
+  // 存储自定义配速，供训练卡片使用
+  window._marathonPaces = paces;
+  try { localStorage.setItem("fitbuddy_marathon_paces", JSON.stringify(paces)); } catch(e) {}
+  // 实时更新训练卡片上的配速显示
+  updateMarathonPaceDisplay(paces);
   var rows = [
     {label:"🏁 比赛配速",    val:paces.marathon+"/km"},
     {label:"🟢 轻松跑",     val:paces.easyMin+"-"+paces.easyMax+"/km"},
@@ -807,6 +812,28 @@ function renderPaceResult() {
   });
   html += '</div>';
   document.getElementById('paceResult').innerHTML = html;
+}
+
+// 将自定义配速更新到训练卡片上
+function updateMarathonPaceDisplay(paces) {
+  if (!paces) return;
+  var cards = document.querySelectorAll('.plan-day');
+  cards.forEach(function(card) {
+    // 获取训练日名称来判断跑步类型
+    var nameEl = card.querySelector('.plan-day-name');
+    var dayName = nameEl ? nameEl.textContent : '';
+    var exSetEls = card.querySelectorAll('.ex-sets');
+    exSetEls.forEach(function(el) {
+      if (el.textContent.indexOf('配速') < 0) return;
+      var pace;
+      if (dayName.indexOf('间歇') >= 0) pace = paces.interval + '/km';
+      else if (dayName.indexOf('LSD') >= 0 || dayName.indexOf('长距离') >= 0) pace = paces.lsdMin + '-' + paces.lsdMax + '/km';
+      else if (dayName.indexOf('节奏') >= 0) pace = paces.tempoMin + '-' + paces.tempoMax + '/km';
+      else if (dayName.indexOf('配速') >= 0) pace = paces.marathon + '/km';
+      else pace = paces.easyMin + '-' + paces.easyMax + '/km';
+      el.textContent = '\u{1F3C3} 配速 ' + pace;
+    });
+  });
 }
 
 // 休息日建议
@@ -1054,6 +1081,8 @@ function loadAllData() {
       lastPlan = plan;
       if (plan.cycle) currentCycle = plan.cycle;
     }
+    var paces = localStorage.getItem("fitbuddy_marathon_paces");
+    if (paces) { try { window._marathonPaces = JSON.parse(paces); } catch(e) {} }
   } catch(e) {}
 }
 function updateInjuryUI() {
@@ -1349,6 +1378,11 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } catch(e) {}
   var html = "";
   var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : goalCfg.intensity;
+  // 马拉松：动态计算实际周跑量，覆盖静态配置
+  if (goal === "marathon" && trainingDays) {
+    var actualKm = calcMarathonWeekKm(trainingDays);
+    if (actualKm) goalCfg = Object.assign({}, goalCfg, {_weekKm: actualKm});
+  }
   html += renderSummary(goalNames[goal], levelNames[level], equipNames[equip], days, goalCfg, cfg.sets, intensityStr, goal);
   var isLastWeek = goal === "marathon" ? (currentWeek >= 16) : (currentWeek >= 4);
   if (isLastWeek) {
@@ -1605,7 +1639,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
 
   // ── LSD距离：线性递进，减量期回退 ──────────────
   var lsdBase = {beginner:12, intermediate:20, advanced:24}[level] || 12;
-  var lsdInc  = {beginner:3, intermediate:2.5, advanced:2}[level] || 3;
+  var lsdInc  = {beginner:2, intermediate:1.5, advanced:1.3}[level] || 2;
   var lsdMax  = cfg.longRunMax;
   var lsdDist;
   if (phase === "taper") {
@@ -1702,7 +1736,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
     } else { // taper
       plan = [
         {name:"轻松跑 (Taper)", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "减量期保持节奏感，不要过度休息", "感觉太轻松是正常的，相信训练积累")]},
-        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.intervalPace+"/km", "中级", "神经激活，保持速度感，强度降低", "组数比平时少，重点保持腿部轻快感")]},
+        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.easyPace+"/km", "中级", "神经激活，保持速度感，强度降低", "组数减少，重点保持腿部轻快感，配速不要超过轻松跑上限")]},
         {name:"目标配速跑", exes:[mkRun("配速跑", (tempoKm)+"-"+(tempoKm+1)+"km", cfg.tempoPace+"/km", "中级", "感受比赛配速，建立信心", "全程目标配速，感受\"这个配速我能维持42km\"")]},
         {name:"短LSD (最后长跑)", exes:[mkRun("LSD", lsdDist+"km", cfg.longRunPace+"/km", "初级", "减量期长跑，储备信心而非消耗", "轻松完成，不要累，为比赛日储存糖原")]}
       ];
@@ -1737,7 +1771,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
     } else { // taper
       plan = [
         {name:"轻松跑 (Taper)", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "减量期轻松维持", "感觉很轻松是正常的")]},
-        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.intervalPace+"/km", "中级", "保持速度感", "组数减少，强度保持")]},
+        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.easyPace+"/km", "中级", "保持速度感", "组数减少，强度保持，配速不超轻松跑")]},
         {name:"恢复跑", exes:[mkRun("恢复跑", recDist, "非常轻松", "初级", "积极恢复", "随时可以走")]},
         {name:"目标配速跑", exes:[mkRun("配速跑", tempoKm+"-"+(tempoKm+1)+"km", cfg.tempoPace+"/km", "中级", "感受比赛配速，建立信心", "感受\"我能跑42km\"")]},
         {name:"短LSD", exes:[mkRun("LSD", lsdDist+"km", cfg.longRunPace+"/km", "初级", "减量期最后长跑", "轻松跑完，不消耗，储存糖原")]}
@@ -1777,7 +1811,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
     } else { // taper
       plan = [
         {name:"轻松跑 (Taper)", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "减量维持，不要过度休息", "轻松就好，不要强迫自己跑快")]},
-        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.intervalPace+"/km", "中级", "激活神经系统，保持速度感", "组数减少，强度保持，感受轻快")]},
+        {name:"短间歇 (激活)", exes:[mkRun("间歇", intervalSpec, cfg.easyPace+"/km", "中级", "激活神经系统，保持速度感", "组数减少，强度保持，配速不超轻松跑上限")]},
         {name:"轻松跑 (短距离)", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "保持跑步习惯", "轻松愉快")]},
         {name:"目标配速跑", exes:[mkRun("配速跑", tempoKm+"-"+(tempoKm+1)+"km", cfg.tempoPace+"/km", "中级", "感受比赛配速，建立信心", "\"这个配速跑42km没问题\"")]},
         {name:"恢复跑", exes:[mkRun("恢复跑", recDist, "非常轻松", "初级", "最后放松，储备能量", "跑完拉伸，补充碳水")]},
@@ -1789,10 +1823,32 @@ function buildMarathonPlan(level, days, equip, wOff) {
 }
 
 // ============ 渲染函数 ============
+// 计算马拉松训练日实际周跑量（解析动作名称中的距离）
+function calcMarathonWeekKm(trainingDays) {
+  if (!trainingDays || !trainingDays.length) return null;
+  var total = 0;
+  trainingDays.forEach(function(day) {
+    if (!day.exes) return;
+    day.exes.forEach(function(ex) {
+      var n = ex.n;
+      // 区间距离 "6-8km" → 取中值
+      var rangeMatch = n.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*km/i);
+      if (rangeMatch) { total += (parseFloat(rangeMatch[1]) + parseFloat(rangeMatch[2])) / 2; return; }
+      // 单距离 "12km"（排除间歇规格如 5×400m）
+      var singleMatch = n.match(/(\d+(?:\.\d+)?)\s*km\b/i);
+      if (singleMatch && n.indexOf('\u00D7') < 0) { total += parseFloat(singleMatch[1]); return; }
+      // 间歇规格 "6×400m" → 取总跑量 + 热身冷身估算 4km
+      var intMatch = n.match(/(\d+)\s*\u00D7\s*(\d+)\s*m/i);
+      if (intMatch) total += (parseInt(intMatch[1]) * parseInt(intMatch[2]) / 1000) + 4;
+    });
+  });
+  return Math.round(total);
+}
+
 function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, intensity, goal) {
   var presTag;
   if (goal === "marathon") {
-    presTag = "周跑量 " + goalCfg.weeklyKms + "km";
+    presTag = "周跑量 " + (goalCfg._weekKm != null ? goalCfg._weekKm : goalCfg.weeklyKms) + "km";
   } else if (goalCfg.totalDuration) {
     presTag = goalCfg.totalDuration + ' 总时长';
   } else {
@@ -1844,7 +1900,7 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
   var currentPhase = MARATHON_PHASES.find(function(p){ return p.weeks.indexOf(currentWeek)>=0; }) || MARATHON_PHASES[0];
   // LSD 显示与 buildMarathonPlan 保持一致：线性递进，减量期缩减
   var lsdBase = {beginner:12, intermediate:20, advanced:24}[level] || 12;
-  var lsdInc  = {beginner:3, intermediate:2.5, advanced:2}[level] || 3;
+  var lsdInc  = {beginner:2, intermediate:1.5, advanced:1.3}[level] || 2;
   var lsdMax  = goalCfg.longRunMax;
   var phase = currentWeek <= 4 ? "base" : currentWeek <= 8 ? "build" : currentWeek <= 12 ? "peak" : "taper";
   var phaseWeek = ((currentWeek - 1) % 4) + 1;
@@ -1863,7 +1919,7 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
     '🏃 <strong>第'+currentWeek+'周 — '+currentPhase.name+'</strong>'+
     ' <span style="float:right;font-weight:700;">LSD: '+lsdNow+'km / 目标 '+goalCfg.longRunMax+'km</span>'+
     '<div style="margin-top:6px;font-size:11px;color:var(--text3);">'+(MARATHON_WEEK_NOTES[currentWeek]||'')+
-    ' · <strong>'+phaseDesc+'</strong> · 周跑量 '+goalCfg.weeklyKms+'km</div></div>';
+    ' · <strong>'+phaseDesc+'</strong> · 周跑量 '+(goalCfg._weekKm != null ? goalCfg._weekKm : goalCfg.weeklyKms)+'km</div></div>';
 
   // 配速计算器
   html += '<div class="pace-calc" id="paceCalc">'+
@@ -2094,8 +2150,18 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       if (isMarathon && ex.isMarathon) {
         var distMatch = ex.n.match(/(\d+)km/);
         if (distMatch) distData = ' data-dist="'+distMatch[1]+'"';
+        // 优先使用用户自定义配速
+        var exPace = ex.pace || '—';
+        if (window._marathonPaces) {
+          var en = ex.n;
+          if (en.indexOf('\u95F4\u6B47') >= 0) exPace = window._marathonPaces.interval + '/km';
+          else if (en.indexOf('LSD') >= 0 || en.indexOf('\u957F\u8DDD\u79BB') >= 0) exPace = window._marathonPaces.lsdMin + '-' + window._marathonPaces.lsdMax + '/km';
+          else if (en.indexOf('\u8282\u594F') >= 0) exPace = window._marathonPaces.tempoMin + '-' + window._marathonPaces.tempoMax + '/km';
+          else if (en.indexOf('\u914D\u901F') >= 0) exPace = window._marathonPaces.marathon + '/km';
+          else exPace = window._marathonPaces.easyMin + '-' + window._marathonPaces.easyMax + '/km';
+        }
         exPrescriptionHtml =
-          '<div class="ex-sets">🏃 配速 ' + (ex.pace || '—') + '</div>'+
+          '<div class="ex-sets">🏃 配速 ' + exPace + '</div>'+
           '<div style="font-size:11px;color:var(--primary);margin-top:2px;font-weight:500;">' + (ex.tips || '') + '</div>';
       } else if (goal === 'cardio' && ex.m === '有氧') {
         var cdMatch = ex.n.match(/(\d+)km/);
