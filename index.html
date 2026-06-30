@@ -1444,6 +1444,13 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } else {
     html += '<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center;">第 '+currentCycle+' 周期 · 第 '+currentWeek+' 周</div>';
   }
+  // 周选择器 + 进度面板
+  html += renderWeekBar(goal);
+  if (goal === "marathon") {
+    html += renderMarathonProgress(wkInfo, goalCfg, level, cfg);
+  } else {
+    html += renderWeekInfo(wkInfo);
+  }
   // 伤病横幅 + 康复动作推荐
   html += renderInjuryBanner();
   html += renderRecoveryCard();
@@ -3197,7 +3204,8 @@ function savePrefs() {
     weight: document.getElementById('bodyWeight').value,
     height: document.getElementById('bodyHeight').value,
     age: document.getElementById('bodyAge').value,
-    cycle: currentCycle
+    cycle: currentCycle,
+    week: currentWeek
   };
   localStorage.setItem("fitbuddy_prefs", JSON.stringify(prefs));
 }
@@ -3224,6 +3232,7 @@ function loadPrefs() {
     if (p.height) document.getElementById('bodyHeight').value = p.height;
     if (p.age) document.getElementById('bodyAge').value = p.age;
     if (p.cycle) currentCycle = p.cycle;
+    if (p.week) currentWeek = p.week;
   } catch(e) {}
 }
 
