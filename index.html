@@ -946,7 +946,7 @@ var FOOD_GUIDE = {
 // goal: 目标
 // isTrainingDay: true=只展示训练日，false=只展示休息日，undefined=展示两版
 // nTrain: 训练日 calcNutrition 返回值（可选，用于展示训练日食谱）
-function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
+function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns) {
   // 根据营养数据计算蛋白质/碳水乘数
   function calcMul(n) {
     if (!n) return { pMul: 1, cMul: 1 };
@@ -959,8 +959,8 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
   function sc(val, mul)  { return Math.round(val * mul / 5) * 5 || 5; }
   function scm(val, mul) { return Math.round(val * mul); }
 
-  // 生成食谱数组（training: 是否训练日，n: 对应的营养数据）
-  function makeMeals(training, n) {
+  // 生成食谱数组（training: 是否训练日，n: 对应的营养数据，longDay: 马拉松长距离日）
+  function makeMeals(training, n, longDay) {
     var mul = calcMul(n);
     var pMul = mul.pMul, cMul = mul.cMul;
     if (goal === 'cut') {
@@ -1000,14 +1000,26 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
     // 马拉松专项
     if (goal === 'marathon') {
       if (training) {
-        return [
-          {label:'早餐（跑前2h）', items:'燕麦'+sc(70,cMul)+'g + 香蕉1根 + 蜂蜜1勺 + 水300ml'},
-          {label:'跑中补给', items:'能量胶1条/45min + 运动饮料200ml（LSD>15km时）'},
-          {label:'跑后恢复（30min内）', items:'巧克力奶300ml 或 香蕉1根+蛋白粉1勺 + 小面包1个'},
-          {label:'午餐', items:'意面/米饭'+sc(180,cMul)+'g + 鸡胸肉/三文鱼'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
-          {label:'加餐', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把 + 坚果10g'},
-          {label:'晚餐', items:'米饭/面条'+sc(160,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g + 橄榄油5g'}
-        ];
+        if (longDay) {
+          // 长距离日（LSD/节奏跑 ≥800kcal）：高碳水 + 跑中补给
+          return [
+            {label:'早餐（跑前2h）', items:'燕麦'+sc(80,cMul)+'g + 香蕉1根 + 蜂蜜1勺 + 水300ml'},
+            {label:'跑中补给', items:'能量胶1条/45min + 运动饮料200ml（LSD>15km时）'},
+            {label:'跑后恢复（30min内）', items:'巧克力奶300ml + 香蕉1根 + 小面包1个'},
+            {label:'午餐', items:'意面/米饭'+sc(200,cMul)+'g + 鸡胸肉/三文鱼'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+            {label:'加餐', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把 + 坚果10g'},
+            {label:'晚餐', items:'米饭/面条'+sc(180,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g'}
+          ];
+        } else {
+          // 轻松训练日（恢复跑/短距离 <800kcal）：适度碳水，无跑中补给
+          return [
+            {label:'早餐（跑前1-2h）', items:'燕麦'+sc(60,cMul)+'g + 香蕉1根 + 水200ml'},
+            {label:'跑后恢复', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
+            {label:'午餐', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+            {label:'加餐', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
+            {label:'晚餐', items:'米饭/面条'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
+          ];
+        }
       } else {
         return [
           {label:'早餐', items:'燕麦'+sc(60,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
@@ -1036,6 +1048,55 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
   }
 
   var html = '';
+  // 马拉松专项：按跑量分层展示（休息日 + 轻松训练日 + 长距离日）
+  if (goal === 'marathon' && (isTrainingDay === undefined || isTrainingDay === null) && dayCalBurns && dayCalBurns.length) {
+    var LONG_BURN = 800; // kcal 分界线：≥800 为长距离日
+    var hasLong = dayCalBurns.some(function(b){ return b >= LONG_BURN; });
+    var hasEasy = dayCalBurns.some(function(b){ return b > 0 && b < LONG_BURN; });
+    var restN = nRest;
+    var trainN = nTrain || nRest;
+
+    html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 示例食谱（按跑量分层）</div>';
+
+    // 休息日
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px;">😴 休息日（'+restN.protein+'g蛋白 / '+restN.carb+'g碳水）</div>';
+    html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+    makeMeals(false, restN).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    html += '</div></div>';
+
+    // 轻松训练日（恢复跑/短距离）
+    if (hasEasy) {
+      html += '<div style="margin-bottom:10px;">';
+      html += '<div style="font-size:12px;font-weight:600;color:#3B82F6;margin-bottom:4px;">🏃 轻松训练日·恢复跑/短距离（'+trainN.protein+'g蛋白 / '+trainN.carb+'g碳水）</div>';
+      html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+      makeMeals(true, trainN, false).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+      html += '</div></div>';
+    }
+
+    // 长距离日（LSD/节奏跑）
+    if (hasLong) {
+      html += '<div style="margin-top:8px;">';
+      html += '<div style="font-size:12px;font-weight:600;color:#EF4444;margin-bottom:4px;">🔥 长距离日·LSD/节奏跑（'+trainN.protein+'g蛋白 / '+trainN.carb+'g碳水）</div>';
+      html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+      makeMeals(true, trainN, true).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+      html += '</div></div>';
+    }
+
+    // 如果只有一种训练日类型（全是长距离或全是短距离），补显示另一种作为参考
+    if (!hasLong && !hasEasy) {
+      html += '<div style="margin-bottom:10px;">';
+      html += '<div style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:4px;">🏃 训练日（'+trainN.protein+'g蛋白 / '+trainN.carb+'g碳水）</div>';
+      html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+      makeMeals(true, trainN, false).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+      html += '</div></div>';
+    }
+
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据身体数据自动计算 · 长距离日≥800kcal消耗</div>';
+    html += '</div>';
+    return html;
+  }
   // 默认展示两版（营养面板里）
   if (isTrainingDay === undefined || isTrainingDay === null) {
     var trainN = nTrain || nRest;
@@ -2251,7 +2312,7 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
   });
 
   // 动态示例食谱：训练日 + 休息日 两版
-  html += renderDynamicMealPlan(n, goal, undefined, nTrain);
+  html += renderDynamicMealPlan(n, goal, undefined, nTrain, dayCalBurns);
 
   html += '</div></div>';
   return html;
