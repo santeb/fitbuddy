@@ -893,6 +893,58 @@ var FOOD_GUIDE = {
   }
 };
 
+// 动态示例食谱：根据身体数据（n.protein/n.carb/n.fat）缩放食材份量
+function renderDynamicMealPlan(n, goal) {
+  // 基准：原硬编码食谱约 P:140g, C:250g（75kg 增肌参考值）
+  var pMul = n.protein / 140;
+  var cMul = n.carb / 250;
+  pMul = Math.max(0.5, Math.min(2.2, pMul));
+  cMul = Math.max(0.5, Math.min(2.2, cMul));
+  function sc(val, mul)  { return Math.round(val * mul / 5) * 5 || 5; }
+  function scm(val, mul) { return Math.round(val * mul); }
+
+  var meals = [];
+  if (goal === 'cut') {
+    meals = [
+      {label:'早餐', items:'燕麦'+sc(40,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 蛋清3个 + 香蕉半根'},
+      {label:'午餐', items:'糙米饭'+sc(100,cMul)+'g + 鸡胸肉'+sc(150,pMul)+'g + 西兰花250g'},
+      {label:'加餐（训前）', items:'全麦面包1片 + 鸡胸肉'+sc(50,pMul)+'g'},
+      {label:'晚餐（训后）', items:'红薯'+sc(120,cMul)+'g + 虾仁/龙利鱼'+sc(150,pMul)+'g + 菠菜250g'}
+    ];
+  } else if (goal === 'muscle' || goal === 'strength') {
+    meals = [
+      {label:'早餐', items:'燕麦'+sc(50,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
+      {label:'加餐1', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把'},
+      {label:'午餐', items:'糙米饭'+sc(150,cMul)+'g + 鸡胸肉'+sc(150,pMul)+'g + 西兰花200g + 橄榄油5g'},
+      {label:'加餐2（训前）', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g'},
+      {label:'晚餐（训后）', items:'红薯'+sc(150,cMul)+'g + 三文鱼/瘦牛肉'+sc(120,pMul)+'g + 菠菜200g'},
+      {label:'睡前', items:'牛奶'+scm(250,pMul)+'ml 或 酪蛋白粉1勺'}
+    ];
+  } else {
+    meals = [
+      {label:'早餐', items:'燕麦'+sc(60,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
+      {label:'加餐（训前）', items:'全麦面包'+Math.max(1,Math.round(cMul))+'片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
+      {label:'午餐', items:'糙米饭'+sc(150,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g'},
+      {label:'加餐（训后）', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
+      {label:'晚餐', items:'面条/米饭'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
+    ];
+  }
+
+  var adapt = goal === 'cut' ? '减脂配餐已精简至4餐，去掉加餐和睡前餐'
+    : goal === 'muscle' ? '增肌配餐6餐，训练日可额外加一餐碳水'
+    : goal === 'marathon' ? '马拉松配餐碳水优先，LSD日额外补能量胶30-60g'
+    : goal === 'cardio' ? '心肺配餐碳水适中，长训练日加香蕉/能量胶'
+    : '按目标微调：增肌多加1餐，减脂精简餐次';
+
+  var html = '</div><div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 今日示例食谱（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>'+
+    '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+  meals.forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+  html += '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据你的身体数据自动计算 · '+adapt+'</div>';
+  return html;
+}
+
 var BADGE_COLORS = {"胸":["#FF6B35","#FFF0EB"],"背":["#3B82F6","#EFF6FF"],"腿":["#22C55E","#F0FDF4"],"肩":["#F59E0B","#FFFBEB"],"臂":["#EC4899","#FDF2F8"],"核心":["#8B5CF6","#F5F3FF"],"有氧":["#06B6D4","#ECFEFF"],"跑步":["#EF4444","#FEF2F2"]};
 var BADGE_TEXT = {"胸":"胸","背":"背","腿":"腿","肩":"肩","臂":"臂","核心":"芯","有氧":"氧","跑步":"跑"};
 var MUSCLE_ORDER = ["腿","胸","背","肩","臂","核心","有氧","跑步"];
@@ -2030,17 +2082,8 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
       '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
   });
 
-  // 示例食谱
-  html += '</div><div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">'+
-    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 今日示例食谱（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>'+
-    '<div style="font-size:12px;color:var(--text2);line-height:1.8;">'+
-    '<b>早餐</b>：燕麦50g + 脱脂奶250ml + 水煮蛋2个 + 香蕉1根<br>'+
-    '<b>加餐1</b>：希腊酸奶150g + 蓝莓一小把<br>'+
-    '<b>午餐</b>：糙米饭150g + 鸡胸肉150g + 西兰花200g + 橄榄油5g<br>'+
-    '<b>加餐2（训前）</b>：全麦面包1片 + 花生酱10g<br>'+
-    '<b>晚餐（训后）</b>：红薯150g + 三文鱼/瘦牛肉120g + 菠菜200g<br>'+
-    '<b>睡前</b>：牛奶250ml 或 酪蛋白粉1勺</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 按目标微调：增肌多加1餐加餐，减脂去掉1餐加餐和睡前奶</div>';
+  // 动态示例食谱（根据身体数据缩放）
+  html += renderDynamicMealPlan(n, goal);
 
   html += '</div></div>';
   return html;
