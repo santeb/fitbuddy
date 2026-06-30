@@ -947,17 +947,22 @@ var FOOD_GUIDE = {
 // isTrainingDay: true=只展示训练日，false=只展示休息日，undefined=展示两版
 // nTrain: 训练日 calcNutrition 返回值（可选，用于展示训练日食谱）
 function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
-  // 基准：原硬编码食谱约 P:140g, C:250g（75kg 增肌参考值）
-  var pMul = n.protein / 140;
-  var cMul = n.carb / 250;
-  pMul = Math.max(0.5, Math.min(2.2, pMul));
-  cMul = Math.max(0.5, Math.min(2.2, cMul));
+  // 根据营养数据计算蛋白质/碳水乘数
+  function calcMul(n) {
+    if (!n) return { pMul: 1, cMul: 1 };
+    var pMul = n.protein / 140;
+    var cMul = n.carb / 250;
+    pMul = Math.max(0.5, Math.min(2.2, pMul));
+    cMul = Math.max(0.5, Math.min(2.2, cMul));
+    return { pMul: pMul, cMul: cMul };
+  }
   function sc(val, mul)  { return Math.round(val * mul / 5) * 5 || 5; }
   function scm(val, mul) { return Math.round(val * mul); }
 
-  // 训练日食谱：多一餐，份量更大
-  // 休息日食谱：精简，控制总热量
-  function makeMeals(training) {
+  // 生成食谱数组（training: 是否训练日，n: 对应的营养数据）
+  function makeMeals(training, n) {
+    var mul = calcMul(n);
+    var pMul = mul.pMul, cMul = mul.cMul;
     if (goal === 'cut') {
       if (training) {
         return [
@@ -1013,27 +1018,29 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
   var html = '';
   // 默认展示两版（营养面板里）
   if (isTrainingDay === undefined || isTrainingDay === null) {
+    var trainN = nTrain || nRest;
+    var restN  = nRest;
     html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
     html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 示例食谱</div>';
 
     html += '<div style="margin-bottom:10px;">';
-    html += '<div style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:4px;">🔥 训练日（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:4px;">🔥 训练日（'+trainN.protein+'g蛋白 / '+trainN.carb+'g碳水）</div>';
     html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
-    makeMeals(true).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    makeMeals(true, trainN).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
     html += '</div></div>';
 
-    // 用休息日参数重新算一份
     html += '<div style="margin-top:8px;">';
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px;">😴 休息日（热量较低）</div>';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px;">😴 休息日（'+restN.protein+'g蛋白 / '+restN.carb+'g碳水）</div>';
     html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
-    makeMeals(false).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    makeMeals(false, restN).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
     html += '</div></div>';
 
     html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据你的身体数据自动计算</div>';
     html += '</div>';
   } else {
     // 指定某一版
-    var meals = makeMeals(isTrainingDay);
+    var n = isTrainingDay ? (nTrain || nRest) : nRest;
+    var meals = makeMeals(isTrainingDay, n);
     var title = isTrainingDay ? '🔥 训练日示例食谱' : '😴 休息日示例食谱';
     html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
     html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">'+title+'（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>';
@@ -1041,21 +1048,6 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
     meals.forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
     html += '</div></div>';
   }
-  return html;
-}
-
-  var adapt = goal === 'cut' ? '减脂配餐已精简至4餐，去掉加餐和睡前餐'
-    : goal === 'muscle' ? '增肌配餐6餐，训练日可额外加一餐碳水'
-    : goal === 'marathon' ? '马拉松配餐碳水优先，LSD日额外补能量胶30-60g'
-    : goal === 'cardio' ? '心肺配餐碳水适中，长训练日加香蕉/能量胶'
-    : '按目标微调：增肌多加1餐，减脂精简餐次';
-
-  var html = '</div><div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">'+
-    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 今日示例食谱（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>'+
-    '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
-  meals.forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
-  html += '</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据你的身体数据自动计算 · '+adapt+'</div>';
   return html;
 }
 
