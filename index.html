@@ -58,6 +58,23 @@ input,select{font-family:inherit;}
 .page.active{display:block;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
+/* 为爱发电 */
+.donate-hero{text-align:center;padding:28px 16px 20px;margin-bottom:16px;border-radius:var(--radius);background:linear-gradient(135deg,#FF6B6B 0%,#FF3E7F 50%,#FF6B35 100%);color:#fff;box-shadow:0 4px 18px rgba(255,107,83,0.25);}
+.donate-hero .dh-icon{font-size:48px;margin-bottom:10px;animation:bounce 2s infinite;}
+.donate-hero .dh-title{font-size:22px;font-weight:800;margin-bottom:6px;}
+.donate-hero .dh-sub{font-size:13px;opacity:0.9;line-height:1.6;}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.donate-qr-row{display:flex;gap:12px;margin-bottom:14px;}
+.donate-qr-card{flex:1;background:var(--card);border-radius:var(--radius);padding:16px 12px 14px;text-align:center;box-shadow:var(--shadow);transition:all 0.3s;}
+.donate-qr-card:active{transform:scale(0.97);}
+.donate-qr-card .qr-label{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;}
+.donate-qr-card .qr-hint{font-size:11px;color:var(--text3);margin-bottom:12px;}
+.donate-qr-card .qr-img{width:140px;height:140px;border-radius:12px;border:2px dashed var(--border);object-fit:contain;background:var(--bg);padding:6px;}
+.donate-qr-card .qr-tap{font-size:11px;color:var(--primary);margin-top:8px;font-weight:600;}
+.donate-msg{text-align:center;padding:14px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);}
+.donate-msg p{font-size:13px;color:var(--text2);line-height:1.8;}
+.donate-msg .emoji-row{font-size:18px;margin-bottom:8px;letter-spacing:4px;}
+
 /* Card */
 .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);transition:background .3s;}
 .card-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
@@ -490,6 +507,34 @@ input,select{font-family:inherit;}
     <div id="progContent"></div>
   </div>
 
+  <!-- 为爱发电页 -->
+  <div class="page" id="page-donate">
+    <div class="donate-hero">
+      <div class="dh-icon">⚡</div>
+      <div class="dh-title">为爱发电</div>
+      <div class="dh-sub">FitBuddy 永久免费 · 无广告 · 无需注册<br>如果你觉得好用，欢迎请开发者喝杯咖啡 ☕️</div>
+    </div>
+    <div class="donate-qr-row">
+      <div class="donate-qr-card" onclick="this.querySelector('.qr-img').requestFullscreen?this.querySelector('.qr-img').requestFullscreen():null">
+        <div class="qr-label">💚 微信赞赏</div>
+        <div class="qr-hint">打开微信扫一扫</div>
+        <img class="qr-img" src="exercise-images/wechat-donate.png" alt="微信赞赏码" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <div class="qr-tap" style="display:none">📷 点击上传你的赞赏码</div>
+      </div>
+      <div class="donate-qr-card" onclick="this.querySelector('.qr-img').requestFullscreen?this.querySelector('.qr-img').requestFullscreen():null">
+        <div class="qr-label">💙 支付宝赞赏</div>
+        <div class="qr-hint">打开支付宝扫一扫</div>
+        <img class="qr-img" src="exercise-images/alipay-donate.png" alt="支付宝赞赏码" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+        <div class="qr-tap" style="display:none">📷 点击上传你的赞赏码</div>
+      </div>
+    </div>
+    <div class="donate-msg">
+      <div class="emoji-row">🙏 💪 🔥</div>
+      <p>每一份支持都是持续更新的动力<br>感谢你让 FitBuddy 变得更好 ❤️</p>
+      <p style="font-size:11px;color:var(--text3);margin-top:8px;">赞赏码在 <b>exercise-images/</b> 目录下替换即可</p>
+    </div>
+  </div>
+
   <!-- 底部导航 -->
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="page-plan" onclick="switchTab(this)">
@@ -500,6 +545,9 @@ input,select{font-family:inherit;}
     </button>
     <button class="tab-btn" data-tab="page-prog" onclick="switchTab(this)">
       <span class="icon">📊</span>进度
+    </button>
+    <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)">
+      <span class="icon">💝</span>发电
     </button>
   </div>
 
@@ -3245,6 +3293,7 @@ function switchTab(btn) {
   document.getElementById(tab).classList.add("active");
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
+  if (tab === "page-donate") { _trackStat('donate'); }
 }
 
 document.querySelectorAll("#daysGroup .chip").forEach(function(c){
