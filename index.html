@@ -941,8 +941,12 @@ var FOOD_GUIDE = {
   }
 };
 
-// 动态示例食谱：根据身体数据（n.protein/n.carb/n.fat）缩放食材份量
-function renderDynamicMealPlan(n, goal) {
+// 动态示例食谱：根据身体数据 + 训练日/休息日 缩放食材份量
+// nRest: 休息日 calcNutrition 返回值
+// goal: 目标
+// isTrainingDay: true=只展示训练日，false=只展示休息日，undefined=展示两版
+// nTrain: 训练日 calcNutrition 返回值（可选，用于展示训练日食谱）
+function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain) {
   // 基准：原硬编码食谱约 P:140g, C:250g（75kg 增肌参考值）
   var pMul = n.protein / 140;
   var cMul = n.carb / 250;
@@ -951,32 +955,94 @@ function renderDynamicMealPlan(n, goal) {
   function sc(val, mul)  { return Math.round(val * mul / 5) * 5 || 5; }
   function scm(val, mul) { return Math.round(val * mul); }
 
-  var meals = [];
-  if (goal === 'cut') {
-    meals = [
-      {label:'早餐', items:'燕麦'+sc(40,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 蛋清3个 + 香蕉半根'},
-      {label:'午餐', items:'糙米饭'+sc(100,cMul)+'g + 鸡胸肉'+sc(150,pMul)+'g + 西兰花250g'},
-      {label:'加餐（训前）', items:'全麦面包1片 + 鸡胸肉'+sc(50,pMul)+'g'},
-      {label:'晚餐（训后）', items:'红薯'+sc(120,cMul)+'g + 虾仁/龙利鱼'+sc(150,pMul)+'g + 菠菜250g'}
-    ];
-  } else if (goal === 'muscle' || goal === 'strength') {
-    meals = [
-      {label:'早餐', items:'燕麦'+sc(50,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
-      {label:'加餐1', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把'},
-      {label:'午餐', items:'糙米饭'+sc(150,cMul)+'g + 鸡胸肉'+sc(150,pMul)+'g + 西兰花200g + 橄榄油5g'},
-      {label:'加餐2（训前）', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g'},
-      {label:'晚餐（训后）', items:'红薯'+sc(150,cMul)+'g + 三文鱼/瘦牛肉'+sc(120,pMul)+'g + 菠菜200g'},
-      {label:'睡前', items:'牛奶'+scm(250,pMul)+'ml 或 酪蛋白粉1勺'}
-    ];
-  } else {
-    meals = [
-      {label:'早餐', items:'燕麦'+sc(60,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
-      {label:'加餐（训前）', items:'全麦面包'+Math.max(1,Math.round(cMul))+'片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
-      {label:'午餐', items:'糙米饭'+sc(150,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g'},
-      {label:'加餐（训后）', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
-      {label:'晚餐', items:'面条/米饭'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
-    ];
+  // 训练日食谱：多一餐，份量更大
+  // 休息日食谱：精简，控制总热量
+  function makeMeals(training) {
+    if (goal === 'cut') {
+      if (training) {
+        return [
+          {label:'早餐', items:'燕麦'+sc(45,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 蛋清3个 + 香蕉半根'},
+          {label:'午餐（训前）', items:'糙米饭'+sc(90,cMul)+'g + 鸡胸肉'+sc(140,pMul)+'g + 西兰花250g'},
+          {label:'晚餐（训后）', items:'红薯'+sc(100,cMul)+'g + 虾仁/龙利鱼'+sc(140,pMul)+'g + 菠菜250g + 橄榄油5g'}
+        ];
+      } else {
+        return [
+          {label:'早餐', items:'燕麦'+sc(35,cMul)+'g + 脱脂奶'+scm(180,pMul)+'ml + 蛋清3个 + 香蕉半根'},
+          {label:'午餐', items:'糙米饭'+sc(80,cMul)+'g + 鸡胸肉'+sc(130,pMul)+'g + 西兰花250g'},
+          {label:'晚餐', items:'红薯'+sc(100,cMul)+'g + 虾仁/龙利鱼'+sc(130,pMul)+'g + 菠菜250g'}
+        ];
+      }
+    }
+    if (goal === 'muscle' || goal === 'strength') {
+      if (training) {
+        return [
+          {label:'早餐', items:'燕麦'+sc(55,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
+          {label:'加餐1', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把'},
+          {label:'午餐', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉'+sc(160,pMul)+'g + 西兰花200g + 橄榄油5g'},
+          {label:'训前加餐', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g'},
+          {label:'晚餐（训后）', items:'红薯'+sc(160,cMul)+'g + 三文鱼/瘦牛肉'+sc(130,pMul)+'g + 菠菜200g'},
+          {label:'睡前', items:'牛奶'+scm(250,pMul)+'ml 或 酪蛋白粉1勺'}
+        ];
+      } else {
+        return [
+          {label:'早餐', items:'燕麦'+sc(45,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 水煮蛋2个 + 香蕉半根'},
+          {label:'午餐', items:'糙米饭'+sc(130,cMul)+'g + 鸡胸肉'+sc(140,pMul)+'g + 西兰花200g'},
+          {label:'加餐', items:'希腊酸奶'+sc(120,pMul)+'g + 蓝莓一小把'},
+          {label:'晚餐', items:'红薯'+sc(130,cMul)+'g + 瘦肉'+sc(110,pMul)+'g + 菠菜200g'}
+        ];
+      }
+    }
+    // 心肺 / 马拉松 / 其他
+    if (training) {
+      return [
+        {label:'早餐', items:'燕麦'+sc(65,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
+        {label:'训前加餐', items:'全麦面包'+Math.max(1,Math.round(cMul))+'片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
+        {label:'午餐', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉/鱼肉'+sc(130,pMul)+'g + 西兰花200g'},
+        {label:'训后加餐', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
+        {label:'晚餐', items:'面条/米饭'+sc(160,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g'}
+      ];
+    } else {
+      return [
+        {label:'早餐', items:'燕麦'+sc(55,cMul)+'g + 脱脂奶'+scm(200,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
+        {label:'午餐', items:'糙米饭'+sc(140,cMul)+'g + 鸡胸肉/鱼肉'+sc(110,pMul)+'g + 西兰花200g'},
+        {label:'晚餐', items:'面条/米饭'+sc(130,cMul)+'g + 虾仁/豆腐'+sc(90,pMul)+'g + 菠菜200g'}
+      ];
+    }
   }
+
+  var html = '';
+  // 默认展示两版（营养面板里）
+  if (isTrainingDay === undefined || isTrainingDay === null) {
+    html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">🍽️ 示例食谱</div>';
+
+    html += '<div style="margin-bottom:10px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:4px;">🔥 训练日（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>';
+    html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+    makeMeals(true).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    html += '</div></div>';
+
+    // 用休息日参数重新算一份
+    html += '<div style="margin-top:8px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:4px;">😴 休息日（热量较低）</div>';
+    html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+    makeMeals(false).forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    html += '</div></div>';
+
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;">* 份量根据你的身体数据自动计算</div>';
+    html += '</div>';
+  } else {
+    // 指定某一版
+    var meals = makeMeals(isTrainingDay);
+    var title = isTrainingDay ? '🔥 训练日示例食谱' : '😴 休息日示例食谱';
+    html += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">'+title+'（'+n.protein+'g蛋白 / '+n.carb+'g碳水）</div>';
+    html += '<div style="font-size:12px;color:var(--text2);line-height:1.8;">';
+    meals.forEach(function(m){ html += '<b>'+m.label+'</b>：'+m.items+'<br>'; });
+    html += '</div></div>';
+  }
+  return html;
+}
 
   var adapt = goal === 'cut' ? '减脂配餐已精简至4餐，去掉加餐和睡前餐'
     : goal === 'muscle' ? '增肌配餐6餐，训练日可额外加一餐碳水'
@@ -1255,25 +1321,52 @@ function getSchedule(days) {
 }
 
 // ============ 营养计算 ============
-function calcNutrition(weight, height, age, gender, goal) {
+// dayCalBurn: 当天训练消耗（kcal），0=休息日，>0=训练日
+function calcNutrition(weight, height, age, gender, goal, dayCalBurn) {
   if (!weight || !height || !age) return null;
   var bmr = gender === "male"
     ? 10*weight + 6.25*height - 5*age + 5
     : 10*weight + 6.25*height - 5*age - 161;
   var tdee = bmr * 1.55;
+  // 训练日：TDEE + 运动消耗
+  var isTrainingDay = dayCalBurn && dayCalBurn > 0;
+  var activityCal = isTrainingDay ? dayCalBurn : 0;
   var targetCal, protein, carb, fat;
-  if (goal === "muscle") { targetCal = tdee + 300; protein = weight * 2.0; carb = weight * 4; fat = weight * 1; }
-  else if (goal === "strength") { targetCal = tdee + 200; protein = weight * 1.8; carb = weight * 4; fat = weight * 1; }
-  else if (goal === "cut") { targetCal = tdee - 400; protein = weight * 1.8; carb = weight * 2; fat = weight * 0.8; }
-  else if (goal === "marathon") { targetCal = tdee + 200; protein = weight * 1.4; carb = weight * 6; fat = weight * 1; }
-  else if (goal === "cardio") { targetCal = tdee + 100; protein = weight * 1.4; carb = weight * 5; fat = weight * 1; }
-  else { targetCal = tdee; protein = weight * 1.4; carb = weight * 3; fat = weight * 0.8; }
+  if (goal === "muscle") {
+    targetCal = tdee + (isTrainingDay ? 300 + activityCal : 200); // 休息日少一点
+    protein = weight * 2.0; carb = weight * (isTrainingDay ? 4.5 : 3.5); fat = weight * 1;
+  }
+  else if (goal === "strength") {
+    targetCal = tdee + (isTrainingDay ? 200 + activityCal : 100);
+    protein = weight * 1.8; carb = weight * (isTrainingDay ? 4.5 : 3.5); fat = weight * 1;
+  }
+  else if (goal === "cut") {
+    // 减脂：训练日允许更大热量（因为有消耗），休息日控制更严
+    targetCal = tdee + (isTrainingDay ? -200 + activityCal : -450);
+    protein = weight * 1.8; carb = weight * (isTrainingDay ? 2.5 : 1.5); fat = weight * 0.8;
+  }
+  else if (goal === "marathon") {
+    targetCal = tdee + (isTrainingDay ? 200 + activityCal : 100);
+    protein = weight * 1.4; carb = weight * (isTrainingDay ? 7 : 5); fat = weight * 1;
+  }
+  else if (goal === "cardio") {
+    targetCal = tdee + (isTrainingDay ? 100 + activityCal : 0);
+    protein = weight * 1.4; carb = weight * (isTrainingDay ? 5.5 : 4); fat = weight * 1;
+  }
+  else {
+    targetCal = tdee + activityCal;
+    protein = weight * 1.4; carb = weight * (isTrainingDay ? 3.5 : 2.5); fat = weight * 0.8;
+  }
+  // 保证最低摄入
+  targetCal = Math.max(targetCal, 1200);
   return {
     bmr: Math.round(bmr), tdee: Math.round(tdee),
     targetCal: Math.round(targetCal),
     protein: Math.round(protein),
     carb: Math.round(carb),
-    fat: Math.round(fat)
+    fat: Math.round(fat),
+    isTrainingDay: isTrainingDay,
+    dayCalBurn: dayCalBurn || 0
   };
 }
 
@@ -1474,7 +1567,12 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     var age = parseInt(document.getElementById('bodyAge').value) || 0;
     var gender = document.querySelector('input[name="gender"]:checked');
     if (gender) gender = gender.value;
-    nutrition = calcNutrition(weight, height, age, gender || 'male', goal);
+    // 分别算休息日和训练日的营养数据
+    var restBurn = 0;
+    var maxBurn  = dayCalBurns && dayCalBurns.length ? Math.max.apply(null, dayCalBurns) : 0;
+    nutrition = calcNutrition(weight, height, age, gender || 'male', goal, restBurn);
+    // 用最大训练日消耗作为训练日营养参考
+    var nutritionTrain = maxBurn > 0 ? calcNutrition(weight, height, age, gender || 'male', goal, maxBurn) : null;
   } catch(e) {}
   var html = "";
   var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : goalCfg.intensity;
@@ -1516,7 +1614,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
       avgTrainBurn = Math.round(dayCalBurns.reduce(function(a,b){return a+b;},0) / dayCalBurns.length);
       maxTrainBurn = Math.max.apply(null, dayCalBurns);
     }
-    html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns);
+    html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain);
   }
   var trainSchedule = schedule.filter(function(s){ return s.isTraining; });
   trainingDays.forEach(function(day, i){
@@ -2047,10 +2145,13 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
   return html;
 }
 
-function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns) {
+function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nTrain) {
   var goalNote = goal === "muscle" ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
   var fg = FOOD_GUIDE[goal] || FOOD_GUIDE.muscle;
   var restCal = n.targetCal;
+  var trainCal = nTrain ? nTrain.targetCal : (restCal + avgTrainBurn);
+  var trainProtein = nTrain ? nTrain.protein : n.protein;
+  var trainCarb    = nTrain ? nTrain.carb    : n.carb;
 
   // 构建日程列表（训练日×星期几+名称+消耗）
   var nutriDays = [];
@@ -2081,32 +2182,32 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
   
   // 训练日动态热量 + 日程选择器
   if (nutriDays.length > 0) {
-    var trainCal = restCal + avgTrainBurn;
     html += '<div class="nutri-dynamic" style="margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:10px;">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'+
-        '<span style="font-size:12px;font-weight:600;color:var(--text);">🔥 训练日动态热量</span>'+
+        '<span style="font-size:12px;font-weight:600;color:var(--text);">🔥 训练日 / 😴 休息日 热量对比</span>'+
         '<span style="font-size:11px;color:var(--text3);">点击日程切换</span></div>';
 
     // 日程 chip 条
     html += '<div class="nutri-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
     // 默认：平均
-    html += '<span class="nutri-chip active" data-ni="-1" onclick="selectNutriDay(\''+nutriPanelId+'\',-1,'+restCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;">📊 平均</span>';
+    html += '<span class="nutri-chip active" data-ni="-1" data-rest="'+restCal+'" data-train="'+trainCal+'" onclick="selectNutriDay(\''+nutriPanelId+'\',-1,'+restCal+','+trainCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;">📊 平均</span>';
     nutriDays.forEach(function(nd, i) {
-      html += '<span class="nutri-chip" data-ni="'+i+'" data-burn="'+nd.burn+'" data-name="'+nd.label+' '+nd.name+'" onclick="selectNutriDay(\''+nutriPanelId+'\','+i+','+restCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;border:1px solid var(--border);color:var(--text2);">'+
+      var ndTrainCal = nTrain ? nTrain.targetCal : (restCal + nd.burn);
+      html += '<span class="nutri-chip" data-ni="'+i+'" data-burn="'+nd.burn+'" data-name="'+nd.label+' '+nd.name+'" data-rest="'+restCal+'" data-train="'+ndTrainCal+'" onclick="selectNutriDay(\''+nutriPanelId+'\','+i+','+restCal+','+ndTrainCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;border:1px solid var(--border);color:var(--text2);">'+
         nd.label+' <span style="font-size:10px;opacity:0.8;">'+nd.name+'</span> 🔥'+nd.burn+'</span>';
     });
     html += '</div>';
 
-    // 热量数字（动态更新）
+    // 热量数字（动态更新）：训练日 ← → 休息日
     html += '<div style="display:flex;gap:8px;">'+
       '<div class="nutri-train-val" style="flex:1;text-align:center;padding:8px 4px;background:var(--card);border-radius:8px;transition:all 0.2s;">'+
         '<div style="font-size:22px;font-weight:800;color:'+(goal==='cut'?'#22C55E':'#3B82F6')+';" id="'+nutriPanelId+'_trainCal">'+trainCal+'</div>'+
-        '<div style="font-size:10px;color:var(--text3);" id="'+nutriPanelId+'_trainLabel">平均训练日 kcal</div></div>'+
+        '<div style="font-size:10px;color:var(--text3);" id="'+nutriPanelId+'_trainLabel">训练日 kcal</div></div>'+
       '<div style="display:flex;align-items:center;font-size:18px;color:var(--border);">→</div>'+
       '<div style="flex:1;text-align:center;padding:8px 4px;background:var(--card);border-radius:8px;">'+
-        '<div style="font-size:22px;font-weight:800;color:var(--text2);">'+restCal+'</div>'+
+        '<div style="font-size:22px;font-weight:800;color:var(--text2);" id="'+nutriPanelId+'_restCal">'+restCal+'</div>'+
         '<div style="font-size:10px;color:var(--text3);">休息日 kcal</div></div></div>'+
-      (maxTrainBurn > avgTrainBurn ? '<div style="font-size:10px;color:var(--text3);margin-top:6px;">💡 点击上方日程查看对应日热量，LSD日额外多补碳水</div>' : '')+
+      (maxTrainBurn > avgTrainBurn ? '<div style="font-size:10px;color:var(--text3);margin-top:6px;">💡 训练日额外消耗已计入热量，LSD日多补碳水</div>' : '')+
       '</div>';
   }
 
@@ -2137,15 +2238,16 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
       '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
   });
 
-  // 动态示例食谱（根据身体数据缩放）
-  html += renderDynamicMealPlan(n, goal);
+  // 动态示例食谱：训练日 + 休息日 两版
+  html += renderDynamicMealPlan(nRest, goal, undefined, nTrain);
 
   html += '</div></div>';
   return html;
 }
 
 // 营养面板日程切换
-function selectNutriDay(panelId, idx, restCal) {
+// restCal: 休息日热量，trainCal: 训练日热量（用于默认展示）
+function selectNutriDay(panelId, idx, restCal, trainCal) {
   var panel = document.getElementById(panelId);
   if (!panel) return;
   // 更新 chip 样式
@@ -2157,25 +2259,33 @@ function selectNutriDay(panelId, idx, restCal) {
   });
   // 更新热量值和标签
   var trainEl = document.getElementById(panelId+'_trainCal');
+  var restEl  = document.getElementById(panelId+'_restCal');
   var labelEl = document.getElementById(panelId+'_trainLabel');
-  if (!trainEl || !labelEl) return;
+  if (!trainEl || !restEl || !labelEl) return;
 
-  var totalBurn = 0, label = '平均训练日 kcal';
+  var totalTrainBurn = 0, label = '训练日 kcal';
   if (idx < 0) {
-    // 平均：统计所有日程的 data-burn 取均值
-    var count = 0;
+    // 平均：统计所有日程的 data-train / data-rest
+    var sumTrain = 0, sumRest = 0, cnt = 0;
     chips.forEach(function(c){
-      var burn = parseInt(c.getAttribute('data-burn')) || 0;
-      if (burn) { totalBurn += burn; count++; }
+      var t = parseInt(c.getAttribute('data-train')) || 0;
+      var r = parseInt(c.getAttribute('data-rest'))  || 0;
+      if (t) { sumTrain += t; cnt++; }
+      if (r) { sumRest  += r; }
     });
-    totalBurn = Math.round(totalBurn / (count || 1));
+    totalTrainBurn = cnt ? Math.round(sumTrain / cnt) : (trainCal || 0);
+    var totalRestBurn  = cnt ? Math.round(sumRest  / cnt) : (restCal  || 0);
+    if (restEl)  restEl.textContent  = totalRestBurn;
+    label = '平均训练日';
   } else {
     // 指定日程
     var selChip = panel.querySelector('.nutri-chip[data-ni="'+idx+'"]');
-    totalBurn = parseInt(selChip ? selChip.getAttribute('data-burn') : 0) || 0;
-    label = (selChip ? selChip.getAttribute('data-name') : '') + ' kcal';
+    totalTrainBurn = parseInt(selChip ? selChip.getAttribute('data-train') : 0) || (trainCal || 0);
+    var selRest = parseInt(selChip ? selChip.getAttribute('data-rest')  : 0) || (restCal  || 0);
+    if (restEl) restEl.textContent = selRest;
+    label = (selChip ? selChip.getAttribute('data-name') : '') || '训练日';
   }
-  trainEl.textContent = restCal + totalBurn;
+  trainEl.textContent = totalTrainBurn;
   labelEl.textContent = label;
 }
 
