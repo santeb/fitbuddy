@@ -1,0 +1,18 @@
+{
+  "name": "FitBuddy 健身助手",
+  "short_name": "FitBuddy",
+  "description": "免费周期化训练计划生成器，支持增肌/力量/减脂/心肺/马拉松5大目标",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#F5F6FA",
+  "theme_color": "#FF6B35",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23FF6B35'/><text y='.9em' font-size='60' text-anchor='middle' x='50' fill='white'>🏋️</text></svg>",
+      "sizes": "100x100",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

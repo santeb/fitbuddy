@@ -1,0 +1,169 @@
+/* FitBuddy 健身助手 - 样式表 */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary: #FF6B35;
+  --primary-dark: #E55A2B;
+  --primary-light: #FFF0E8;
+  --secondary: #2EC4B6;
+  --accent: #E71D36;
+  --bg: #F7F8FA;
+  --card: #FFFFFF;
+  --text: #1A1A2E;
+  --text2: #555;
+  --text3: #999;
+  --border: #E8E8E8;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --radius: 14px;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+button { cursor: pointer; border: none; font-family: inherit; font-size: inherit; }
+input, select { font-family: inherit; font-size: inherit; }
+
+.app { max-width: 430px; margin: 0 auto; min-height: 100vh; background: var(--bg); padding-bottom: 70px; }
+
+.header {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff; padding: 18px 20px 14px; position: sticky; top: 0; z-index: 100;
+}
+.header h1 { font-size: 20px; font-weight: 700; }
+.header p { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+.tab-bar {
+  display: flex; position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 430px; background: var(--card); border-top: 1px solid var(--border);
+  z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.tab-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 8px 0 6px; background: none; color: var(--text3); font-size: 10px; gap: 3px; transition: all 0.2s;
+}
+.tab-btn .icon { font-size: 20px; line-height: 1; }
+.tab-btn.active { color: var(--primary); }
+
+.page { display: none; padding: 16px; animation: fadeIn 0.25s ease; }
+.page.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.card-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+.form-group input, .form-group select {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 10px;
+  font-size: 14px; background: #fff; outline: none; transition: border 0.2s;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--primary); }
+
+.radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.radio-item input { display: none; }
+.radio-item label {
+  display: block; padding: 8px 16px; border: 1.5px solid var(--border); border-radius: 20px;
+  font-size: 13px; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.radio-item input:checked + label { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.chip-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  padding: 7px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+  font-size: 13px; cursor: pointer; transition: all 0.2s; background: #fff;
+}
+.chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 20px; border-radius: 12px; font-size: 14px; font-weight: 600;
+  transition: all 0.2s; width: 100%;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:active { background: var(--primary-dark); transform: scale(0.98); }
+.btn-secondary { background: var(--primary-light); color: var(--primary); width: auto; }
+.btn-sm { padding: 8px 14px; font-size: 13px; width: auto; }
+
+/* 计划页面 */
+.plan-day { background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+.plan-day-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.plan-day-name { font-weight: 700; font-size: 15px; color: var(--primary); }
+.exercise-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.exercise-item:last-child { border-bottom: none; }
+.exercise-name { font-size: 14px; font-weight: 600; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; }
+
+/* 动作库 */
+.search-box {
+  width: 100%; padding: 10px 14px 10px 38px; border: 1.5px solid var(--border);
+  border-radius: 12px; font-size: 14px; margin-bottom: 14px; outline: none;
+}
+.filter-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px; -webkit-overflow-scrolling: touch; }
+.filter-bar::-webkit-scrollbar { display: none; }
+.exercise-card {
+  background: var(--card); border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
+  box-shadow: var(--shadow); cursor: pointer; transition: transform 0.15s;
+}
+.exercise-card:active { transform: scale(0.98); }
+.exercise-card h4 { font-size: 15px; margin-bottom: 4px; }
+.exercise-card .muscle { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.exercise-card .desc { font-size: 13px; color: var(--text2); line-height: 1.5; }
+
+/* 视频容器 */
+.video-container {
+  position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;
+  border-radius: 10px; margin: 10px 0;
+}
+.video-container iframe {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  border-radius: 10px;
+}
+
+/* 营养页面 */
+.macro-bar { display: flex; gap: 4px; height: 10px; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+.macro-bar .protein { background: #FF6B35; }
+.macro-bar .carb { background: #2EC4B6; }
+.macro-bar .fat { background: #E71D36; }
+.nutrition-result { background: linear-gradient(135deg, var(--primary-light), #fff); border-radius: var(--radius); padding: 18px; margin-top: 14px; }
+.nutrition-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+.nutrition-item { text-align: center; background: #fff; border-radius: 10px; padding: 12px 6px; }
+.nutrition-item .value { font-size: 22px; font-weight: 800; color: var(--primary); }
+.nutrition-item .label { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+/* 记录页面 */
+.log-list .log-item { background: var(--card); border-radius: 12px; padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+.log-date { font-size: 12px; color: var(--text3); margin-bottom: 6px; }
+.pr-badge { background: linear-gradient(135deg, #FFD700, #FFA500); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
+
+/* Modal */
+.modal-overlay {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.show { display: flex; }
+.modal { background: #fff; border-radius: 18px; width: 100%; max-width: 400px; max-height: 80vh; overflow-y: auto; padding: 20px; position: relative; }
+.modal-close { position: absolute; top: 14px; right: 14px; background: none; font-size: 22px; color: var(--text3); padding: 4px; }
+.modal h3 { font-size: 17px; margin-bottom: 12px; padding-right: 30px; }
+.modal .detail-section { margin-bottom: 12px; }
+.modal .detail-section h4 { font-size: 13px; color: var(--text2); margin-bottom: 4px; }
+.modal .detail-section p, .modal .detail-section ul { font-size: 14px; line-height: 1.7; }
+.modal .detail-section ul { padding-left: 18px; }
+
+.empty-state { text-align: center; padding: 40px 20px; color: var(--text3); }
+.empty-state .icon { font-size: 48px; margin-bottom: 10px; }
+.empty-state p { font-size: 14px; }
+
+.summary-card {
+  background: linear-gradient(135deg, var(--primary), #FF8C5A); color: #fff;
+  border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
+}
+.summary-card .num { font-size: 32px; font-weight: 800; }
+
+.level-diff { padding: 12px; border-radius: 10px; margin: 8px 0 0; font-size: 12px; line-height: 1.6; }
+.level-beginner { background: #E8FFE8; border: 1px solid #2D6A4F; color: #2D6A4F; }
+.level-intermediate { background: #FFF3E8; border: 1px solid #E76F51; color: #E76F51; }
+.level-advanced { background: #FFE8E8; border: 1px solid #E71D36; color: #E71D36; }
+
+.section-title { font-size: 16px; font-weight: 700; margin: 18px 0 12px; display: flex; align-items: center; gap: 8px; }
