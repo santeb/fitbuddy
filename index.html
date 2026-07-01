@@ -451,23 +451,18 @@ input,select{font-family:inherit;}
   [data-theme="dark"] .summary-card{background:#f5f5f5!important;color:#000!important;}
 }
 
-/* ====== 健身精灵宠物 ====== */
+/* ====== 健身精灵宠物（多物种） ====== */
 .pet-card {
-  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 50%, #FED7AA 100%);
   border-radius: 20px;
   padding: 20px 16px;
   margin: 16px 0;
   text-align: center;
   position: relative;
   overflow: hidden;
-  border: 2px solid #FED7AA;
+  border: 2px solid;
   transition: all 0.5s;
   cursor: pointer;
   user-select: none;
-}
-[data-theme="dark"] .pet-card {
-  background: linear-gradient(135deg, #1C1917 0%, #292524 50%, #1C1917 100%);
-  border-color: #44403C;
 }
 .pet-card:active { transform: scale(0.98); }
 .pet-card .pet-creature {
@@ -492,37 +487,37 @@ input,select{font-family:inherit;}
 .pet-card .pet-name {
   font-size: 16px;
   font-weight: 800;
-  color: #C2410C;
   margin-top: 4px;
 }
-[data-theme="dark"] .pet-card .pet-name { color: #FB923C; }
+.pet-card .pet-rarity-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  margin-left: 4px;
+  vertical-align: middle;
+  font-weight: 600;
+}
 .pet-card .pet-stage {
   font-size: 11px;
-  color: #A16207;
-  background: rgba(251,191,36,0.25);
   display: inline-block;
   padding: 2px 10px;
   border-radius: 10px;
   margin-top: 4px;
 }
-[data-theme="dark"] .pet-card .pet-stage { color: #FBBF24; background: rgba(251,191,36,0.15); }
 .pet-card .pet-mood {
   font-size: 12px;
-  color: #78716C;
   margin-top: 4px;
 }
 .pet-card .pet-evo-bar {
   width: 100%;
   height: 6px;
-  background: #FED7AA;
   border-radius: 3px;
   margin-top: 10px;
   overflow: hidden;
 }
-[data-theme="dark"] .pet-card .pet-evo-bar { background: #44403C; }
 .pet-card .pet-evo-fill {
   height: 100%;
-  background: linear-gradient(90deg, #F97316, #EF4444);
   border-radius: 3px;
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -548,6 +543,43 @@ input,select{font-family:inherit;}
   color: #A8A29E;
   margin-top: 6px;
   opacity: 0.7;
+}
+/* 宠物切换栏 */
+.pet-switch-bar {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.pet-switch-dot {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  font-size: 22px;
+  line-height: 42px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.25s;
+  background: var(--card);
+  opacity: 0.6;
+}
+.pet-switch-dot.active {
+  border-color: var(--primary);
+  opacity: 1;
+  transform: scale(1.1);
+  box-shadow: 0 0 8px rgba(249,115,22,0.3);
+}
+.pet-switch-dot.locked {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+.pet-switch-dot:hover:not(.locked) { opacity: 0.9; transform: scale(1.05); }
+.pet-switch-label {
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: -2px;
 }
 </style>
 </head>
@@ -1941,8 +1973,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     '<button class="btn-generate" style="background:var(--card);color:var(--text);border:1.5px solid var(--border);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="exportPlan()">'+
     '🖨 打印/导出计划</button></div>';
   // 🐉 健身精灵宠物
-  html += '<div style="font-size:13px;font-weight:700;color:var(--primary);margin-top:4px;text-align:center;">🐉 你的健身精灵</div>';
-  html += renderPetCard();
+  html += '<div id="petArea">' + renderPetCard() + '</div>';
   document.getElementById("planResult").innerHTML = html;
   updateTodayBanner();
 }
@@ -4337,75 +4368,293 @@ function getLevelProgress() {
   return {cur:cur, nxt:nxt, progress:progress, total:totalDays};
 }
 
-// ============ 🐉 健身精灵宠物系统 ============
-var PET_STAGES = [
-  {emoji:'🥚', name:'健身蛋', need:0,  desc:'一颗充满潜力的健身蛋…开始训练来孵化它吧！', glow:''},
-  {emoji:'🐣', name:'小豆丁', need:3,  desc:'刚破壳的健身精灵，还很稚嫩，但充满活力！', glow:'drop-shadow(0 0 12px #FCD34D)'},
-  {emoji:'🐤', name:'活力鸟', need:10, desc:'已经养成训练习惯，翅膀越来越有力了！', glow:'drop-shadow(0 0 14px #FB923C)'},
-  {emoji:'🦅', name:'战鹰',   need:25, desc:'训练已经刻进DNA，空中霸主级别的存在！', glow:'drop-shadow(0 0 18px #F97316)'},
-  {emoji:'🐉', name:'龙王',   need:50, desc:'健身之巅！你就是它的神。传说级精灵！', glow:'drop-shadow(0 0 22px #EF4444)'}
-];
-
+// ============ 🐉 健身精灵宠物系统（5物种 + 1隐藏） ============
 var PET_MOODS = ['😊 元气满满','🙂 状态不错','😐 有点无聊','😢 好想训练','😭 快要饿死了…'];
 
-function getPetData() {
+var PET_SPECIES = {
+  fireDragon: {
+    id:'fireDragon', name:'🔥 火焰龙', rarity:'普通', rarityWeight:40,
+    speciesEmoji:'🐉',
+    theme: { bg:'linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 50%, #FED7AA 100%)', border:'#FED7AA', nameColor:'#C2410C',
+      stageBg:'rgba(251,191,36,0.25)', stageColor:'#A16207', evoBarBg:'#FED7AA', evoFill:'linear-gradient(90deg, #F97316, #EF4444)',
+      darkBg:'linear-gradient(135deg, #2D1A0C 0%, #3D2010 50%, #2D1A0C 100%)', darkBorder:'#5C3A1A', darkNameColor:'#FB923C',
+      darkStageBg:'rgba(251,191,36,0.15)', darkStageColor:'#FBBF24', darkEvoBarBg:'#5C3A1A', rarityBadgeBg:'#FED7AA', rarityBadgeColor:'#92400E',
+      darkRarityBadgeBg:'#78350F', darkRarityBadgeColor:'#FBBF24' },
+    stages:[
+      {emoji:'🥚', name:'龙蛋', need:0,  glow:'', desc:'一枚温热的龙蛋，等待你的汗水孵化…'},
+      {emoji:'🐣', name:'雏龙', need:3,  glow:'drop-shadow(0 0 12px #FCD34D)', desc:'破壳了！小龙崽充满活力！'},
+      {emoji:'🐤', name:'炎雀', need:10, glow:'drop-shadow(0 0 14px #FB923C)', desc:'火焰在翅膀间闪烁！'},
+      {emoji:'🦅', name:'烈鹰', need:25, glow:'drop-shadow(0 0 18px #F97316)', desc:'天空都被灼烧的霸主！'},
+      {emoji:'🐉', name:'炎龙王', need:50, glow:'drop-shadow(0 0 22px #EF4444)', desc:'传说级！烈焰焚天，健身之神见证！'}
+    ],
+    msgs:{ fresh:['吼~今天火力全开！🔥','再练一组我就能喷火了！','烈焰般的训练激情！','燃起来了！💪'], rested:['火焰需要燃料…明天继续？','记得补充蛋白质！🍗','休息是为了更旺的火'], lazy:['火要灭了…快训练！😢','再不动我就要变成煤渣了！'], starving:['火焰熄灭了！救火！😭','我的龙息呢！快动起来！🔥'] }
+  },
+  frostWolf: {
+    id:'frostWolf', name:'❄️ 冰霜狼', rarity:'普通', rarityWeight:30,
+    speciesEmoji:'🐺',
+    theme: { bg:'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 50%, #BAE6FD 100%)', border:'#BAE6FD', nameColor:'#0369A1',
+      stageBg:'rgba(14,165,233,0.2)', stageColor:'#0369A1', evoBarBg:'#BAE6FD', evoFill:'linear-gradient(90deg, #0EA5E9, #0284C7)',
+      darkBg:'linear-gradient(135deg, #0C2233 0%, #0F2B40 50%, #0C2233 100%)', darkBorder:'#1A4A6B', darkNameColor:'#38BDF8',
+      darkStageBg:'rgba(14,165,233,0.12)', darkStageColor:'#7DD3FC', darkEvoBarBg:'#1A4A6B', rarityBadgeBg:'#BAE6FD', rarityBadgeColor:'#0369A1',
+      darkRarityBadgeBg:'#1A4A6B', darkRarityBadgeColor:'#7DD3FC' },
+    stages:[
+      {emoji:'🥚', name:'冰卵', need:0,  glow:'', desc:'一颗散发寒气的冰卵…'},
+      {emoji:'🐾', name:'霜爪', need:3,  glow:'drop-shadow(0 0 12px #7DD3FC)', desc:'小爪子踏上冰原！'},
+      {emoji:'🦊', name:'冰狐', need:10, glow:'drop-shadow(0 0 14px #38BDF8)', desc:'敏捷如冰上之狐！'},
+      {emoji:'🐺', name:'霜狼', need:25, glow:'drop-shadow(0 0 18px #0EA5E9)', desc:'狼群之首，极地霸主！'},
+      {emoji:'❄️', name:'冰狼王', need:50, glow:'drop-shadow(0 0 22px #0284C7)', desc:'极地传说！冰封万里的力量！'}
+    ],
+    msgs:{ fresh:['嗷呜~今天帅呆了！❄️','冰原上最靓的仔！','冷酷又强大~','狼群之王就是我！🐺'], rested:['休息一天恢复能量~','别让冰融化…'], lazy:['冰在融化…快回来！😢','狼群在等你'], starving:['我要变回冰渣了！😭','极寒之力在消散！'] }
+  },
+  thunderTiger: {
+    id:'thunderTiger', name:'⚡ 雷霆虎', rarity:'稀有', rarityWeight:20,
+    speciesEmoji:'🐯',
+    theme: { bg:'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 50%, #FDE68A 100%)', border:'#FDE68A', nameColor:'#A16207',
+      stageBg:'rgba(250,204,21,0.25)', stageColor:'#A16207', evoBarBg:'#FDE68A', evoFill:'linear-gradient(90deg, #EAB308, #CA8A04)',
+      darkBg:'linear-gradient(135deg, #2D2000 0%, #3D2A00 50%, #2D2000 100%)', darkBorder:'#5C4200', darkNameColor:'#FACC15',
+      darkStageBg:'rgba(250,204,21,0.12)', darkStageColor:'#FDE68A', darkEvoBarBg:'#5C4200', rarityBadgeBg:'#FDE68A', rarityBadgeColor:'#854D0E',
+      darkRarityBadgeBg:'#713F12', darkRarityBadgeColor:'#FACC15' },
+    stages:[
+      {emoji:'🥚', name:'雷卵', need:0,  glow:'', desc:'蛋壳上有微弱电光…'},
+      {emoji:'🐱', name:'电猫', need:3,  glow:'drop-shadow(0 0 12px #FDE68A)', desc:'小爪子带着静电！'},
+      {emoji:'😼', name:'雷豹', need:10, glow:'drop-shadow(0 0 14px #EAB308)', desc:'速度快如闪电！'},
+      {emoji:'🐯', name:'雷霆虎', need:25, glow:'drop-shadow(0 0 18px #CA8A04)', desc:'一声虎啸，雷霆万钧！'},
+      {emoji:'⚡', name:'雷虎神', need:50, glow:'drop-shadow(0 0 22px #A16207)', desc:'掌控雷电！健身界的天雷地火！'}
+    ],
+    msgs:{ fresh:['炸裂！⚡','电力全开的一天！','我的雷电能劈开杠铃！','霹雳无敌！🐯'], rested:['电量恢复中…⚡','蓄力中…'], lazy:['电压过低…快充电！😢','电能快耗尽了'], starving:['完全没电了！😭','雷霆之力消失了！'] }
+  },
+  jadeDeer: {
+    id:'jadeDeer', name:'🌿 翡翠鹿', rarity:'史诗', rarityWeight:10,
+    speciesEmoji:'🦌',
+    theme: { bg:'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 50%, #BBF7D0 100%)', border:'#BBF7D0', nameColor:'#15803D',
+      stageBg:'rgba(34,197,94,0.2)', stageColor:'#15803D', evoBarBg:'#BBF7D0', evoFill:'linear-gradient(90deg, #22C55E, #16A34A)',
+      darkBg:'linear-gradient(135deg, #0C2A14 0%, #0F3319 50%, #0C2A14 100%)', darkBorder:'#1A5C2F', darkNameColor:'#4ADE80',
+      darkStageBg:'rgba(34,197,94,0.12)', darkStageColor:'#86EFAC', darkEvoBarBg:'#1A5C2F', rarityBadgeBg:'#BBF7D0', rarityBadgeColor:'#15803D',
+      darkRarityBadgeBg:'#1A5C2F', darkRarityBadgeColor:'#86EFAC' },
+    stages:[
+      {emoji:'🥚', name:'翠卵', need:0,  glow:'', desc:'一颗散发草木清香的蛋…'},
+      {emoji:'🌱', name:'灵芽', need:3,  glow:'drop-shadow(0 0 12px #86EFAC)', desc:'嫩芽破土，生机盎然！'},
+      {emoji:'🐇', name:'翠兔', need:10, glow:'drop-shadow(0 0 14px #4ADE80)', desc:'在森林中矫健穿行！'},
+      {emoji:'🦌', name:'翡翠鹿', need:25, glow:'drop-shadow(0 0 18px #22C55E)', desc:'森林精灵，身姿优雅而强大！'},
+      {emoji:'🌳', name:'生命古鹿', need:50, glow:'drop-shadow(0 0 22px #15803D)', desc:'万林之王！生命之力无穷无尽！'}
+    ],
+    msgs:{ fresh:['生机勃勃的一天！🌿','森林之力在流淌~','优雅地变强！','这就是自然的力量！🦌'], rested:['静待花开…🌱','大地在为我蓄能'], lazy:['森林在枯萎…😢','我的叶子要黄了！'], starving:['要变成枯木了！😭','救救这片森林！'] }
+  },
+  phantomUnicorn: {
+    id:'phantomUnicorn', name:'🌈 幻光独角兽', rarity:'隐藏', rarityWeight:0,
+    speciesEmoji:'🦄', needStreak:30,
+    theme: { bg:'linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 50%, #FBCFE8 100%)', border:'#F9A8D4', nameColor:'#9D174D',
+      stageBg:'rgba(244,114,182,0.2)', stageColor:'#9D174D', evoBarBg:'#FBCFE8', evoFill:'linear-gradient(90deg, #EC4899, #DB2777, #7C3AED)',
+      darkBg:'linear-gradient(135deg, #2D0A24 0%, #3D0E32 50%, #2D0A24 100%)', darkBorder:'#5C1A4A', darkNameColor:'#F472B6',
+      darkStageBg:'rgba(244,114,182,0.12)', darkStageColor:'#F9A8D4', darkEvoBarBg:'#5C1A4A', rarityBadgeBg:'#FBCFE8', rarityBadgeColor:'#9D174D',
+      darkRarityBadgeBg:'#831843', darkRarityBadgeColor:'#F9A8D4' },
+    stages:[
+      {emoji:'🥚', name:'光之卵', need:0,  glow:'', desc:'一颗散发七彩微光的蛋…'},
+      {emoji:'⭐', name:'星光', need:3,  glow:'drop-shadow(0 0 14px #F9A8D4)', desc:'星辰坠落，化作一只小精灵！'},
+      {emoji:'🦋', name:'幻蝶', need:10, glow:'drop-shadow(0 0 16px #F472B6)', desc:'彩虹翅膀，翩翩起舞！'},
+      {emoji:'🌈', name:'彩虹驹', need:25, glow:'drop-shadow(0 0 20px #EC4899)', desc:'踏彩虹而来，圣光闪耀！'},
+      {emoji:'🦄', name:'圣独角兽', need:50, glow:'drop-shadow(0 0 26px #DB2777)', desc:'传说の终极形态！万物之灵，健身之神眷顾者！'}
+    ],
+    msgs:{ fresh:['圣光与你同在 ✨','梦幻般的一天！','你是被选中的那个人！🦄','传说正在书写中~'], rested:['星光在恢复…✨','等待下一场奇迹'], lazy:['光芒在变暗…快回来！😢','彩虹要褪色了…'], starving:['圣光即将熄灭！😭','独角兽之角在哭泣…'] }
+  }
+};
+
+// 获取用户训练数据
+function petGetStats() {
   var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
   var totalDays = new Set(hist.map(function(h){ return h.date; })).size;
+  var dates = Object.keys(hist.reduce(function(acc,h){ acc[h.date]=true; return acc; },{}));
+  dates.sort();
+  // 计算当前连签天数
+  var streak = 0;
+  if (dates.length) {
+    var today = new Date(); today.setHours(0,0,0,0);
+    var yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
+    var lastDate = new Date(dates[dates.length-1]+'T00:00:00');
+    // 最近一次训练必须是今天或昨天才开始算连签
+    if (lastDate.getTime() >= yesterday.getTime()) {
+      streak = 1;
+      for (var i = dates.length-2; i >= 0; i--) {
+        var prev = new Date(dates[i]+'T00:00:00');
+        var next = new Date(dates[i+1]+'T00:00:00');
+        var diff = (next - prev) / 86400000;
+        if (diff <= 2) { streak++; } else { break; }
+      }
+    }
+  }
+  var lastDateStr = hist.length > 0 ? hist.reduce(function(a,b){ return a.date>b.date?a:b; }).date : null;
+  var daysSince = lastDateStr ? Math.floor((new Date() - new Date(lastDateStr+'T00:00:00')) / 86400000) : 999;
+  return { totalDays:totalDays, streak:streak, daysSince:daysSince, dates:dates };
+}
+
+// 获取/初始化当前精灵物种
+function petGetSpecies() {
+  var speciesId = localStorage.getItem('fitbuddy_pet_species');
+  var unlocked = JSON.parse(localStorage.getItem('fitbuddy_pet_unlocked') || '[]');
+  var stats = petGetStats();
+
+  // 所有普通物种 ID 列表
+  var normalIds = [];
+  for (var k in PET_SPECIES) { if (PET_SPECIES[k].rarityWeight > 0) normalIds.push(k); }
+
+  // 初始化：首次使用时解锁所有普通物种
+  if (unlocked.length === 0) {
+    unlocked = normalIds.slice();
+    localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
+  } else {
+    // 兼容旧数据：补齐缺失的普通物种
+    var changed = false;
+    for (var i = 0; i < normalIds.length; i++) {
+      if (unlocked.indexOf(normalIds[i]) < 0) { unlocked.push(normalIds[i]); changed = true; }
+    }
+    if (changed) localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
+  }
+
+  // 迁移旧用户：有训练记录但没物种，分配火焰龙
+  if (!speciesId && stats.totalDays > 0) {
+    speciesId = 'fireDragon';
+    localStorage.setItem('fitbuddy_pet_species', speciesId);
+  }
+  // 全新用户：首次生成计划时随机分配
+  if (!speciesId) {
+    var pool = [];
+    for (var j = 0; j < normalIds.length; j++) {
+      var id = normalIds[j];
+      var sp = PET_SPECIES[id];
+      for (var w = 0; w < sp.rarityWeight; w++) pool.push(id);
+    }
+    speciesId = pool[Math.floor(Math.random() * pool.length)];
+    localStorage.setItem('fitbuddy_pet_species', speciesId);
+  }
+
+  // 检查隐藏款解锁条件
+  if (unlocked.indexOf('phantomUnicorn') < 0) {
+    var hu = PET_SPECIES.phantomUnicorn;
+    if (stats.streak >= (hu.needStreak || 30)) {
+      unlocked.push('phantomUnicorn');
+      localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
+    }
+  }
+
+  return { speciesId:speciesId, unlocked:unlocked };
+}
+
+// 切换精灵
+function petSwitch(speciesId) {
+  var info = petGetSpecies();
+  if (info.unlocked.indexOf(speciesId) < 0) return;
+  localStorage.setItem('fitbuddy_pet_species', speciesId);
+  refreshPet();
+}
+
+// 获取当前精灵完整数据
+function getPetData() {
+  var stats = petGetStats();
+  var info = petGetSpecies();
+  var sp = PET_SPECIES[info.speciesId];
+  var totalDays = stats.totalDays;
+
   // 确定进化阶段
   var stage = 0;
-  for (var i = PET_STAGES.length-1; i >= 0; i--) {
-    if (totalDays >= PET_STAGES[i].need) { stage = i; break; }
+  for (var i = sp.stages.length-1; i >= 0; i--) {
+    if (totalDays >= sp.stages[i].need) { stage = i; break; }
   }
-  var cur = PET_STAGES[stage];
-  var nxt = PET_STAGES[stage+1] || PET_STAGES[stage];
+  var cur = sp.stages[stage];
+  var nxt = sp.stages[stage+1] || sp.stages[stage];
   var evoProgress = (nxt.need - cur.need) > 0 ? Math.min(100, Math.round((totalDays - cur.need) / (nxt.need - cur.need) * 100)) : 100;
-  // 心情：距离上次训练的天数
-  var lastDate = hist.length > 0 ? hist.reduce(function(a,b){ return a.date>b.date?a:b; }).date : null;
-  var daysSince = lastDate ? Math.floor((new Date() - new Date(lastDate+'T00:00:00')) / 86400000) : 999;
+
+  var daysSince = stats.daysSince;
   var moodIdx = Math.min(4, Math.max(0, daysSince));
   var mood = PET_MOODS[moodIdx];
   var hungry = daysSince >= 3 && totalDays > 0;
-  return { stage:stage, totalDays:totalDays, emoji:cur.emoji, name:cur.name, desc:cur.desc,
-    glow:cur.glow, evoProgress:evoProgress, nxtName:nxt.name, nxtNeed:nxt.need,
-    mood:mood, hungry:hungry, daysSince:daysSince, justEvolved:false };
+
+  return {
+    speciesId: info.speciesId, unlocked: info.unlocked,
+    stage:stage, totalDays:totalDays, streak:stats.streak,
+    emoji:cur.emoji, name:cur.name, desc:cur.desc, glow:cur.glow,
+    evoProgress:evoProgress, nxtName:nxt.name, nxtNeed:nxt.need,
+    mood:mood, hungry:hungry, daysSince:daysSince, justEvolved:false,
+    sp:sp
+  };
 }
 
 function renderPetCard() {
   var p = getPetData();
-  var petKey = 'fitbuddy_pet_laststage';
+  var sp = p.sp;
+  // 进化检测
+  var petKey = 'fitbuddy_pet_laststage_'+p.speciesId;
   var lastStage = parseInt(localStorage.getItem(petKey) || '0');
   if (p.stage > lastStage) {
     p.justEvolved = true;
     localStorage.setItem(petKey, p.stage);
   }
+  // 当前主题（支持深色模式）
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var t = sp.theme;
+  var cardBg = isDark ? t.darkBg : t.bg;
+  var cardBorder = isDark ? t.darkBorder : t.border;
+  var nameColor = isDark ? t.darkNameColor : t.nameColor;
+  var stageBg = isDark ? t.darkStageBg : t.stageBg;
+  var stageColor = isDark ? t.darkStageColor : t.stageColor;
+  var evoBarBg = isDark ? t.darkEvoBarBg : t.evoBarBg;
+  var evoFill = t.evoFill;
+  var rarityBadgeBg = isDark ? t.darkRarityBadgeBg : t.rarityBadgeBg;
+  var rarityBadgeColor = isDark ? t.darkRarityBadgeColor : t.rarityBadgeColor;
+
   var msg = p.daysSince === 0 ? '今天练过了，' + p.mood : p.daysSince >= 3 ? '我饿了 ' + p.daysSince + ' 天了🥺 快训练吧！' : p.mood;
   var glowStyle = p.glow ? 'filter:'+p.glow+';' : '';
   var hungryClass = p.hungry ? ' hungry' : '';
   var evoClass = p.justEvolved ? ' evolving' : '';
-  var html = '<div class="pet-card'+hungryClass+evoClass+'" onclick="petInteract(event)" id="petCard">';
+
+  // 标题
+  var html = '<div style="font-size:13px;font-weight:700;color:var(--primary);margin-top:4px;text-align:center;">🐉 你的健身精灵</div>';
+
+  html += '<div class="pet-card'+hungryClass+evoClass+'" onclick="petInteract(event)" id="petCard"';
+  html += ' style="background:'+cardBg+';border-color:'+cardBorder+';">';
   html += '<span class="pet-creature" style="'+glowStyle+'">'+p.emoji+'</span>';
-  html += '<div class="pet-name">'+p.name+'</div>';
-  html += '<div class="pet-stage">Lv.'+(p.stage+1)+' · '+p.totalDays+'天训练</div>';
-  html += '<div class="pet-mood">'+msg+'</div>';
-  html += '<div class="pet-evo-bar"><div class="pet-evo-fill" style="width:'+p.evoProgress+'%"></div></div>';
+  html += '<div class="pet-name" style="color:'+nameColor+'">'+p.name;
+  html += '<span class="pet-rarity-badge" style="background:'+rarityBadgeBg+';color:'+rarityBadgeColor+'">'+sp.rarity+'</span>';
+  html += '</div>';
+  html += '<div class="pet-stage" style="background:'+stageBg+';color:'+stageColor+'">Lv.'+(p.stage+1)+' · '+p.totalDays+'天训练</div>';
+  html += '<div class="pet-mood" style="color:'+(isDark?'#A8A29E':'#78716C')+'">'+msg+'</div>';
+  html += '<div class="pet-evo-bar" style="background:'+evoBarBg+'"><div class="pet-evo-fill" style="width:'+p.evoProgress+'%;background:'+evoFill+'"></div></div>';
   html += '<div style="font-size:10px;color:#A8A29E;margin-top:3px;">→ 下一形态：'+p.nxtName+' ('+p.evoProgress+'%)</div>';
   html += '<div class="pet-tap-hint">👆 点我互动</div>';
   html += '</div>';
+
+  // 精灵切换栏（仅当有多个解锁时显示）
+  if (p.unlocked.length > 1) {
+    html += '<div class="pet-switch-bar">';
+    for (var i = 0; i < p.unlocked.length; i++) {
+      var uid = p.unlocked[i];
+      var usp = PET_SPECIES[uid];
+      var active = uid === p.speciesId ? ' active' : '';
+      html += '<div class="pet-switch-dot'+active+'" onclick="petSwitch(\''+uid+'\')" title="'+usp.name+' ('+usp.rarity+')">'+usp.speciesEmoji+'</div>';
+    }
+    // 还有未解锁的显示锁定图标
+    var hasHiddenLocked = p.unlocked.indexOf('phantomUnicorn') < 0;
+    if (hasHiddenLocked) {
+      html += '<div class="pet-switch-dot locked" title="???（连签'+PET_SPECIES.phantomUnicorn.needStreak+'天解锁）">🔒</div>';
+    }
+    html += '</div>';
+  }
+
   return html;
 }
 
 function petInteract(e) {
   e.stopPropagation();
   var p = getPetData();
+  var sp = p.sp;
   var msgs;
   if (p.daysSince === 0) {
-    msgs = ['嗷~今天状态好棒！💪','再练一组我就能进化了！','你是最好的训练搭档！🧡','我感觉力量在增长！','今天的汗水，明天的肌肉！'];
+    msgs = sp.msgs.fresh;
   } else if (p.daysSince === 1) {
-    msgs = ['休息一天也不错~','记得吃点蛋白质哦！🍗','明天该训练了吧？','我在等你…'];
+    msgs = sp.msgs.rested;
   } else if (p.daysSince === 2) {
-    msgs = ['主人…我好想训练 😢','再不练我就要变回蛋了！','动起来吧，哪怕一组也好！'];
+    msgs = sp.msgs.lazy;
   } else {
-    msgs = ['快救救我！我快饿扁了 😭','你的肌肉在哭泣…','我不做饿死鬼！快训练！🔥'];
+    msgs = sp.msgs.starving;
   }
   var msg = msgs[Math.floor(Math.random() * msgs.length)];
 
@@ -4417,10 +4666,15 @@ function petInteract(e) {
   card.style.position = 'relative';
   card.appendChild(bubble);
   // 撒星星
+  var stars = ['✨','💫','⭐','🌟','💪','🔥'];
+  if (p.speciesId === 'frostWolf') stars = ['✨','❄️','💎','🌟','💪','🐺'];
+  if (p.speciesId === 'thunderTiger') stars = ['✨','⚡','💛','🌟','💪','🐯'];
+  if (p.speciesId === 'jadeDeer') stars = ['✨','🌿','💚','🌟','💪','🦌'];
+  if (p.speciesId === 'phantomUnicorn') stars = ['✨','🌈','💖','🦋','💪','🦄'];
   for (var i=0; i<6; i++) {
     var s = document.createElement('span');
     s.className = 'pet-sparkle';
-    s.textContent = ['✨','💫','⭐','🌟','💪','🔥'][i];
+    s.textContent = stars[i];
     s.style.left = (20 + Math.random()*60) + '%';
     s.style.top = (10 + Math.random()*40) + '%';
     s.style.animationDelay = Math.random()*0.3 + 's';
@@ -4432,11 +4686,9 @@ function petInteract(e) {
 
 // 训练完成后刷新宠物
 function refreshPet() {
-  var planResult = document.getElementById('planResult');
-  if (!planResult || !planResult.innerHTML.trim()) return;
-  // 找到 planResult 中的 petCard 并替换
-  var card = document.getElementById('petCard');
-  if (card) { card.outerHTML = renderPetCard(); }
+  var area = document.getElementById('petArea');
+  if (!area) return;
+  area.innerHTML = renderPetCard();
 }
 
 
