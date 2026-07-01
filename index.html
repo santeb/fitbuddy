@@ -450,6 +450,105 @@ input,select{font-family:inherit;}
   [data-theme="dark"] .card,[data-theme="dark"] .plan-day,[data-theme="dark"] .nutrition-card,[data-theme="dark"] .rest-day,[data-theme="dark"] .tips-banner,[data-theme="dark"] .warmup-section,[data-theme="dark"] .week-info{background:#fff!important;color:#000!important;}
   [data-theme="dark"] .summary-card{background:#f5f5f5!important;color:#000!important;}
 }
+
+/* ====== 健身精灵宠物 ====== */
+.pet-card {
+  background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 50%, #FED7AA 100%);
+  border-radius: 20px;
+  padding: 20px 16px;
+  margin: 16px 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  border: 2px solid #FED7AA;
+  transition: all 0.5s;
+  cursor: pointer;
+  user-select: none;
+}
+[data-theme="dark"] .pet-card {
+  background: linear-gradient(135deg, #1C1917 0%, #292524 50%, #1C1917 100%);
+  border-color: #44403C;
+}
+.pet-card:active { transform: scale(0.98); }
+.pet-card .pet-creature {
+  font-size: 72px;
+  display: block;
+  transition: transform 0.3s;
+  line-height: 1;
+  animation: petFloat 3s ease-in-out infinite;
+}
+@keyframes petFloat {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.pet-card.hungry .pet-creature {
+  animation: petShake 0.5s ease-in-out infinite;
+}
+@keyframes petShake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+.pet-card .pet-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #C2410C;
+  margin-top: 4px;
+}
+[data-theme="dark"] .pet-card .pet-name { color: #FB923C; }
+.pet-card .pet-stage {
+  font-size: 11px;
+  color: #A16207;
+  background: rgba(251,191,36,0.25);
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+[data-theme="dark"] .pet-card .pet-stage { color: #FBBF24; background: rgba(251,191,36,0.15); }
+.pet-card .pet-mood {
+  font-size: 12px;
+  color: #78716C;
+  margin-top: 4px;
+}
+.pet-card .pet-evo-bar {
+  width: 100%;
+  height: 6px;
+  background: #FED7AA;
+  border-radius: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+[data-theme="dark"] .pet-card .pet-evo-bar { background: #44403C; }
+.pet-card .pet-evo-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #F97316, #EF4444);
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.pet-card .pet-sparkle {
+  position: absolute;
+  pointer-events: none;
+  animation: sparkleUp 1.5s ease-out forwards;
+  font-size: 18px;
+  opacity: 0;
+}
+@keyframes sparkleUp {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.3); }
+}
+.pet-card.evolving { animation: petEvo 0.6s ease-out; }
+@keyframes petEvo {
+  0% { transform: scale(1); filter: brightness(2); }
+  50% { transform: scale(1.1); filter: brightness(1.5); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+.pet-tap-hint {
+  font-size: 10px;
+  color: #A8A29E;
+  margin-top: 6px;
+  opacity: 0.7;
+}
 </style>
 </head>
 <body>
@@ -1841,6 +1940,9 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   html += '<div style="text-align:center;margin:16px 0;">'+
     '<button class="btn-generate" style="background:var(--card);color:var(--text);border:1.5px solid var(--border);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="exportPlan()">'+
     '🖨 打印/导出计划</button></div>';
+  // 🐉 健身精灵宠物
+  html += '<div style="font-size:13px;font-weight:700;color:var(--primary);margin-top:4px;text-align:center;">🐉 你的健身精灵</div>';
+  html += renderPetCard();
   document.getElementById("planResult").innerHTML = html;
   updateTodayBanner();
 }
@@ -3799,7 +3901,7 @@ updateTodayBanner();
 window.addEventListener('load', function() {
   var planResult = document.getElementById("planResult");
   if (planResult && !planResult.innerHTML.trim()) {
-    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🏋️</div><div class="loading-text">选择目标、水平和天数，点击「生成我的计划」开始</div></div>';
+    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">选择目标、水平和天数，点击「生成我的计划」开始训练，顺便领养你的健身精灵！</div></div>';
   }
   // 🎮 初始化游戏化系统
   updateHeaderStreak();
@@ -4235,6 +4337,109 @@ function getLevelProgress() {
   return {cur:cur, nxt:nxt, progress:progress, total:totalDays};
 }
 
+// ============ 🐉 健身精灵宠物系统 ============
+var PET_STAGES = [
+  {emoji:'🥚', name:'健身蛋', need:0,  desc:'一颗充满潜力的健身蛋…开始训练来孵化它吧！', glow:''},
+  {emoji:'🐣', name:'小豆丁', need:3,  desc:'刚破壳的健身精灵，还很稚嫩，但充满活力！', glow:'drop-shadow(0 0 12px #FCD34D)'},
+  {emoji:'🐤', name:'活力鸟', need:10, desc:'已经养成训练习惯，翅膀越来越有力了！', glow:'drop-shadow(0 0 14px #FB923C)'},
+  {emoji:'🦅', name:'战鹰',   need:25, desc:'训练已经刻进DNA，空中霸主级别的存在！', glow:'drop-shadow(0 0 18px #F97316)'},
+  {emoji:'🐉', name:'龙王',   need:50, desc:'健身之巅！你就是它的神。传说级精灵！', glow:'drop-shadow(0 0 22px #EF4444)'}
+];
+
+var PET_MOODS = ['😊 元气满满','🙂 状态不错','😐 有点无聊','😢 好想训练','😭 快要饿死了…'];
+
+function getPetData() {
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var totalDays = new Set(hist.map(function(h){ return h.date; })).size;
+  // 确定进化阶段
+  var stage = 0;
+  for (var i = PET_STAGES.length-1; i >= 0; i--) {
+    if (totalDays >= PET_STAGES[i].need) { stage = i; break; }
+  }
+  var cur = PET_STAGES[stage];
+  var nxt = PET_STAGES[stage+1] || PET_STAGES[stage];
+  var evoProgress = (nxt.need - cur.need) > 0 ? Math.min(100, Math.round((totalDays - cur.need) / (nxt.need - cur.need) * 100)) : 100;
+  // 心情：距离上次训练的天数
+  var lastDate = hist.length > 0 ? hist.reduce(function(a,b){ return a.date>b.date?a:b; }).date : null;
+  var daysSince = lastDate ? Math.floor((new Date() - new Date(lastDate+'T00:00:00')) / 86400000) : 999;
+  var moodIdx = Math.min(4, Math.max(0, daysSince));
+  var mood = PET_MOODS[moodIdx];
+  var hungry = daysSince >= 3 && totalDays > 0;
+  return { stage:stage, totalDays:totalDays, emoji:cur.emoji, name:cur.name, desc:cur.desc,
+    glow:cur.glow, evoProgress:evoProgress, nxtName:nxt.name, nxtNeed:nxt.need,
+    mood:mood, hungry:hungry, daysSince:daysSince, justEvolved:false };
+}
+
+function renderPetCard() {
+  var p = getPetData();
+  var petKey = 'fitbuddy_pet_laststage';
+  var lastStage = parseInt(localStorage.getItem(petKey) || '0');
+  if (p.stage > lastStage) {
+    p.justEvolved = true;
+    localStorage.setItem(petKey, p.stage);
+  }
+  var msg = p.daysSince === 0 ? '今天练过了，' + p.mood : p.daysSince >= 3 ? '我饿了 ' + p.daysSince + ' 天了🥺 快训练吧！' : p.mood;
+  var glowStyle = p.glow ? 'filter:'+p.glow+';' : '';
+  var hungryClass = p.hungry ? ' hungry' : '';
+  var evoClass = p.justEvolved ? ' evolving' : '';
+  var html = '<div class="pet-card'+hungryClass+evoClass+'" onclick="petInteract(event)" id="petCard">';
+  html += '<span class="pet-creature" style="'+glowStyle+'">'+p.emoji+'</span>';
+  html += '<div class="pet-name">'+p.name+'</div>';
+  html += '<div class="pet-stage">Lv.'+(p.stage+1)+' · '+p.totalDays+'天训练</div>';
+  html += '<div class="pet-mood">'+msg+'</div>';
+  html += '<div class="pet-evo-bar"><div class="pet-evo-fill" style="width:'+p.evoProgress+'%"></div></div>';
+  html += '<div style="font-size:10px;color:#A8A29E;margin-top:3px;">→ 下一形态：'+p.nxtName+' ('+p.evoProgress+'%)</div>';
+  html += '<div class="pet-tap-hint">👆 点我互动</div>';
+  html += '</div>';
+  return html;
+}
+
+function petInteract(e) {
+  e.stopPropagation();
+  var p = getPetData();
+  var msgs;
+  if (p.daysSince === 0) {
+    msgs = ['嗷~今天状态好棒！💪','再练一组我就能进化了！','你是最好的训练搭档！🧡','我感觉力量在增长！','今天的汗水，明天的肌肉！'];
+  } else if (p.daysSince === 1) {
+    msgs = ['休息一天也不错~','记得吃点蛋白质哦！🍗','明天该训练了吧？','我在等你…'];
+  } else if (p.daysSince === 2) {
+    msgs = ['主人…我好想训练 😢','再不练我就要变回蛋了！','动起来吧，哪怕一组也好！'];
+  } else {
+    msgs = ['快救救我！我快饿扁了 😭','你的肌肉在哭泣…','我不做饿死鬼！快训练！🔥'];
+  }
+  var msg = msgs[Math.floor(Math.random() * msgs.length)];
+
+  // 弹出气泡
+  var card = document.getElementById('petCard');
+  var bubble = document.createElement('div');
+  bubble.style.cssText = 'position:absolute;top:-36px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:6px 14px;border-radius:14px;font-size:13px;white-space:nowrap;z-index:99;animation:petFloat 0.3s ease-out,sparkleUp 2s ease-out 1.2s forwards;pointer-events:none;';
+  bubble.textContent = msg;
+  card.style.position = 'relative';
+  card.appendChild(bubble);
+  // 撒星星
+  for (var i=0; i<6; i++) {
+    var s = document.createElement('span');
+    s.className = 'pet-sparkle';
+    s.textContent = ['✨','💫','⭐','🌟','💪','🔥'][i];
+    s.style.left = (20 + Math.random()*60) + '%';
+    s.style.top = (10 + Math.random()*40) + '%';
+    s.style.animationDelay = Math.random()*0.3 + 's';
+    card.appendChild(s);
+    setTimeout(function(){ s.remove(); }, 1600);
+  }
+  setTimeout(function(){ bubble.remove(); }, 2000);
+}
+
+// 训练完成后刷新宠物
+function refreshPet() {
+  var planResult = document.getElementById('planResult');
+  if (!planResult || !planResult.innerHTML.trim()) return;
+  // 找到 planResult 中的 petCard 并替换
+  var card = document.getElementById('petCard');
+  if (card) { card.outerHTML = renderPetCard(); }
+}
+
+
 // --- 热力图渲染 ---
 function renderHeatmapHTML(hist) {
   var dates = {};
@@ -4297,6 +4502,7 @@ function afterTrainingDone() {
   updateStreak();
   checkAchievements();
   updateHeaderStreak();
+  refreshPet();
 }
 </script>
 </body>
