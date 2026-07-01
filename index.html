@@ -1743,7 +1743,7 @@ function renderRecoveryCard() {
   selected.forEach(function(n) {
     var ex = EXES.find(function(e){ return e.n === n; });
     var tip = ex ? ex.tips : '';
-    html += '<div class="recovery-ex" title="'+tip+'" style="cursor:pointer;">'+n+'</div>';
+    html += '<div class="recovery-ex" title="'+tip+'" style="cursor:pointer;" onclick="showEx(\''+n.replace(/'/g,"\\'")+'\')">'+n+'</div>';
   });
   html += '</div></div>';
   return html;
