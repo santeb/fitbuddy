@@ -4459,19 +4459,52 @@ var PET_SPECIES = {
   }
 };
 
-// 获取用户训练数据
+// ============ 按物种独立进度存储 ============
+// 数据结构: fitbuddy_pet_data = { fireDragon:{days:5,lastDate:"2026-06-28"}, ... }
+function petGetAllData() {
+  try { return JSON.parse(localStorage.getItem('fitbuddy_pet_data') || '{}'); } catch(e) { return {}; }
+}
+function petSaveAllData(data) {
+  localStorage.setItem('fitbuddy_pet_data', JSON.stringify(data));
+}
+
+// 获取某物种的训练天数
+function petGetDays(speciesId) {
+  var data = petGetAllData();
+  return (data[speciesId] && data[speciesId].days) || 0;
+}
+
+// 获取某物种的 lastDate
+function petGetLastDate(speciesId) {
+  var data = petGetAllData();
+  return (data[speciesId] && data[speciesId].lastDate) || null;
+}
+
+// 训练完成后给当前精灵+1天（每天每物种至多一次）
+function petAddDay() {
+  var speciesId = localStorage.getItem('fitbuddy_pet_species');
+  if (!speciesId) return;
+  var today = new Date().toISOString().slice(0,10);
+  var data = petGetAllData();
+  if (!data[speciesId]) data[speciesId] = { days: 0, lastDate: null };
+  // 今天已经加过了？
+  if (data[speciesId].lastDate === today) return;
+  data[speciesId].days = (data[speciesId].days || 0) + 1;
+  data[speciesId].lastDate = today;
+  petSaveAllData(data);
+}
+
+// 全局训练统计（用于连签、热力图等，仍从共享 history 读取）
 function petGetStats() {
   var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
   var totalDays = new Set(hist.map(function(h){ return h.date; })).size;
   var dates = Object.keys(hist.reduce(function(acc,h){ acc[h.date]=true; return acc; },{}));
   dates.sort();
-  // 计算当前连签天数
   var streak = 0;
   if (dates.length) {
     var today = new Date(); today.setHours(0,0,0,0);
     var yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
     var lastDate = new Date(dates[dates.length-1]+'T00:00:00');
-    // 最近一次训练必须是今天或昨天才开始算连签
     if (lastDate.getTime() >= yesterday.getTime()) {
       streak = 1;
       for (var i = dates.length-2; i >= 0; i--) {
@@ -4482,16 +4515,13 @@ function petGetStats() {
       }
     }
   }
-  var lastDateStr = hist.length > 0 ? hist.reduce(function(a,b){ return a.date>b.date?a:b; }).date : null;
-  var daysSince = lastDateStr ? Math.floor((new Date() - new Date(lastDateStr+'T00:00:00')) / 86400000) : 999;
-  return { totalDays:totalDays, streak:streak, daysSince:daysSince, dates:dates };
+  return { totalDays:totalDays, streak:streak, dates:dates };
 }
 
 // 获取/初始化当前精灵物种
 function petGetSpecies() {
   var speciesId = localStorage.getItem('fitbuddy_pet_species');
   var unlocked = JSON.parse(localStorage.getItem('fitbuddy_pet_unlocked') || '[]');
-  var stats = petGetStats();
 
   // 所有普通物种 ID 列表
   var normalIds = [];
@@ -4502,7 +4532,6 @@ function petGetSpecies() {
     unlocked = normalIds.slice();
     localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
   } else {
-    // 兼容旧数据：补齐缺失的普通物种
     var changed = false;
     for (var i = 0; i < normalIds.length; i++) {
       if (unlocked.indexOf(normalIds[i]) < 0) { unlocked.push(normalIds[i]); changed = true; }
@@ -4510,11 +4539,20 @@ function petGetSpecies() {
     if (changed) localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
   }
 
-  // 迁移旧用户：有训练记录但没物种，分配火焰龙
-  if (!speciesId && stats.totalDays > 0) {
-    speciesId = 'fireDragon';
-    localStorage.setItem('fitbuddy_pet_species', speciesId);
+  // 迁移旧用户：有共享历史但没有独立精灵数据 → 把历史天数转给火焰龙
+  var petData = petGetAllData();
+  var hasPetData = Object.keys(petData).length > 0;
+  if (!hasPetData) {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+    var oldTotalDays = new Set(hist.map(function(h){ return h.date; })).size;
+    if (oldTotalDays > 0) {
+      var lastDate = hist.reduce(function(a,b){ return a.date>b.date?a:b; }).date;
+      petData.fireDragon = { days: oldTotalDays, lastDate: lastDate };
+      petSaveAllData(petData);
+      if (!speciesId) speciesId = 'fireDragon';
+    }
   }
+
   // 全新用户：首次生成计划时随机分配
   if (!speciesId) {
     var pool = [];
@@ -4527,7 +4565,6 @@ function petGetSpecies() {
     localStorage.setItem('fitbuddy_pet_species', speciesId);
   }
 
-  // 检查隐藏款解锁条件（由 checkHiddenUnlock 在训练完成后调用）
   return { speciesId:speciesId, unlocked:unlocked };
 }
 
@@ -4558,10 +4595,13 @@ function petSwitch(speciesId) {
 
 // 获取当前精灵完整数据
 function getPetData() {
-  var stats = petGetStats();
   var info = petGetSpecies();
   var sp = PET_SPECIES[info.speciesId];
-  var totalDays = stats.totalDays;
+  var totalDays = petGetDays(info.speciesId);
+
+  // 当前精灵的心情（基于该精灵上次训练日期）
+  var lastDateStr = petGetLastDate(info.speciesId);
+  var daysSince = lastDateStr ? Math.floor((new Date() - new Date(lastDateStr+'T00:00:00')) / 86400000) : 999;
 
   // 确定进化阶段
   var stage = 0;
@@ -4572,14 +4612,13 @@ function getPetData() {
   var nxt = sp.stages[stage+1] || sp.stages[stage];
   var evoProgress = (nxt.need - cur.need) > 0 ? Math.min(100, Math.round((totalDays - cur.need) / (nxt.need - cur.need) * 100)) : 100;
 
-  var daysSince = stats.daysSince;
   var moodIdx = Math.min(4, Math.max(0, daysSince));
   var mood = PET_MOODS[moodIdx];
   var hungry = daysSince >= 3 && totalDays > 0;
 
   return {
     speciesId: info.speciesId, unlocked: info.unlocked,
-    stage:stage, totalDays:totalDays, streak:stats.streak,
+    stage:stage, totalDays:totalDays, streak:0,
     emoji:cur.emoji, name:cur.name, desc:cur.desc, glow:cur.glow,
     evoProgress:evoProgress, nxtName:nxt.name, nxtNeed:nxt.need,
     mood:mood, hungry:hungry, daysSince:daysSince, justEvolved:false,
@@ -4765,6 +4804,7 @@ function afterTrainingDone() {
   updateStreak();
   checkAchievements();
   updateHeaderStreak();
+  petAddDay();          // 🐉 只给当前精灵+1天
   refreshPet();
   // 🌈 隐藏款随机触发检测
   if (checkHiddenUnlock()) {
