@@ -4402,12 +4402,12 @@ function saveAchievements(a) { localStorage.setItem('fitbuddy_ach', JSON.stringi
 // --- 连续打卡更新 ---
 function updateStreak() {
   var sd = getStreakData();
-  var today = new Date().toISOString().slice(0,10);
+  var today = getLocalDate();
   if (sd.lastDate === today) return sd; // 今天已打卡
 
   var yesterday = new Date();
   yesterday.setDate(yesterday.getDate()-1);
-  var yestStr = yesterday.toISOString().slice(0,10);
+  var yestStr = yesterday.getFullYear() + '-' + String(yesterday.getMonth()+1).padStart(2,'0') + '-' + String(yesterday.getDate()).padStart(2,'0');
 
   var dayBefore = new Date();
   dayBefore.setDate(dayBefore.getDate()-2);
@@ -4557,6 +4557,12 @@ function getLevelProgress() {
   var range = nxt.need - cur.need;
   var progress = range > 0 ? Math.min(100, Math.round((totalDays - cur.need) / range * 100)) : 100;
   return {cur:cur, nxt:nxt, progress:progress, total:totalDays};
+}
+
+// ============ 本地日期辅助（修复UTC时区问题：凌晨0-8点 @北京时间） ============
+function getLocalDate() {
+  var d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
 
 // ============ 🐉 健身精灵宠物系统（5物种 + 1隐藏） ============
@@ -4727,10 +4733,10 @@ function petGetLastDate(speciesId) {
 function petAddDay() {
   var speciesId = localStorage.getItem('fitbuddy_pet_species');
   if (!speciesId) return;
-  var today = new Date().toISOString().slice(0,10);
+  var today = getLocalDate();
   var data = petGetAllData();
   if (!data[speciesId]) data[speciesId] = { days: 0, lastDate: null };
-  // 今天已经加过了？
+  // 今天已经加过了？（使用本地日期，凌晨0-8点也能正常算新的一天）
   if (data[speciesId].lastDate === today) return;
   data[speciesId].days = (data[speciesId].days || 0) + 1;
   data[speciesId].lastDate = today;
@@ -4820,7 +4826,7 @@ function petGetSpecies() {
 function checkHiddenUnlock() {
   var unlocked = JSON.parse(localStorage.getItem('fitbuddy_pet_unlocked') || '[]');
   if (unlocked.indexOf('phantomUnicorn') >= 0) return false; // 已解锁
-  var today = new Date().toISOString().slice(0,10);
+  var today = getLocalDate();
   var lastCheck = localStorage.getItem('fitbuddy_hidden_check');
   if (lastCheck === today) return false; // 今天已经检查过
   localStorage.setItem('fitbuddy_hidden_check', today);
