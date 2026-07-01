@@ -1855,6 +1855,7 @@ function doGenerate() {
 
   savePrefs();
 
+
   // 保存用户资料（用于热量计算）
   (function saveProfile() {
     var prof = {};
@@ -2532,6 +2533,12 @@ function renderTipsBanner(tips) {
     '<ul>'+tips.map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul></div>';
 }
 
+// 用 planId 做 key 前缀，防止不同计划间勾选串号
+function doneKey(id) {
+  var pid = (lastPlan && lastPlan.goal) ? (lastPlan.goal + '_' + lastPlan.level + '_' + lastPlan.days) : 'none';
+  return 'fitbuddy_done_' + pid + '_' + id;
+}
+
 function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCalBurn, levelCfg, dayIdx) {
   // dayIdx：训练日在 trainingDays 中的索引，用于生成确定性 id（刷新后勾选状态可恢复）
   var exCount = day.exes ? day.exes.length : 0;
@@ -2596,7 +2603,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var bc = BADGE_COLORS[ex.m] || ["#888","#F5F5F5"];
       var bt = BADGE_TEXT[ex.m] || ex.m[0];
       var checkId = dayId + "_ex" + idx;
-      var done = localStorage.getItem("fitbuddy_done_" + checkId) === "1";
+      var done = localStorage.getItem(doneKey(checkId)) === "1";
       var isInjuredEx = ex._injured || false;
 
       // 马拉松专属处方显示
@@ -3129,7 +3136,7 @@ function toggleDone(id) {
     // 取消勾选：从训练记录中移除该动作
     check.classList.remove("done"); check.innerHTML = "";
     el.classList.remove("done");
-    localStorage.removeItem("fitbuddy_done_" + id);
+    localStorage.removeItem(doneKey(id));
 
     var today = new Date().toISOString().slice(0,10);
     var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
@@ -3163,7 +3170,7 @@ function toggleDone(id) {
   } else {
     check.classList.add("done"); check.innerHTML = "✓";
     el.classList.add("done");
-    localStorage.setItem("fitbuddy_done_" + id, "1");
+    localStorage.setItem(doneKey(id), "1");
     // 记录训练历史（动作信息已在上方获取）
     recordHistory(dist, exName, exDiff, exM);
     // 马拉松/跑步：自动提示记录跑鞋里程
