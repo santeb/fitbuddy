@@ -4442,7 +4442,7 @@ var PET_SPECIES = {
   },
   phantomUnicorn: {
     id:'phantomUnicorn', name:'🌈 幻光独角兽', rarity:'隐藏', rarityWeight:0,
-    speciesEmoji:'🦄', needStreak:30,
+    speciesEmoji:'🦄', unlockChance:2,
     theme: { bg:'linear-gradient(135deg, #FDF2F8 0%, #FCE7F3 50%, #FBCFE8 100%)', border:'#F9A8D4', nameColor:'#9D174D',
       stageBg:'rgba(244,114,182,0.2)', stageColor:'#9D174D', evoBarBg:'#FBCFE8', evoFill:'linear-gradient(90deg, #EC4899, #DB2777, #7C3AED)',
       darkBg:'linear-gradient(135deg, #2D0A24 0%, #3D0E32 50%, #2D0A24 100%)', darkBorder:'#5C1A4A', darkNameColor:'#F472B6',
@@ -4527,16 +4527,25 @@ function petGetSpecies() {
     localStorage.setItem('fitbuddy_pet_species', speciesId);
   }
 
-  // 检查隐藏款解锁条件
-  if (unlocked.indexOf('phantomUnicorn') < 0) {
-    var hu = PET_SPECIES.phantomUnicorn;
-    if (stats.streak >= (hu.needStreak || 30)) {
-      unlocked.push('phantomUnicorn');
-      localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
-    }
-  }
-
+  // 检查隐藏款解锁条件（由 checkHiddenUnlock 在训练完成后调用）
   return { speciesId:speciesId, unlocked:unlocked };
+}
+
+// 隐藏款随机触发检查（每天至多一次，2%概率）
+function checkHiddenUnlock() {
+  var unlocked = JSON.parse(localStorage.getItem('fitbuddy_pet_unlocked') || '[]');
+  if (unlocked.indexOf('phantomUnicorn') >= 0) return false; // 已解锁
+  var today = new Date().toISOString().slice(0,10);
+  var lastCheck = localStorage.getItem('fitbuddy_hidden_check');
+  if (lastCheck === today) return false; // 今天已经检查过
+  localStorage.setItem('fitbuddy_hidden_check', today);
+  // 2% 概率触发
+  if (Math.random() < 0.02) {
+    unlocked.push('phantomUnicorn');
+    localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
+    return true;
+  }
+  return false;
 }
 
 // 切换精灵
@@ -4622,21 +4631,23 @@ function renderPetCard() {
   html += '<div class="pet-tap-hint">👆 点我互动</div>';
   html += '</div>';
 
-  // 精灵切换栏（仅当有多个解锁时显示）
-  if (p.unlocked.length > 1) {
-    html += '<div class="pet-switch-bar">';
-    for (var i = 0; i < p.unlocked.length; i++) {
-      var uid = p.unlocked[i];
-      var usp = PET_SPECIES[uid];
-      var active = uid === p.speciesId ? ' active' : '';
-      html += '<div class="pet-switch-dot'+active+'" onclick="petSwitch(\''+uid+'\')" title="'+usp.name+' ('+usp.rarity+')">'+usp.speciesEmoji+'</div>';
-    }
-    // 还有未解锁的显示锁定图标
-    var hasHiddenLocked = p.unlocked.indexOf('phantomUnicorn') < 0;
-    if (hasHiddenLocked) {
-      html += '<div class="pet-switch-dot locked" title="???（连签'+PET_SPECIES.phantomUnicorn.needStreak+'天解锁）">🔒</div>';
-    }
-    html += '</div>';
+  // 精灵切换栏
+  html += '<div class="pet-switch-bar">';
+  for (var i = 0; i < p.unlocked.length; i++) {
+    var uid = p.unlocked[i];
+    var usp = PET_SPECIES[uid];
+    var active = uid === p.speciesId ? ' active' : '';
+    html += '<div class="pet-switch-dot'+active+'" onclick="petSwitch(\''+uid+'\')" title="'+usp.name+' ('+usp.rarity+')">'+usp.speciesEmoji+'</div>';
+  }
+  // 隐藏款未解锁：显示 🔒
+  var hasHiddenLocked = p.unlocked.indexOf('phantomUnicorn') < 0;
+  if (hasHiddenLocked) {
+    html += '<div class="pet-switch-dot locked" title="🦄 幻光独角兽（隐藏款·极低概率出现）">🔒</div>';
+  }
+  html += '</div>';
+  // 隐藏款提示
+  if (hasHiddenLocked) {
+    html += '<div style="text-align:center;font-size:11px;color:#A8A29E;margin-top:6px;opacity:0.7;">🔮 传说中还有一只隐藏精灵…每次训练都有极低概率遇见它</div>';
   }
 
   return html;
@@ -4755,6 +4766,21 @@ function afterTrainingDone() {
   checkAchievements();
   updateHeaderStreak();
   refreshPet();
+  // 🌈 隐藏款随机触发检测
+  if (checkHiddenUnlock()) {
+    setTimeout(function(){
+      showHiddenUnlockCelebration();
+    }, 600);
+  }
+}
+
+// 🌈 隐藏款解锁庆祝弹窗
+function showHiddenUnlockCelebration() {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = '<div style="background:linear-gradient(135deg,#FDF2F8,#FCE7F3,#FBCFE8);border-radius:24px;padding:32px 24px;text-align:center;max-width:340px;animation:petEvo 0.5s ease-out;"><div style="font-size:80px;animation:petFloat 1.5s ease-in-out infinite;">🦄</div><div style="font-size:22px;font-weight:900;color:#9D174D;margin:12px 0 4px;">🌟 隐藏精灵出现了！</div><div style="font-size:14px;color:#BE185D;">幻光独角兽被你的汗水吸引而来…</div><div style="font-size:12px;color:#9D174D;margin-top:6px;opacity:0.7;">极低概率！你太幸运了！</div><button onclick="this.parentElement.parentElement.remove();refreshPet();" style="margin-top:16px;padding:10px 32px;border-radius:20px;background:linear-gradient(90deg,#EC4899,#7C3AED);color:#fff;border:none;font-size:16px;font-weight:700;cursor:pointer;">✨ 收下它！</button></div>';
+  overlay.addEventListener('click', function(e){ if(e.target===overlay){ overlay.remove(); refreshPet(); } });
+  document.body.appendChild(overlay);
 }
 </script>
 </body>
