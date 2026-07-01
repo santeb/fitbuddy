@@ -2613,8 +2613,15 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var isBodyweight = ex.eq === "bodyweight";     // 纯自重动作不显示重量输入
       
       if (isMarathon && ex.isMarathon) {
-        var distMatch = ex.n.match(/(\d+)km/);
-        if (distMatch) distData = ' data-dist="'+distMatch[1]+'"';
+        // 提取距离：支持 "12km"、"6-8km"、"6×800m" 三种格式（与 estimateDayCalBurn 一致）
+        var dist = 0;
+        var m1 = ex.n.match(/(\d+\.?\d*)\s*km/i);
+        var m2 = ex.n.match(/(\d+)\s*x\s*(\d+)\s*m/i);
+        var m3 = ex.n.match(/(\d+)-(\d+)\s*km/i);
+        if (m1) dist = parseFloat(m1[1]);
+        else if (m2) dist = parseInt(m2[1]) * parseInt(m2[2]) / 1000;
+        else if (m3) dist = (parseFloat(m3[1]) + parseFloat(m3[2])) / 2;
+        if (dist > 0) distData = ' data-dist="'+dist+'"';
         // 优先使用用户自定义配速
         var exPace = ex.pace || '—';
         if (window._marathonPaces) {
@@ -2629,8 +2636,12 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           '<div class="ex-sets">🏃 配速 ' + exPace + '</div>'+
           '<div style="font-size:11px;color:var(--primary);margin-top:2px;font-weight:500;">' + (ex.tips || '') + '</div>';
       } else if (goal === 'cardio' && ex.m === '有氧') {
-        var cdMatch = ex.n.match(/(\d+)km/);
-        if (cdMatch) distData = ' data-dist="'+cdMatch[1]+'"';
+        var cdDist = 0;
+        var cm1 = ex.n.match(/(\d+\.?\d*)\s*km/i);
+        var cm2 = ex.n.match(/(\d+)\s*x\s*(\d+)\s*m/i);
+        if (cm1) cdDist = parseFloat(cm1[1]);
+        else if (cm2) cdDist = parseInt(cm2[1]) * parseInt(cm2[2]) / 1000;
+        if (cdDist > 0) distData = ' data-dist="'+cdDist+'"';
         exPrescriptionHtml = '<div class="ex-sets">'+presDisplay+'</div>'+
           '<div class="ex-intensity">'+goalCfg.intensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
           (goalCfg.rest && goalCfg.rest !== '—' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+goalCfg.rest+'\')">⏱ '+goalCfg.rest+'</button>' : '');
@@ -3109,6 +3120,34 @@ function saveShoes() {
   localStorage.setItem("fitbuddy_shoes", JSON.stringify(shoeList));
 }
 
+// 检测本周所有动作是否全部勾选
+function checkWeekComplete() {
+  if (!lastPlan || !lastPlan.trainingDays) return false;
+  for (var di = 0; di < lastPlan.trainingDays.length; di++) {
+    var day = lastPlan.trainingDays[di];
+    if (!day.exes || day.exes.length === 0) continue;
+    for (var ei = 0; ei < day.exes.length; ei++) {
+      if (localStorage.getItem(doneKey("day_" + di + "_ex" + ei)) !== "1") return false;
+    }
+  }
+  return lastPlan.trainingDays.some(function(d){ return d.exes && d.exes.length > 0; }); // 至少有一个训练日
+}
+
+// 清空所有勾选并刷新UI
+function resetAllCheckmarks() {
+  if (!lastPlan || !lastPlan.trainingDays) return;
+  for (var di = 0; di < lastPlan.trainingDays.length; di++) {
+    var day = lastPlan.trainingDays[di];
+    if (!day.exes) continue;
+    for (var ei = 0; ei < day.exes.length; ei++) {
+      localStorage.removeItem(doneKey("day_" + di + "_ex" + ei));
+    }
+  }
+  document.querySelectorAll('.ex-check.done').forEach(function(el){ el.classList.remove('done'); el.innerHTML = ''; });
+  document.querySelectorAll('.ex-row.done').forEach(function(el){ el.classList.remove('done'); });
+  showToast('🎉 本周全部完成！勾选已刷新，下周继续加油！');
+}
+
 function toggleDone(id) {
   var el = document.getElementById(id);
   if (!el) { console.warn('toggleDone: el not found for id='+id); return; }
@@ -3151,7 +3190,7 @@ function toggleDone(id) {
       }
       // 减去热量
       if (exDiff) {
-        var cal = estimateCalories(exDiff, exM);
+        var cal = estimateCalories(exDiff, exM, dist);
         found.calories = Math.max(0, (found.calories||0) - cal);
       }
       // 如果计数归零且没有跑步距离，删除当天记录
@@ -3194,6 +3233,10 @@ function toggleDone(id) {
     }
     // 🎮 游戏化：更新连续打卡/成就
     afterTrainingDone();
+    // 🔄 检测本周全部完成 → 自动刷新勾选
+    if (checkWeekComplete()) {
+      setTimeout(resetAllCheckmarks, 1200);
+    }
   }
 }
 
@@ -3352,28 +3395,43 @@ function closeModal() {
 }
 
 // ============ 进度页 ============
-// 估算单动作消耗热量（大卡，基于 70kg 标准体重）
-function estimateCalories(diff, m) {
-  // MET 值估算（根据难度和动作类型）
-  var met = 4; // 默认中等强度
-  if (diff === '初级') met = 3;
-  else if (diff === '中级') met = 5;
-  else if (diff === '高级') met = 7;
-  // 有氧和腿部动作消耗更高
-  if (m === '有氧') met += 2;
-  if (m === '腿') met += 1;
-  // 假设每个动作约 8 分钟（组间休息 + 训练）
-  var minutes = 8;
-  // 卡路里 = MET × 3.5 × 体重(kg) × 分钟 / 200
-  // 以 70kg 为标准，实际可根据用户体重调整
+// 估算单动作消耗热量（与 estimateDayCalBurn 口径对齐）
+function estimateCalories(diff, m, dist) {
+  // 获取体重（所有公式共用）
   var weight = 70;
-  // 尝试从用户资料读取体重
   try {
     var prof = JSON.parse(localStorage.getItem("fitbuddy_profile") || "{}");
     if (prof.weight && prof.weight > 30) weight = prof.weight;
   } catch(e) {}
-  var cal = Math.round(met * 3.5 * weight * minutes / 200);
-  return cal;
+
+  // 跑步/有氧带距离：体重×距离（马拉松/心肺目标）
+  if (dist && dist > 0) {
+    return Math.round(weight * dist);
+  }
+
+  // 获取当前目标与水平，用于后续分支
+  var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
+  var level = (plan && plan.level) || 'beginner';
+
+  // 有氧动作（无显式距离）：按水平估算，对齐 estimateDayCalBurn 心肺分支
+  if (m === '有氧') {
+    return {beginner:350, intermediate:450, advanced:600}[level] || 350;
+  }
+
+  // 力量训练：对齐 estimateDayCalBurn 的 baseBurn + exCount*20 公式
+  // 按动作数均摊，使单日总和与计划页预估一致
+  var goal = (plan && plan.goal) || '';
+  var baseBurn = {beginner:280, intermediate:380, advanced:500}[level] || 300;
+  var exCount = 5; // 默认
+  if (plan && plan.trainingDays) {
+    var totalEx = 0, dayCount = 0;
+    plan.trainingDays.forEach(function(d) {
+      if (d.exes && d.exes.length > 0) { totalEx += d.exes.length; dayCount++; }
+    });
+    if (dayCount > 0) exCount = Math.round(totalEx / dayCount);
+  }
+  var dayTotal = Math.round(baseBurn + exCount * 20);
+  return Math.round(dayTotal / exCount);
 }
 
 function recordHistory(dist, exName, exDiff, exM) {
@@ -3381,8 +3439,8 @@ function recordHistory(dist, exName, exDiff, exM) {
   var today = new Date().toISOString().slice(0,10);
   var found = hist.find(function(h){ return h.date === today; });
 
-  // 计算本次动作热量
-  var thisCal = (exName && exDiff) ? estimateCalories(exDiff, exM) : 0;
+  // 计算本次动作热量（跑步用距离，力量用MET）
+  var thisCal = (exName && exDiff) ? estimateCalories(exDiff, exM, dist) : 0;
 
   if (found) {
     found.count = (found.count||0)+1;
