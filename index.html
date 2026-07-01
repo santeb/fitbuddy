@@ -220,6 +220,11 @@ input,select{font-family:inherit;}
 .video-link:active{transform:scale(0.97);}
 .no-video-box{background:var(--bg);border-radius:12px;padding:20px;text-align:center;color:var(--text3);font-size:13px;}
 [data-theme="dark"] .no-video-box{background:rgba(255,255,255,0.05);}
+/* GIF动图容器 */
+.gif-container{background:var(--bg);border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:200px;}
+.gif-img{width:100%;max-width:100%;display:block;border-radius:14px;}
+.gif-bilibili-link{display:inline-block;font-size:12px;color:var(--text3);text-decoration:none;padding:4px 10px;border-radius:8px;transition:all .2s;}
+.gif-bilibili-link:hover{color:#FB7299;background:rgba(251,114,153,0.08);}
 
 /* Rest Timer Overlay */
 .timer-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;flex-direction:column;}
@@ -721,6 +726,9 @@ var EXES = [
   {n:"泡沫轴放松（背部）", m:"康复", eq:"bodyweight", diff:"初级", desc:"放松上背部肌肉，缓解紧张", tips:"仰卧，泡沫轴垫在肩胛骨下方，双手抱头，缓慢上下滚动。避开腰椎", vid:""},
   {n:"深呼吸放松", m:"康复", eq:"bodyweight", diff:"初级", desc:"激活副交感神经，促进恢复", tips:"仰卧，一手放胸一手放腹，吸气时腹部鼓起，呼气时腹部收缩。5-10分钟", vid:""}
 ];
+
+// GIF动图映射（中文动作名 → GIF文件名）
+var GIF_MAP = {"徒手深蹲":"Gu2rNJd.gif","腿举（低重量）":"7zdxRTl.gif","箭步蹲":"t8iSghb.gif","臀桥":"qKBpF7I.gif","哑铃深蹲":"HsvHqgf.gif","深蹲跳":"1gFNTZV.gif","保加利亚分腿蹲（徒手）":"arsYEd3.gif","单腿臀桥":"rmEukuS.gif","杠铃深蹲":"oR7O9LW.gif","罗马尼亚硬拉":"wQ2c4XD.gif","保加利亚深蹲":"arsYEd3.gif","腿弯举":"C5jncD2.gif","前蹲":"zG0zs85.gif","单腿深蹲（枪式）":"H6ybluc.gif","哈克深蹲":"Qa55kX1.gif","俯卧撑":"I4hDWkc.gif","宽距俯卧撑":"JmMVpR3.gif","上斜俯卧撑":"A9qxk2F.gif","哑铃平板卧推":"SpYC0Kp.gif","哑铃飞鸟":"yz9nUhF.gif","下斜俯卧撑":"i5cEhka.gif","钻石俯卧撑":"soIB2rj.gif","杠铃卧推":"EIeI8Vf.gif","上斜杠铃卧推":"3TZduzM.gif","绳索飞鸟":"aqvSOQE.gif","单臂俯卧撑":"HjdqmZa.gif","双杠臂屈伸（胸）":"9WTm7dq.gif","史密斯机卧推":"yB9SvIF.gif","反向划船":"3xK09Sk.gif","超人式":"4GqRrAk.gif","高位下拉（宽握）":"ecpY0rH.gif","哑铃单臂划船":"BJ0Hz5L.gif","坐姿绳索划船":"fUBheHs.gif","引体向上（门框/公园杠）":"lBDjFxJ.gif","引体向上":"lBDjFxJ.gif","杠铃俯身划船":"ZX9UZmj.gif","T杠划船":"aaXr7ld.gif","宽握引体（加重）":"HMzLjXx.gif","派克俯卧撑":"sVvXT5J.gif","侧平举（水瓶/弹力带）":"goJ6ezq.gif","哑铃肩推":"84RyJf8.gif","哑铃侧平举":"DsgkuIt.gif","绳索面拉":"OM46QHm.gif","靠墙倒立撑":"A9qxk2F.gif","折刀俯卧撑":"sVvXT5J.gif","杠铃肩推":"jjUPrze.gif","哑铃前平举":"3eGE2JC.gif","哑铃俯身飞鸟":"sTfvVsG.gif","阿诺德推举":"Xy4jlWA.gif","宽握上拉（上斜）":"cALKspW.gif","凳上反屈伸（三头）":"DQ0cqkT.gif","毛巾弯举（二头）":"otqIxU4.gif","哑铃二头弯举":"uSkDMYl.gif","绳索三头下压":"qRZ5S1N.gif","锤式弯举":"slDvUAU.gif","窄距俯卧撑（三头）":"ufaxB52.gif","杠铃弯举":"25GPyDY.gif","双杠臂屈伸（三头）":"bZq4bwK.gif","牧师弯举":"P2lNrGL.gif","俯身三头臂屈伸":"vvNjDJS.gif","平板支撑":"hCjGsRQ.gif","卷腹":"BMMolZ3.gif","死虫式":"iny3m5y.gif","俄罗斯转体":"XVDdcoj.gif","悬挂举腿":"QOA0FD0.gif","健腹轮":"xnInPfE.gif","悬挂直腿举":"bbLR7fB.gif","骑行（户外/动感单车）":"H1PESYI.gif","波比跳":"dK9394r.gif","高抬腿跑":"J9zIWig.gif","登山跑":"RJgzwny.gif","跳跃深蹲":"1gFNTZV.gif","原地冲刺跑":"Qoujh3Q.gif","箱子跳":"iPm26QU.gif","滑雪机":"vpQaQkH.gif","直腿抬高":"Hgs6Nl1.gif","靠墙静蹲（温和）":"sVQCCeG.gif","踝关节泵":"uL9CsKm.gif","髋外展（侧卧）":"WL4EmxJ.gif","骨盆倾斜":"NKJ8o6x.gif","肩部外旋拉伸":"FWdVhcW.gif","门框拉伸（胸肌）":"QoHIhPl.gif","手腕屈伸（温和）":"vUTfFHw.gif","手指展开+握拳":"mtXengz.gif","提踵（温和）":"u5ESqzH.gif","脚踝环绕":"uL9CsKm.gif","硬拉":"ila4NZS.gif","慢跑/快走":"oLrKqDH.gif","跳绳":"HtfCpfi.gif","开合跳":"HtfCpfi.gif","快走爬坡":"rjiM4L3.gif","战绳（双绳波浪）":"RJa4tCo.gif","泡沫轴放松（大腿）":"isofgzg.gif","泡沫轴放松（背部）":"isofgzg.gif"};
 
 // 纯自重动作名集合（进度页不为其绘制重量趋势）
 var BODYWEIGHT_EX_NAMES = new Set();
@@ -3174,7 +3182,7 @@ function renderLib() {
   document.getElementById("libList").innerHTML = html;
 }
 
-// ============ 动作详情弹窗（B站视频）============
+// ============ 动作详情弹窗（GIF动图 + B站备选）============
 function showEx(name) {
   var ex = EXES.find(function(e){ return e.n===name; });
   if (!ex) return;
@@ -3182,9 +3190,22 @@ function showEx(name) {
   var bt = BADGE_TEXT[ex.m]||ex.m[0];
   var diffColor = ex.diff==="初级"?"#22C55E":ex.diff==="中级"?"#F59E0B":"#EF4444";
   var eqText = ex.eq==="gym"?"健身房":ex.eq==="dumbbell"?"哑铃":ex.eq==="outdoor"?"户外路跑":ex.eq==="treadmill"?"跑步机":"自重";
-  var searchUrl = "https://search.bilibili.com/all?keyword=" + encodeURIComponent(ex.n + " 教学示范");
-  var videoHtml = '<div class="modal-section-title">📹 教学视频</div>'+
-    '<a class="video-link" href="'+searchUrl+'" target="_blank">📺 在 B站 搜索「'+ex.n+'」教学视频</a>';
+
+  // GIF动图（优先）
+  var gifFile = GIF_MAP[name];
+  var mediaHtml = '';
+  if (gifFile) {
+    mediaHtml = '<div class="modal-section-title">🎬 动作示范</div>'+
+      '<div class="gif-container"><img class="gif-img" src="exercise-gifs/'+gifFile+'" alt="'+name+'" loading="lazy"></div>'+
+      '<div style="text-align:center;margin-top:4px;">'+
+        '<a class="gif-bilibili-link" href="https://search.bilibili.com/all?keyword='+encodeURIComponent(name+' 教学示范')+'" target="_blank">📺 B站搜更多教程 →</a>'+
+      '</div>';
+  } else {
+    var searchUrl = "https://search.bilibili.com/all?keyword=" + encodeURIComponent(name + " 教学示范");
+    mediaHtml = '<div class="modal-section-title">📹 教学视频</div>'+
+      '<a class="video-link" href="'+searchUrl+'" target="_blank">📺 在 B站 搜索「'+name+'」教学视频</a>';
+  }
+
   var html = '<div class="modal-handle"></div>'+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">'+
       '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:38px;height:38px;border-radius:10px;font-size:15px;">'+bt+'</div>'+
@@ -3195,7 +3216,7 @@ function showEx(name) {
         '</div></div></div>'+
     (ex.desc?'<div class="modal-desc">'+ex.desc+'</div>':'')+
     (ex.tips?'<div class="modal-section-title">✅ 动作要点</div><div class="tips-card">'+ex.tips+'</div>':'')+
-    videoHtml;
+    mediaHtml;
   document.getElementById("modalBody").innerHTML = html;
   document.getElementById("modal").classList.add("show");
 }
