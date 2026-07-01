@@ -221,10 +221,41 @@ input,select{font-family:inherit;}
 .no-video-box{background:var(--bg);border-radius:12px;padding:20px;text-align:center;color:var(--text3);font-size:13px;}
 [data-theme="dark"] .no-video-box{background:rgba(255,255,255,0.05);}
 /* GIF动图容器 */
-.gif-container{background:var(--bg);border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:200px;}
+.gif-container{background:var(--bg);border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:200px;position:relative;}
 .gif-img{width:100%;max-width:100%;display:block;border-radius:14px;}
+.gif-img.loading{display:none;}
+.gif-skeleton{position:absolute;inset:0;background:linear-gradient(90deg,var(--bg) 25%,var(--border) 50%,var(--bg) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:14px;}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .gif-bilibili-link{display:inline-block;font-size:12px;color:var(--text3);text-decoration:none;padding:4px 10px;border-radius:8px;transition:all .2s;}
 .gif-bilibili-link:hover{color:#FB7299;background:rgba(251,114,153,0.08);}
+/* 动作库筛选 */
+.lib-filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;}
+.lib-filter-chip{padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;transition:all .2s;white-space:nowrap;}
+.lib-filter-chip.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+.lib-filter-chip:active{transform:scale(0.95);}
+/* 数据管理 */
+.data-mgmt{padding:20px 16px;margin-top:16px;background:var(--bg);border-radius:14px;}
+.data-mgmt-title{font-size:13px;font-weight:700;color:var(--text3);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.8px;}
+.data-mgmt-row{display:flex;gap:10px;}
+.data-mgmt-btn{flex:1;padding:10px;border-radius:12px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .2s;text-align:center;}
+.data-mgmt-btn.export{background:#EFF6FF;color:#3B82F6;}
+.data-mgmt-btn.import{background:#FEF3C7;color:#D97706;}
+.data-mgmt-btn.reset{background:#FEE2E2;color:#DC2626;margin-top:8px;width:100%;}
+.data-mgmt-btn:active{transform:scale(0.96);}
+/* 每周总结弹窗 */
+.weekly-summary{padding:16px;}
+.weekly-stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px;}
+.weekly-stat-row:last-child{border-bottom:none;}
+.weekly-stat-val{font-weight:700;}
+/* 训练日志表单 */
+.trainlog-form{background:var(--bg);border-radius:12px;padding:12px;margin-top:8px;}
+.trainlog-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+.trainlog-row:last-child{margin-bottom:0;}
+.trainlog-input{flex:1;padding:8px 10px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);color:var(--text);font-size:13px;text-align:center;min-width:0;}
+.trainlog-input::placeholder{color:var(--text3);font-size:11px;}
+.trainlog-label{font-size:11px;color:var(--text3);white-space:nowrap;min-width:28px;}
+.trainlog-submit{padding:8px 14px;border-radius:10px;background:var(--primary);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.trainlog-submit:active{transform:scale(0.95);}
 
 /* Rest Timer Overlay */
 .timer-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;flex-direction:column;}
@@ -536,6 +567,15 @@ input,select{font-family:inherit;}
     <div class="donate-msg">
       <div class="emoji-row">🙏 💪 🔥</div>
       <p>每一份支持都是持续更新的动力<br>感谢你让 FitBuddy 变得更好 ❤️</p>
+    </div>
+    <div class="data-mgmt">
+      <div class="data-mgmt-title">💾 数据管理</div>
+      <div class="data-mgmt-row">
+        <button class="data-mgmt-btn export" onclick="exportData()">📤 导出数据</button>
+        <button class="data-mgmt-btn import" onclick="document.getElementById('importFile').click()">📥 导入数据</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
+      <button class="data-mgmt-btn reset" onclick="resetAllData()">🔄 重置所有数据</button>
     </div>
   </div>
 
@@ -2459,7 +2499,21 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       '<div class="plan-day-right"><span class="plan-day-meta">'+metaText+'</span><span class="plan-day-toggle">▼</span></div>'+
     '</div><div class="plan-day-body">';
 
-  // 热身组
+  // 🧤 动态热身动作推荐（可点击看GIF）— 放在热身组前面
+  if (!isMarathon && day.exes && day.exes.length) {
+    var dayMuscles = [];
+    day.exes.forEach(function(ex) { if (dayMuscles.indexOf(ex.m) < 0 && ex.m !== '有氧') dayMuscles.push(ex.m); });
+    if (dayMuscles.length) {
+      var wmExes = getWarmupExercises(dayMuscles);
+      html += '<div class="warmup-section" style="background:#FFF7ED;"><div class="warmup-title" style="color:#F97316;">🧤 推荐热身</div>';
+      wmExes.forEach(function(wm) {
+        html += '<div class="warmup-item" style="color:#F97316;cursor:pointer;" onclick="event.stopPropagation();showEx(\''+wm.n+'\')">• '+wm.n+' — '+wm.dur+'</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  // 🔥 热身组
   if (warmup && warmup.type === "lift" && exCount > 0) {
     html += '<div class="warmup-section"><div class="warmup-title">🔥 热身组</div>';
     (warmup.sets || []).forEach(function(w){
@@ -3194,8 +3248,12 @@ function showEx(name) {
   var gifFile = GIF_MAP[name];
   var mediaHtml = '';
   if (gifFile) {
+    var gid = 'gif_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
     mediaHtml = '<div class="modal-section-title">🎬 动作示范</div>'+
-      '<div class="gif-container"><img class="gif-img" src="exercise-gifs/'+gifFile+'" alt="'+name+'" loading="lazy"></div>'+
+      '<div class="gif-container" id="'+gid+'">'+
+        '<div class="gif-skeleton"></div>'+
+        '<img class="gif-img loading" src="exercise-gifs/'+gifFile+'" alt="'+name+'" onload="this.classList.remove(\'loading\');this.previousElementSibling.style.display=\'none\'" onerror="this.previousElementSibling.innerHTML=\'<div style=text-align:center;padding:40px;color:var(--text3)>⚠️ GIF加载失败</div>\'">'+
+      '</div>'+
       '<div style="text-align:center;margin-top:4px;">'+
         '<a class="gif-bilibili-link" href="https://search.bilibili.com/all?keyword='+encodeURIComponent(name+' 教学示范')+'" target="_blank">📺 B站搜更多教程 →</a>'+
       '</div>';
@@ -3282,7 +3340,9 @@ function renderProgress() {
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
   var isRunning = plan && (plan.goal === "marathon" || plan.goal === "cardio");
-  var html = "";
+  var html = '<div style="display:flex;gap:8px;margin-bottom:16px;">'+
+    '<button onclick="showWeeklySummary()" style="flex:1;padding:10px;border-radius:12px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;">📊 本周总结</button>'+
+    '<button onclick="exportCSV()" style="flex:1;padding:10px;border-radius:12px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:14px;font-weight:600;cursor:pointer;">📋 导出CSV</button></div>';
 
   // 本周统计（周一为一周开始）
   var today = new Date();
@@ -3646,6 +3706,121 @@ _saveStats();
     document.querySelector('meta[property="og:image"]').setAttribute('content', location.origin + '/exercise-images/og-image.png');
   }
 })();
+
+// ============ 数据备份/恢复 ============
+function exportData() {
+  var data = {};
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key.startsWith('fitbuddy_')) {
+      try { data[key] = JSON.parse(localStorage.getItem(key)); } catch(e) { data[key] = localStorage.getItem(key); }
+    }
+  }
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'FitBuddy_备份_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  alert('数据已导出！请保存好备份文件。');
+}
+function importData(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      var count = 0;
+      Object.keys(data).forEach(function(key) {
+        if (key.startsWith('fitbuddy_')) {
+          localStorage.setItem(key, typeof data[key] === 'object' ? JSON.stringify(data[key]) : data[key]);
+          count++;
+        }
+      });
+      alert('成功导入 ' + count + ' 条数据！页面将刷新。');
+      location.reload();
+    } catch(err) {
+      alert('导入失败，请检查文件格式是否正确。');
+    }
+  };
+  reader.readAsText(file);
+}
+function resetAllData() {
+  if (!confirm('⚠️ 确定要清除所有数据吗？此操作不可撤销！\n\n包括：训练计划、历史记录、训练日志、个人资料等。')) return;
+  if (!confirm('再次确认：真的要删除所有数据吗？')) return;
+  var keys = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key.startsWith('fitbuddy_')) keys.push(key);
+  }
+  keys.forEach(function(k) { localStorage.removeItem(k); });
+  alert('所有数据已清除。页面将刷新。');
+  location.reload();
+}
+
+// ============ 每周训练总结 ============
+function showWeeklySummary() {
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+  var now = new Date();
+  var dayOfWeek = now.getDay() || 7;
+  var monday = new Date(now);
+  monday.setDate(now.getDate() - dayOfWeek + 1);
+  var weekDays = [];
+  for (var i = 0; i < 7; i++) {
+    var d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    weekDays.push(d.toISOString().slice(0,10));
+  }
+  var weekHist = hist.filter(function(h) { return weekDays.indexOf(h.date) >= 0; });
+  var trainedDays = new Set(weekHist.map(function(h) { return h.date; }));
+  var totalSets = weekHist.reduce(function(s, h) { return s + (h.count || 0); }, 0);
+  var totalCal = weekHist.reduce(function(s, h) { return s + (h.calories || 0); }, 0);
+
+  // 计算连续训练天数（streak）
+  var streak = 0;
+  var checkDate = new Date(now);
+  for (var s = 0; s < 90; s++) {
+    var ds = checkDate.toISOString().slice(0,10);
+    var found = hist.filter(function(h) { return h.date === ds; });
+    if (found.length === 0) break;
+    streak++;
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+
+  var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
+  var html = '<div class="weekly-summary">'+
+    '<h3 style="text-align:center;margin-bottom:16px;">📊 本周训练总结</h3>'+
+    '<div class="weekly-stat-row"><span>本周训练天数</span><span class="weekly-stat-val">'+trainedDays.size+' 天</span></div>'+
+    '<div class="weekly-stat-row"><span>完成动作组数</span><span class="weekly-stat-val">'+totalSets+' 组</span></div>'+
+    '<div class="weekly-stat-row"><span>估算消耗热量</span><span class="weekly-stat-val">'+Math.round(totalCal)+' kcal</span></div>'+
+    '<div class="weekly-stat-row"><span>当前目标</span><span class="weekly-stat-val">'+goalName+'</span></div>'+
+    '<div class="weekly-stat-row"><span>连续训练 🔥</span><span class="weekly-stat-val">'+streak+' 天</span></div>'+
+    '<div style="text-align:center;margin-top:16px;">'+
+      '<button onclick="closeModal()" style="padding:10px 32px;border-radius:12px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;">知道了</button>'+
+    '</div></div>';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+}
+
+// ============ 热身动作自动生成 ============
+var WARMUP_POOL = {
+  full: [{n:'开合跳',dur:'30秒'},{n:'高抬腿跑',dur:'30秒'},{n:'肩部环绕（温和）',dur:'各10圈'},{n:'猫牛式',dur:'8次'}],
+  upper: [{n:'肩部环绕（温和）',dur:'各10圈'},{n:'门框拉伸（胸肌）',dur:'30秒'},{n:'墙面滑行（Wall Slide）',dur:'10次'}],
+  lower: [{n:'开合跳',dur:'30秒'},{n:'直腿抬高',dur:'每侧10次'},{n:'髋外展（侧卧）',dur:'每侧10次'}],
+  core: [{n:'猫牛式',dur:'8次'},{n:'鸟狗式',dur:'每侧5次'},{n:'死虫式',dur:'10次'}]
+};
+function getWarmupExercises(muscles) {
+  // muscles is array like ['腿','胸'] — pick warmup based on primary muscle
+  if (!muscles || !muscles.length) return WARMUP_POOL.full;
+  var primary = muscles[0];
+  if (primary === '腿' || primary === '有氧') return WARMUP_POOL.lower;
+  if (primary === '胸' || primary === '肩' || primary === '臂') return WARMUP_POOL.upper;
+  if (primary === '核心' || primary === '背') return WARMUP_POOL.core;
+  return WARMUP_POOL.full;
+}
 </script>
 </body>
 </html>
