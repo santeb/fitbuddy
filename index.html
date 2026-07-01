@@ -247,6 +247,19 @@ input,select{font-family:inherit;}
 .weekly-stat-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:14px;}
 .weekly-stat-row:last-child{border-bottom:none;}
 .weekly-stat-val{font-weight:700;}
+/* 热量具象化 */
+.food-equivalent{margin-top:10px;padding:10px 12px;background:linear-gradient(135deg,#FFF7ED,#FFFBEB);border-radius:10px;border:1px solid #FDE68A;}
+[data-theme="dark"] .food-equivalent{background:linear-gradient(135deg,#2D1F0E,#2D2410);border-color:#5C4A1A;}
+.food-eq-title{font-size:11px;font-weight:700;color:#D97706;margin-bottom:8px;}
+[data-theme="dark"] .food-eq-title{color:#F59E0B;}
+.food-eq-row{display:flex;gap:8px;flex-wrap:wrap;}
+.food-eq-item{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.7);border-radius:8px;padding:6px 10px;font-size:12px;color:#92400E;}
+[data-theme="dark"] .food-eq-item{background:rgba(0,0,0,0.2);color:#FCD34D;}
+.food-eq-item .food-emoji{font-size:20px;}
+.food-eq-item .food-count{font-weight:800;font-size:14px;color:#D97706;}
+[data-theme="dark"] .food-eq-item .food-count{color:#FBBF24;}
+.food-eq-tagline{font-size:11px;color:#A16207;margin-top:6px;font-style:italic;}
+[data-theme="dark"] .food-eq-tagline{color:#CA8A04;}
 /* 训练日志表单 */
 .trainlog-form{background:var(--bg);border-radius:12px;padding:12px;margin-top:8px;}
 .trainlog-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
@@ -257,6 +270,49 @@ input,select{font-family:inherit;}
 .trainlog-submit{padding:8px 14px;border-radius:10px;background:var(--primary);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;}
 .trainlog-submit:active{transform:scale(0.95);}
 
+/* Streak Bar (in Header) */
+.streak-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,0.22);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;}
+.streak-badge .fire{font-size:16px;animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+.level-badge{display:inline-flex;align-items:center;gap:2px;background:rgba(255,255,255,0.18);border-radius:14px;padding:3px 8px;font-size:10px;font-weight:600;margin-left:6px;}
+/* Heatmap (GitHub-style) */
+.heatmap{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-start;padding:4px 0;}
+.heatmap-cell{width:13px;height:13px;border-radius:3px;background:var(--border);transition:transform .15s;}
+.heatmap-cell:hover{transform:scale(1.4);z-index:2;}
+.heatmap-cell.l1{background:#C6E4C6;}
+.heatmap-cell.l2{background:#6BC26B;}
+.heatmap-cell.l3{background:#2DA44E;}
+.heatmap-cell.l4{background:#1A7F37;}
+[data-theme="dark"] .heatmap-cell.l1{background:#1B3D1B;}[data-theme="dark"] .heatmap-cell.l2{background:#1F6B1F;}[data-theme="dark"] .heatmap-cell.l3{background:#2DA44E;}[data-theme="dark"] .heatmap-cell.l4{background:#3FBF5F;}
+.heatmap-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:10px;color:var(--text3);margin-top:6px;}
+.heatmap-legend span{display:inline-block;width:11px;height:11px;border-radius:2px;}
+/* Achievement Badges */
+.ach-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.ach-badge{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border-radius:12px;background:var(--bg);transition:all .2s;position:relative;}
+.ach-badge.locked{opacity:0.35;filter:grayscale(1);}
+.ach-badge .ach-icon{font-size:28px;}
+.ach-badge .ach-name{font-size:10px;color:var(--text2);text-align:center;font-weight:600;}
+.ach-badge .ach-date{font-size:9px;color:var(--text3);}
+.ach-badge.unlocked{animation:achPop .5s ease;}
+@keyframes achPop{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+/* Level Bar */
+.level-bar{display:flex;align-items:center;gap:8px;padding:8px 0;}
+.level-icon{font-size:24px;}
+.level-info{flex:1;}
+.level-name{font-size:13px;font-weight:700;}
+.level-progress-bar{height:5px;border-radius:3px;background:var(--border);margin-top:4px;overflow:hidden;}
+.level-progress-fill{height:100%;background:linear-gradient(90deg,#FF6B35,#FF3E7F);border-radius:3px;transition:width .5s;}
+.level-progress-text{font-size:10px;color:var(--text3);}
+/* Celebration Modal */
+.celebration{text-align:center;padding:10px 0;}
+.celebration-emoji{font-size:64px;animation:celebrate .6s ease;}
+@keyframes celebrate{0%{transform:scale(0) rotate(-20deg);opacity:0}60%{transform:scale(1.2) rotate(5deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+.celebration-title{font-size:22px;font-weight:800;margin:8px 0;}
+.celebration-msg{font-size:14px;color:var(--text2);margin-bottom:6px;}
+.celebration-sub{font-size:12px;color:var(--text3);margin-bottom:16px;}
+.celebration-share-btn{padding:10px 24px;border-radius:12px;background:var(--primary);color:#fff;font-size:14px;font-weight:700;margin-right:8px;cursor:pointer;}
+.celebration-close-btn{padding:10px 24px;border-radius:12px;background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;border:1.5px solid var(--border);cursor:pointer;}
+.celebration-share-btn:active,.celebration-close-btn:active{transform:scale(0.95);}
 /* Rest Timer Overlay */
 .timer-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;flex-direction:column;}
 .timer-overlay.show{display:flex;}
@@ -402,6 +458,10 @@ input,select{font-family:inherit;}
     <div class="header-left">
       <h1>🏋️ FitBuddy</h1>
       <p>智能健身计划生成器</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px;">
+      <div class="streak-badge" id="headerStreak" style="display:none;"><span class="fire">🔥</span><span id="streakNum">0</span>天</div>
+      <div class="level-badge" id="headerLevel" style="display:none;"></div>
     </div>
     <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">☀️</button>
   </div>
@@ -3125,6 +3185,8 @@ function toggleDone(id) {
         }
       }
     }
+    // 🎮 游戏化：更新连续打卡/成就
+    afterTrainingDone();
   }
 }
 
@@ -3326,9 +3388,11 @@ function recordHistory(dist, exName, exDiff, exM) {
     }
     if (thisCal) found.calories = (found.calories||0) + thisCal;
   } else {
+    var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
     var rec = {date:today, count:1, distance:dist||0};
     if (exName) rec.exercises = [exName];
     if (thisCal) rec.calories = thisCal;
+    if (plan && plan.goal) rec.goal = plan.goal;
     hist.push(rec);
   }
   if (hist.length > 90) hist = hist.slice(-90);
@@ -3350,12 +3414,13 @@ function renderProgress() {
   var monday = new Date(today);
   monday.setDate(today.getDate() - dayOfWeek + 1);
   monday.setHours(0,0,0,0);
-  var weekCount = 0, weekDist = 0;
+  var weekCount = 0, weekDist = 0, weekCal = 0;
   hist.forEach(function(h){
     var d = new Date(h.date + "T00:00:00");
     if (d >= monday && d <= today) {
       weekCount += h.count;
       weekDist += (h.distance || 0);
+      weekCal += (h.calories || 0);
     }
   });
   var daysThisWeek = plan ? plan.days : 0;
@@ -3367,10 +3432,11 @@ function renderProgress() {
       '<div class="card-title">📊 本周跑步进度</div>'+
       '<div class="progress-stat"><span class="progress-stat-label">完成训练次数</span><span class="progress-stat-value">'+weekCount+' / '+wkTarget+' 次</span></div>'+
       '<div class="progress-stat"><span class="progress-stat-label">周跑量</span><span class="progress-stat-value">'+Math.round(weekDist)+' km</span></div>'+
-      '<div class="progress-stat"><span class="progress-stat-label">目标训练日</span><span class="progress-stat-value">'+daysThisWeek+' 天/周</span></div>'+
+      '<div class="progress-stat"><span class="progress-stat-label">估算消耗热量</span><span class="progress-stat-value">'+Math.round(weekCal)+' kcal</span></div>'+
       '<div style="margin-top:10px;"><div style="font-size:12px;color:var(--text3);margin-bottom:4px;">频次完成度</div>'+
       '<div class="progress-bar"><div class="progress-bar-fill" style="width:'+pct+'%;"></div></div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div></div>';
+      '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div>'+
+      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '') + '</div>';
   } else {
     var totalExPerWeek = 0;
     if (plan && plan.trainingDays) {
@@ -3383,10 +3449,11 @@ function renderProgress() {
     html += '<div class="progress-card">'+
       '<div class="card-title">📊 本周进度</div>'+
       '<div class="progress-stat"><span class="progress-stat-label">已完成动作组数</span><span class="progress-stat-value">'+weekCount+'</span></div>'+
-      '<div class="progress-stat"><span class="progress-stat-label">目标训练日</span><span class="progress-stat-value">'+daysThisWeek+' 天/周</span></div>'+
+      '<div class="progress-stat"><span class="progress-stat-label">估算消耗热量</span><span class="progress-stat-value">'+Math.round(weekCal)+' kcal</span></div>'+
       '<div style="margin-top:10px;"><div style="font-size:12px;color:var(--text3);margin-bottom:4px;">完成度</div>'+
       '<div class="progress-bar"><div class="progress-bar-fill" style="width:'+pct+'%;"></div></div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div></div>';
+      '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div>'+
+      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '') + '</div>';
   }
 
   // 图表：跑量趋势（跑步目标）或训练频次（举铁目标）
@@ -3496,6 +3563,12 @@ function renderProgress() {
     '<button class="export-btn" onclick="exportCSV()">📥 导出数据 CSV</button>'+
     '<button class="export-btn" style="color:var(--primary);border-color:var(--primary);" onclick="exportDiary()">📖 导出训练日记</button>'+
     '<button class="export-btn" style="color:#8B5CF6;border-color:#8B5CF6;" onclick="generateShareImage()">📸 生成分享图</button></div>';
+
+  // 🔥 训练热力图
+  html += renderHeatmapHTML(hist);
+
+  // 🏅 成就系统 + 等级
+  html += renderGamificationHTML(hist);
 
   document.getElementById("progContent").innerHTML = html;
 
@@ -3663,6 +3736,8 @@ window.addEventListener('load', function() {
   if (planResult && !planResult.innerHTML.trim()) {
     planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🏋️</div><div class="loading-text">选择目标、水平和天数，点击「生成我的计划」开始</div></div>';
   }
+  // 🎮 初始化游戏化系统
+  updateHeaderStreak();
 });
 </script>
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
@@ -3760,6 +3835,61 @@ function resetAllData() {
   location.reload();
 }
 
+
+// ============ 热量具象化 ============
+var FOOD_EQUIVALENTS = [
+  {name:'碗米饭', emoji:'🍚', kcal:174},
+  {name:'个汉堡', emoji:'🍔', kcal:250},
+  {name:'杯奶茶', emoji:'🧋', kcal:380},
+  {name:'包薯片', emoji:'🍟', kcal:540},
+  {name:'瓶啤酒', emoji:'🍺', kcal:215},
+  {name:'个甜甜圈', emoji:'🍩', kcal:290},
+  {name:'片披萨', emoji:'🍕', kcal:285},
+  {name:'根香蕉', emoji:'🍌', kcal:105},
+  {name:'个鸡蛋', emoji:'🥚', kcal:78},
+  {name:'碗拉面', emoji:'🍜', kcal:450},
+  {name:'块蛋糕', emoji:'🍰', kcal:350},
+  {name:'个炸鸡腿', emoji:'🍗', kcal:250}
+];
+// 根据热量智能挑选2-3种食物做对比
+function getFoodEquivalents(kcal) {
+  if (!kcal || kcal < 50) return [];
+  // 优先选"约等于1-5个"的食物（不要几十个鸡蛋这种离谱的）
+  var candidates = FOOD_EQUIVALENTS.map(function(f){
+    return {name:f.name, emoji:f.emoji, count:Math.max(1,Math.round(kcal / f.kcal)), raw: f.kcal};
+  }).filter(function(f){ return f.count >= 1 && f.count <= 12; }); // 过滤掉太离谱的
+  // 按"个数适中"排序：优先选2-6个的
+  candidates.sort(function(a,b){
+    var sa = Math.abs(a.count - 3), sb = Math.abs(b.count - 3);
+    return sa - sb;
+  });
+  // 取前3个，去重类型
+  var picked = [], used = {};
+  for (var i = 0; i < candidates.length && picked.length < 3; i++) {
+    if (!used[candidates[i].name]) { picked.push(candidates[i]); used[candidates[i].name] = true; }
+  }
+  return picked;
+}
+function renderFoodEquivalent(kcal) {
+  var eqs = getFoodEquivalents(kcal);
+  if (!eqs.length) return '';
+  var html = '<div class="food-equivalent">'+
+    '<div class="food-eq-title">🔥 这相当于消耗了：</div>'+
+    '<div class="food-eq-row">';
+  eqs.forEach(function(eq){
+    html += '<div class="food-eq-item"><span class="food-emoji">'+eq.emoji+'</span>'+
+      '<span class="food-count">'+eq.count+'</span> '+eq.name+'</div>';
+  });
+  html += '</div>';
+  // 加一句趣味标语
+  var taglines = [
+    '省下一顿欺骗餐的热量！', '今天的汗没白流 💪', '吃得爽一时，练得爽一整天',
+    '这就是你不吃夜宵的理由 ✨', '每一卡都是你的勋章', '想想这杯奶茶，值了！'
+  ];
+  html += '<div class="food-eq-tagline">'+taglines[Math.floor(Math.random()*taglines.length)]+'</div></div>';
+  return html;
+}
+
 // ============ 每周训练总结 ============
 function showWeeklySummary() {
   var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
@@ -3796,6 +3926,7 @@ function showWeeklySummary() {
     '<div class="weekly-stat-row"><span>本周训练天数</span><span class="weekly-stat-val">'+trainedDays.size+' 天</span></div>'+
     '<div class="weekly-stat-row"><span>完成动作组数</span><span class="weekly-stat-val">'+totalSets+' 组</span></div>'+
     '<div class="weekly-stat-row"><span>估算消耗热量</span><span class="weekly-stat-val">'+Math.round(totalCal)+' kcal</span></div>'+
+    (Math.round(totalCal) > 0 ? renderFoodEquivalent(Math.round(totalCal)) : '') +
     '<div class="weekly-stat-row"><span>当前目标</span><span class="weekly-stat-val">'+goalName+'</span></div>'+
     '<div class="weekly-stat-row"><span>连续训练 🔥</span><span class="weekly-stat-val">'+streak+' 天</span></div>'+
     '<div style="text-align:center;margin-top:16px;">'+
@@ -3820,6 +3951,287 @@ function getWarmupExercises(muscles) {
   if (primary === '胸' || primary === '肩' || primary === '臂') return WARMUP_POOL.upper;
   if (primary === '核心' || primary === '背') return WARMUP_POOL.core;
   return WARMUP_POOL.full;
+}
+
+// ============ 🎮 游戏化系统 ============
+
+// --- 里程碑 ---
+var STREAK_MILESTONES = [
+  {days:3, emoji:'🌟', title:'初露锋芒', msg:'连续3天训练！好的开始是成功的一半'},
+  {days:7, emoji:'🔥', title:'一周战士', msg:'连续7天！你已经超越了90%的人'},
+  {days:14, emoji:'💪', title:'半月勇者', msg:'14天！训练已经变成习惯'},
+  {days:21, emoji:'👑', title:'习惯铸造者', msg:'21天！一个新的习惯已经形成'},
+  {days:30, emoji:'🏆', title:'月度铁人', msg:'整整一个月！你是真正的铁人'},
+  {days:50, emoji:'🎖', title:'半百战神', msg:'50天不中断，毅力非凡'},
+  {days:100, emoji:'💎', title:'传奇', msg:'100天！你已经是一个传奇'}
+];
+
+// --- 成就定义 ---
+var ACHIEVEMENTS = [
+  // 坚持类
+  {id:'a1', cat:'🏅', icon:'🌟', name:'首次训练', desc:'完成第一次训练'},
+  {id:'a2', cat:'🏅', icon:'📅', name:'一周战士', desc:'连续训练7天'},
+  {id:'a3', cat:'🏅', icon:'👑', name:'21天习惯', desc:'连续训练21天'},
+  {id:'a4', cat:'🏅', icon:'💎', name:'百日传奇', desc:'累计训练100天'},
+  // 训练量
+  {id:'b1', cat:'💪', icon:'🥉', name:'百组俱乐部', desc:'累计完成100组'},
+  {id:'b2', cat:'💪', icon:'🥈', name:'500组大师', desc:'累计完成500组'},
+  {id:'b3', cat:'💪', icon:'🥇', name:'千组战神', desc:'累计完成1000组'},
+  {id:'b4', cat:'💪', icon:'🔥', name:'燃烧5000卡', desc:'累计消耗5000kcal'},
+  // 目标类
+  {id:'c1', cat:'🎯', icon:'💪', name:'增肌战士', desc:'使用增肌计划训练7次'},
+  {id:'c2', cat:'🎯', icon:'⚡', name:'力量猛兽', desc:'使用力量计划训练7次'},
+  {id:'c3', cat:'🎯', icon:'🔥', name:'减脂达人', desc:'使用减脂计划训练7次'},
+  {id:'c4', cat:'🎯', icon:'❤️', name:'心肺先锋', desc:'使用心肺计划训练7次'},
+  {id:'c5', cat:'🎯', icon:'🏃', name:'跑者之心', desc:'完成马拉松训练7次'},
+  // 质量类
+  {id:'d1', cat:'⭐', icon:'📋', name:'完整计划', desc:'完成一个完整训练周期'},
+  {id:'d2', cat:'⭐', icon:'📊', name:'数据控', desc:'记录10次训练日志'},
+  {id:'d3', cat:'⭐', icon:'🏋️', name:'全能选手', desc:'练过所有肌群'}
+];
+
+// --- 等级系统 ---
+var LEVELS = [
+  {lv:1, icon:'🥉', name:'健身新手', need:0},
+  {lv:2, icon:'🥈', name:'健身学徒', need:7},
+  {lv:3, icon:'🥇', name:'健身达人', need:30},
+  {lv:4, icon:'💎', name:'健身狂魔', need:100},
+  {lv:5, icon:'👑', name:'健身传奇', need:365},
+  {lv:6, icon:'🔥', name:'健身之神', need:1000}
+];
+
+// --- 数据读写 ---
+function getStreakData() {
+  try { return JSON.parse(localStorage.getItem('fitbuddy_streak') || '{"current":0,"longest":0,"lastDate":"","milestones":[]}'); } catch(e) { return {current:0,longest:0,lastDate:"",milestones:[]}; }
+}
+function saveStreakData(d) { localStorage.setItem('fitbuddy_streak', JSON.stringify(d)); }
+function getAchievements() {
+  try { return JSON.parse(localStorage.getItem('fitbuddy_ach') || '[]'); } catch(e) { return []; }
+}
+function saveAchievements(a) { localStorage.setItem('fitbuddy_ach', JSON.stringify(a)); }
+
+// --- 连续打卡更新 ---
+function updateStreak() {
+  var sd = getStreakData();
+  var today = new Date().toISOString().slice(0,10);
+  if (sd.lastDate === today) return sd; // 今天已打卡
+
+  var yesterday = new Date();
+  yesterday.setDate(yesterday.getDate()-1);
+  var yestStr = yesterday.toISOString().slice(0,10);
+
+  var dayBefore = new Date();
+  dayBefore.setDate(dayBefore.getDate()-2);
+  var dbStr = dayBefore.toISOString().slice(0,10);
+
+  if (sd.lastDate === yestStr) {
+    sd.current++; // 连续
+  } else if (sd.lastDate === dbStr) {
+    // 允许1天休息日
+    sd.current++;
+  } else if (sd.lastDate !== '' && sd.lastDate !== today) {
+    sd.current = 1; // 断了，重置
+  } else if (sd.lastDate === '') {
+    sd.current = 1;
+  }
+
+  sd.lastDate = today;
+  if (sd.current > sd.longest) sd.longest = sd.current;
+  saveStreakData(sd);
+  updateHeaderStreak();
+  checkMilestone(sd);
+  return sd;
+}
+
+// --- 里程碑检测 ---
+function checkMilestone(sd) {
+  if (!sd) sd = getStreakData();
+  STREAK_MILESTONES.forEach(function(m) {
+    if (sd.current === m.days && sd.milestones.indexOf(m.days) < 0) {
+      sd.milestones.push(m.days);
+      saveStreakData(sd);
+      showCelebration(m.title, m.emoji, m.msg, '连续训练'+m.days+'天！');
+    }
+  });
+}
+
+// --- 成就检测 ---
+function checkAchievements() {
+  var ach = getAchievements();
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+  var log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}');
+  var sd = getStreakData();
+  var totalSets = hist.reduce(function(s,h){ return s+(h.count||0); },0);
+  var totalCal = Math.round(hist.reduce(function(s,h){ return s+(h.calories||0); },0));
+  var trainDates = new Set(hist.map(function(h){ return h.date; }));
+  var allNames = new Set();
+  hist.forEach(function(h){ if(h.exercises) h.exercises.forEach(function(e){ allNames.add(e); }); });
+  var logCount = Object.keys(log).length;
+  var goalTrainCounts = {};
+  hist.forEach(function(h){
+    var g = h.goal || '';
+    if (g) goalTrainCounts[g] = (goalTrainCounts[g]||0) + h.count;
+  });
+  var updated = false;
+
+  var checks = [
+    {id:'a1', cond: hist.length>0},
+    {id:'a2', cond: sd.current>=7 || sd.longest>=7},
+    {id:'a3', cond: sd.current>=21 || sd.longest>=21},
+    {id:'a4', cond: trainDates.size>=100},
+    {id:'b1', cond: totalSets>=100},
+    {id:'b2', cond: totalSets>=500},
+    {id:'b3', cond: totalSets>=1000},
+    {id:'b4', cond: totalCal>=5000},
+    {id:'c1', cond: (goalTrainCounts.muscle||0)>=7},
+    {id:'c2', cond: (goalTrainCounts.strength||0)>=7},
+    {id:'c3', cond: (goalTrainCounts.cut||0)>=7},
+    {id:'c4', cond: (goalTrainCounts.cardio||0)>=7},
+    {id:'c5', cond: (goalTrainCounts.marathon||0)>=7},
+    {id:'d1', cond: plan&&plan.weeks&&trainDates.size>= (plan.daysPerWeek*plan.weeks*0.8)},
+    {id:'d2', cond: logCount>=10},
+    {id:'d3', cond: allNames.size>=30}
+  ];
+
+  checks.forEach(function(c){
+    if (c.cond && ach.indexOf(c.id)<0) {
+      ach.push(c.id);
+      updated = true;
+      var def = ACHIEVEMENTS.find(function(a){ return a.id===c.id; });
+      if (def) showCelebration('获得成就', def.icon, def.name+' — '+def.desc, '');
+    }
+  });
+  if (updated) saveAchievements(ach);
+  return ach;
+}
+
+// --- 庆祝弹窗 ---
+function showCelebration(title, emoji, msg, sub) {
+  var html = '<div class="celebration">'+
+    '<div class="celebration-emoji">'+emoji+'</div>'+
+    '<div class="celebration-title">'+title+'</div>'+
+    '<div class="celebration-msg">'+msg+'</div>'+
+    (sub?'<div class="celebration-sub">'+sub+'</div>':'')+
+    '<div style="margin-top:12px;">'+
+      '<button class="celebration-share-btn" onclick="shareCelebration()">📸 分享到小红书</button>'+
+      '<button class="celebration-close-btn" onclick="closeModal()">关闭</button>'+
+    '</div></div>';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+}
+
+// --- 分享庆祝 ---
+function shareCelebration() {
+  var sd = getStreakData();
+  var lv = getLevel();
+  var cardHtml = '<html><body style="background:#1A1A2E;color:#fff;font-family:sans-serif;text-align:center;padding:40px 20px;">'+
+    '<div style="font-size:64px;margin:20px 0;">🔥</div>'+
+    '<h1 style="font-size:28px;">连续训练 '+sd.current+' 天</h1>'+
+    '<p style="font-size:18px;color:#aaa;">等级：'+lv.icon+' '+lv.name+'</p>'+
+    '<p style="font-size:14px;color:#888;margin-top:20px;">🏋️ FitBuddy · 智能健身计划</p></body></html>';
+  var blob = new Blob([cardHtml], {type:'text/html'});
+  var url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
+// --- Header 连续打卡显示 ---
+function updateHeaderStreak() {
+  var sd = getStreakData();
+  var se = document.getElementById('headerStreak');
+  var le = document.getElementById('headerLevel');
+  if (sd.current > 0) {
+    se.style.display = 'inline-flex';
+    document.getElementById('streakNum').textContent = sd.current;
+  }
+  var lv = getLevel();
+  le.style.display = 'inline-flex';
+  le.textContent = lv.icon + ' ' + lv.name;
+}
+
+// --- 等级计算 ---
+function getLevel() {
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var totalDays = new Set(hist.map(function(h){ return h.date; })).size;
+  for (var i = LEVELS.length-1; i >= 0; i--) {
+    if (totalDays >= LEVELS[i].need) return LEVELS[i];
+  }
+  return LEVELS[0];
+}
+function getLevelProgress() {
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var totalDays = new Set(hist.map(function(h){ return h.date; })).size;
+  var cur = LEVELS[0], nxt = LEVELS[1];
+  for (var i = LEVELS.length-1; i >= 0; i--) {
+    if (totalDays >= LEVELS[i].need) { cur = LEVELS[i]; nxt = LEVELS[i+1]||LEVELS[i]; break; }
+  }
+  var range = nxt.need - cur.need;
+  var progress = range > 0 ? Math.min(100, Math.round((totalDays - cur.need) / range * 100)) : 100;
+  return {cur:cur, nxt:nxt, progress:progress, total:totalDays};
+}
+
+// --- 热力图渲染 ---
+function renderHeatmapHTML(hist) {
+  var dates = {};
+  hist.forEach(function(h){ dates[h.date] = (dates[h.date]||0) + (h.count||0); });
+  var today = new Date();
+  var cells = [];
+  var now = new Date(today);
+  now.setDate(now.getDate() - 83); // 12 weeks back
+  for (var i = 0; i < 84; i++) {
+    var ds = now.toISOString().slice(0,10);
+    var count = dates[ds] || 0;
+    var level = count === 0 ? 0 : count <= 2 ? 1 : count <= 5 ? 2 : count <= 10 ? 3 : 4;
+    cells.push('<div class="heatmap-cell'+(level>0?' l'+level:'')+'" title="'+ds+': '+(count||'无训练')+'"'+
+      ' style="grid-column:'+((i%7)+1)+';grid-row:'+(Math.floor(i/7)+1)+';"></div>');
+    now.setDate(now.getDate()+1);
+  }
+  return '<div class="progress-card"><div class="card-title">📅 训练热力图（近12周）</div>'+
+    '<div class="heatmap" style="display:grid;grid-template-columns:repeat(7,13px);grid-template-rows:repeat(12,13px);gap:3px;">'+cells.join('')+'</div>'+
+    '<div class="heatmap-legend">少<span style="background:var(--border)"></span>'+
+    '<span class="heatmap-cell l1"></span><span class="heatmap-cell l2"></span><span class="heatmap-cell l3"></span><span class="heatmap-cell l4"></span>多</div></div>';
+}
+
+// --- 成就+等级渲染 ---
+function renderGamificationHTML(hist) {
+  var ach = getAchievements();
+  var lv = getLevel();
+  var lp = getLevelProgress();
+  var html = '';
+
+  // 等级条
+  html += '<div class="progress-card"><div class="card-title">🏅 训练等级</div>'+
+    '<div class="level-bar"><span class="level-icon">'+lp.cur.icon+'</span>'+
+    '<div class="level-info"><div class="level-name">'+lp.cur.name+'</div>'+
+    '<div class="level-progress-bar"><div class="level-progress-fill" style="width:'+lp.progress+'%"></div></div>'+
+    '<div class="level-progress-text">训练 '+lp.total+' 天 · 距离下一级 '+(lp.nxt.need-lp.total)+(lp.nxt.need>lp.total?' 天':'')+'</div>'+
+    '</div></div></div>';
+
+  // 成就墙
+  html += '<div class="progress-card"><div class="card-title">🏆 成就徽章</div>';
+  var cats = {};
+  ACHIEVEMENTS.forEach(function(a){ if (!cats[a.cat]) cats[a.cat]=[]; cats[a.cat].push(a); });
+  Object.keys(cats).forEach(function(cat){
+    html += '<div style="font-size:11px;font-weight:700;color:var(--text3);margin:8px 0 4px;">'+cat+'</div>';
+    html += '<div class="ach-grid">';
+    cats[cat].forEach(function(a){
+      var unlocked = ach.indexOf(a.id)>=0;
+      html += '<div class="ach-badge'+(unlocked?' unlocked':' locked')+'">'+
+        '<span class="ach-icon">'+(unlocked?a.icon:'🔒')+'</span>'+
+        '<span class="ach-name">'+a.name+'</span>'+
+        '<span class="ach-date">'+a.desc+'</span></div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+// --- 在 toggleDone 后触发 ---
+function afterTrainingDone() {
+  updateStreak();
+  checkAchievements();
+  updateHeaderStreak();
 }
 </script>
 </body>
