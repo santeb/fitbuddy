@@ -325,6 +325,32 @@ input,select{font-family:inherit;}
 .timer-btn:active{transform:scale(0.95);}
 .timer-btn.primary{background:#FF6B35;color:#fff;}
 .timer-btn.secondary{background:rgba(255,255,255,0.2);color:#fff;}
+.timer-presets{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:20px;}
+.timer-preset{padding:8px 16px;border-radius:10px;font-size:14px;font-weight:700;background:rgba(255,255,255,0.12);color:#fff;border:1.5px solid rgba(255,255,255,0.2);cursor:pointer;transition:all .2s;}
+.timer-preset:active,.timer-preset.active{background:rgba(255,255,255,0.25);border-color:#FF6B35;}
+
+/* FAB 浮动计时按钮 */
+.fab-timer{position:fixed;bottom:90px;right:calc(50% - 195px);width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(255,107,53,0.45);z-index:200;cursor:pointer;border:none;transition:all .25s;animation:fabPulse 2.5s infinite;}
+.fab-timer:active{transform:scale(0.88);}
+@keyframes fabPulse{0%,100%{box-shadow:0 4px 18px rgba(255,107,53,0.45)}50%{box-shadow:0 4px 28px rgba(255,107,53,0.7)}}
+@media(min-width:431px){.fab-timer{right:calc(50% - 215px + 16px);}}
+
+/* 1RM 计算器 */
+.rm-calc{padding:16px;background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);}
+.rm-calc .rm-title{font-size:15px;font-weight:700;margin-bottom:12px;}
+.rm-input-row{display:flex;gap:10px;align-items:end;margin-bottom:12px;}
+.rm-input-row .form-group{flex:1;margin-bottom:0;}
+.rm-result{text-align:center;padding:14px;background:linear-gradient(135deg,#F0F9FF,#EFF6FF);border-radius:12px;margin-bottom:12px;}
+[data-theme="dark"] .rm-result{background:linear-gradient(135deg,#1E293B,#1A2332);}
+.rm-result-num{font-size:36px;font-weight:800;color:var(--primary);}
+.rm-result-label{font-size:12px;color:var(--text3);margin-top:2px;}
+.rm-table{width:100%;border-collapse:collapse;font-size:12px;}
+.rm-table td{padding:6px 10px;border-bottom:1px solid var(--border);}
+.rm-table td:first-child{color:var(--text2);}
+.rm-table td:last-child{text-align:right;font-weight:700;}
+.rm-actions{display:flex;gap:8px;margin-top:10px;}
+.rm-actions button{flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text2);transition:all .2s;}
+.rm-actions button.active{background:var(--primary);color:#fff;}
 
 /* Progress Page */
 .progress-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
@@ -758,6 +784,29 @@ input,select{font-family:inherit;}
 .catch-success { animation: catchSuccess 0.4s ease-out; }
 .catch-escaped { animation: catchEscape 0.6s ease-in forwards; }
 
+/* ====== 🗺️ RPG冒险系统 ====== */
+.rpg-gold-bar { background: linear-gradient(90deg, #F59E0B, #D97706); border-radius: 16px; padding: 14px 18px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; color: #fff; }
+.rpg-gold-bar .rg-icon { font-size: 32px; }
+.rpg-gold-bar .rg-amount { font-size: 24px; font-weight: 900; }
+.rpg-gold-bar .rg-label { font-size: 11px; opacity: 0.8; }
+.rpg-quest-card { background: var(--bg); border-radius: 12px; padding: 12px; margin-bottom: 8px; transition: opacity 0.3s; }
+.rpg-quest-card.quest-done { opacity: 0.55; }
+.rpg-progress-bar { background: rgba(255,255,255,0.1); border-radius: 6px; height: 6px; overflow: hidden; }
+.rpg-progress-fill { height: 100%; border-radius: 6px; transition: width 0.5s; }
+.rpg-boss-card { border: 2px solid #EF4444 !important; }
+.rpg-boss-hp-bar { background: var(--bg); border-radius: 8px; height: 14px; margin: 10px 0; overflow: hidden; }
+.rpg-boss-hp-fill { height: 100%; background: linear-gradient(90deg, #EF4444, #DC2626); border-radius: 8px; transition: width 0.5s; }
+.rpg-shop-item { background: var(--bg); border-radius: 14px; padding: 14px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.rpg-shop-item:active { transform: scale(0.95); }
+.rpg-shop-item.disabled { opacity: 0.45; cursor: default; }
+.rpg-shop-item .rs-icon { font-size: 36px; }
+.rpg-shop-item .rs-name { font-size: 13px; font-weight: 700; color: var(--text); margin: 4px 0; }
+.rpg-shop-item .rs-desc { font-size: 10px; color: var(--text3); margin-bottom: 6px; }
+.rpg-shop-item .rs-price { font-size: 14px; font-weight: 900; color: #F59E0B; }
+@keyframes rpgToastIn { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+@keyframes rpgToastOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes bossDmgFloat { 0% { opacity: 1; transform: translate(-50%, -10px); } 100% { opacity: 0; transform: translate(-50%, -50px); } }
+
 /* 收藏库 */
 .collection-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .collection-card {
@@ -960,6 +1009,31 @@ input,select{font-family:inherit;}
       <div class="filter-chip" data-eq="bodyweight">🤸 自重</div>
     </div>
     <div id="libList"></div>
+    <!-- 1RM 极限重量计算器 -->
+    <div class="rm-calc" id="rmCalc">
+      <div class="rm-title">🏋️ 1RM 极限重量计算器</div>
+      <div class="rm-actions">
+        <button class="active" data-formula="epley" onclick="switchRMFormula('epley',this)">Epley 公式</button>
+        <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
+      </div>
+      <div class="rm-input-row">
+        <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()"></div>
+        <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()"></div>
+      </div>
+      <div class="rm-result" id="rmResult" style="display:none;">
+        <div class="rm-result-num" id="rmValue">--</div>
+        <div class="rm-result-label" id="rmFormulaLabel">Epley 公式估算</div>
+        <table class="rm-table" style="margin-top:10px;">
+          <tr><td>50% 1RM</td><td id="rm50">-- kg</td></tr>
+          <tr><td>60% 1RM</td><td id="rm60">-- kg</td></tr>
+          <tr><td>70% 1RM</td><td id="rm70">-- kg</td></tr>
+          <tr><td>80% 1RM</td><td id="rm80">-- kg</td></tr>
+          <tr><td>85% 1RM</td><td id="rm85">-- kg</td></tr>
+          <tr><td>90% 1RM</td><td id="rm90">-- kg</td></tr>
+          <tr><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- 进度页 -->
@@ -1003,6 +1077,15 @@ input,select{font-family:inherit;}
     </div>
   </div>
 
+  <!-- RPG冒险页 -->
+  <div class="page" id="page-rpg">
+    <div class="community-banner" style="background:linear-gradient(135deg,#1A1A2E 0%,#16213E 50%,#2D1B69 100%);box-shadow:0 4px 18px rgba(139,92,246,0.3);">
+      <div class="cb-title">🗺️ 冒险任务</div>
+      <div class="cb-sub">训练=冒险，每天都有新挑战</div>
+    </div>
+    <div id="rpgContent"></div>
+  </div>
+
   <!-- 社区大厅页 -->
   <div class="page" id="page-community">
     <div class="community-banner">
@@ -1026,6 +1109,9 @@ input,select{font-family:inherit;}
     <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)">
       <span class="icon">🏟️</span>社区
     </button>
+    <button class="tab-btn" data-tab="page-rpg" onclick="switchTab(this)">
+      <span class="icon">🗺️</span>冒险
+    </button>
     <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)">
       <span class="icon">💝</span>发电
     </button>
@@ -1036,14 +1122,25 @@ input,select{font-family:inherit;}
     <div class="modal" id="modalBody"></div>
   </div>
 
+  <!-- FAB 浮动计时按钮 -->
+  <button class="fab-timer" id="fabTimer" onclick="openTimerFab()" title="组间休息计时器">⏱</button>
+
   <!-- 休息计时器 -->
   <div class="timer-overlay" id="timerOverlay">
+    <div class="timer-presets" id="timerPresets">
+      <button class="timer-preset" onclick="startRestTimerCustom(30)">30秒</button>
+      <button class="timer-preset active" onclick="startRestTimerCustom(60)">60秒</button>
+      <button class="timer-preset" onclick="startRestTimerCustom(90)">90秒</button>
+      <button class="timer-preset" onclick="startRestTimerCustom(120)">2分钟</button>
+      <button class="timer-preset" onclick="startRestTimerCustom(180)">3分钟</button>
+    </div>
     <div class="timer-circle">
       <div class="timer-num" id="timerNum">60</div>
       <div class="timer-label">组间休息</div>
     </div>
     <div class="timer-btns">
       <button class="timer-btn secondary" onclick="addTime(15)">+15秒</button>
+      <button class="timer-btn secondary" onclick="pauseTimer()" id="timerPauseBtn">⏸ 暂停</button>
       <button class="timer-btn primary" onclick="stopTimer()">跳过</button>
     </div>
   </div>
@@ -1059,6 +1156,7 @@ input,select{font-family:inherit;}
 <script src="planner-core.js" defer></script>
 <script src="pets.js" defer></script>
 <script src="community.js" defer></script>
+<script src="rpg.js" defer></script>
 
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
   <div>FitBuddy v1.1 · 周期化训练计划引擎</div>

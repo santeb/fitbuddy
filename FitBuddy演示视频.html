@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FitBuddy 使用演示</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0a0a0f;display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden;}
+.demo-container{position:relative;display:flex;gap:40px;align-items:center;max-width:900px;width:100%;padding:20px;}
+.phone-frame{width:320px;height:640px;background:#1a1a2e;border-radius:36px;border:4px solid #2a2a3a;overflow:hidden;position:relative;flex-shrink:0;box-shadow:0 20px 60px rgba(255,107,53,0.15),0 0 0 2px #1a1a2e;}
+.phone-notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:24px;background:#0a0a0f;border-radius:0 0 16px 16px;z-index:10;}
+.phone-screen{position:absolute;top:0;left:0;width:100%;height:100%;overflow:hidden;background:#f5f6fa;transition:background .4s;}
+.phone-screen.dark{background:#121218;}
+.slide{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 20px;opacity:0;transform:translateY(20px) scale(0.96);transition:all .5s cubic-bezier(.4,0,.2,1);pointer-events:none;}
+.slide.active{opacity:1;transform:translateY(0) scale(1);}
+.slide-icon{font-size:52px;margin-bottom:16px;animation:float 3s ease-in-out infinite;}
+.slide-title{font-size:20px;font-weight:800;color:#1a1a2e;text-align:center;margin-bottom:8px;}
+.dark .slide-title{color:#e8e8f0;}
+.slide-sub{font-size:13px;color:#888;text-align:center;line-height:1.6;max-width:260px;}
+.dark .slide-sub{color:#666;}
+.slide-card{width:100%;background:#fff;border-radius:14px;padding:14px;box-shadow:0 2px 12px rgba(0,0,0,0.06);margin-top:12px;font-size:12px;color:#555;}
+.dark .slide-card{background:#1e1e28;box-shadow:0 2px 12px rgba(0,0,0,0.2);color:#999;}
+.slide-card .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;}
+.dark .slide-card .row{border-bottom-color:#2a2a38;}
+.slide-card .row:last-child{border-bottom:none;}
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:600;}
+.tag-orange{background:#fff0eb;color:#ff6b35;}
+.tag-green{background:#e8faf0;color:#22c55e;}
+.tag-blue{background:#ebf4ff;color:#3b82f6;}
+.tag-purple{background:#f3ebff;color:#8b5cf6;}
+
+/* Goal cards in slide */
+.goal-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;margin-top:12px;}
+.goal-btn{padding:14px 10px;border-radius:12px;border:2px solid #eee;background:#fff;text-align:center;font-size:13px;font-weight:700;transition:all .2s;}
+.goal-btn.active{border-color:#ff6b35;background:#fff0eb;color:#ff6b35;}
+.dark .goal-btn{background:#1e1e28;border-color:#2a2a38;color:#e8e8f0;}
+.dark .goal-btn.active{border-color:#ff6b35;background:#2a1a14;}
+.goal-btn .gicon{font-size:24px;display:block;margin-bottom:4px;}
+
+/* Week grid */
+.week-row{display:flex;gap:4px;flex-wrap:wrap;}
+.day-chip{width:38px;height:38px;border-radius:10px;background:#fff0eb;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#ff6b35;border:2px solid #ff6b35;}
+.dark .day-chip{background:#2a1a14;}
+.day-chip.rest{background:#f0f0f0;border-color:#ddd;color:#999;}
+.dark .day-chip.rest{background:#1a1a24;border-color:#2a2a38;color:#555;}
+
+/* Nutrition panel */
+.nutri-row{display:flex;gap:8px;}
+.nutri-card{flex:1;background:#fff;border-radius:12px;padding:12px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);}
+.dark .nutri-card{background:#1e1e28;}
+.nutri-card .nlabel{font-size:10px;color:#999;margin-bottom:4px;}
+.nutri-card .nval{font-size:18px;font-weight:800;color:#1a1a2e;}
+.dark .nutri-card .nval{color:#e8e8f0;}
+
+/* Heatmap */
+.heatmap-grid{display:flex;gap:2px;flex-wrap:wrap;}
+.heatmap-cell{width:16px;height:16px;border-radius:3px;background:#eee;}
+.dark .heatmap-cell{background:#2a2a38;}
+.heatmap-cell.l1{background:#c6e48b;}
+.heatmap-cell.l2{background:#7bc96f;}
+.heatmap-cell.l3{background:#239a3b;}
+.heatmap-cell.l4{background:#196127;}
+
+/* Achievement badges */
+.badge-row{display:flex;gap:6px;flex-wrap:wrap;}
+.badge{width:48px;height:48px;border-radius:12px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:22px;}
+.dark .badge{background:#2a2a38;}
+.badge.locked{opacity:0.3;filter:grayscale(1);}
+
+/* Food equivalent */
+.food-row{display:flex;gap:6px;}
+.food-chip{padding:6px 10px;border-radius:20px;background:#fff0eb;font-size:11px;color:#ff6b35;font-weight:600;}
+.dark .food-chip{background:#2a1a14;}
+
+/* Progress bar (video style) */
+.progress-bar{position:absolute;bottom:0;left:0;width:100%;height:3px;background:rgba(255,255,255,0.1);z-index:5;}
+.progress-fill{height:100%;background:linear-gradient(90deg,#ff6b35,#ff3e7f);transition:width .3s linear;}
+
+/* Side panel */
+.info-panel{flex:1;min-width:200px;color:#ccc;}
+.info-panel .step-num{font-size:12px;color:#ff6b35;font-weight:700;margin-bottom:4px;letter-spacing:1px;}
+.info-panel .step-title{font-size:22px;font-weight:800;color:#fff;margin-bottom:8px;line-height:1.3;}
+.info-panel .step-desc{font-size:13px;color:#888;line-height:1.7;}
+
+/* Controls */
+.controls{position:absolute;bottom:-50px;left:50%;transform:translateX(-50%);display:flex;gap:16px;align-items:center;z-index:20;}
+.ctrl-btn{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.ctrl-btn:hover{background:rgba(255,255,255,0.2);}
+.ctrl-btn.play{width:44px;height:44px;font-size:18px;background:rgba(255,107,53,0.2);border-color:#ff6b35;}
+.ctrl-btn.play:hover{background:rgba(255,107,53,0.4);}
+.dots{display:flex;gap:6px;}
+.dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.2);transition:all .3s;}
+.dot.active{background:#ff6b35;width:18px;border-radius:3px;}
+
+/* Marathon pace card */
+.pace-row{display:flex;gap:6px;}
+.pace-chip{padding:6px 10px;border-radius:8px;font-size:10px;font-weight:600;text-align:center;}
+.pace-chip.p1{background:#e8f5e9;color:#2e7d32;}
+.pace-chip.p2{background:#fff3e0;color:#e65100;}
+.pace-chip.p3{background:#fce4ec;color:#c62828;}
+
+/* Animations */
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes checkPop{0%{transform:scale(0)}70%{transform:scale(1.2)}100%{transform:scale(1)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+@keyframes slideIn{from{transform:translateX(-10px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* Ex list in card */
+.ex-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f5;font-size:11px;}
+.dark .ex-item{border-bottom-color:#2a2a38;}
+.ex-check{width:20px;height:20px;border-radius:50%;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex-shrink:0;}
+.ex-check.done{background:#22c55e;border-color:#22c55e;animation:checkPop .4s ease;}
+.ex-check.done::after{content:"✓";}
+
+/* Responsive */
+@media(max-width:768px){
+.demo-container{flex-direction:column;gap:20px;padding:10px;}
+.phone-frame{width:280px;height:560px;}
+.info-panel{text-align:center;}
+.controls{bottom:-40px;}
+}
+
+/* Nav bar in phone */
+.phone-nav{position:absolute;bottom:0;left:0;right:0;height:44px;background:#fff;border-top:1px solid #ebebeb;display:flex;z-index:2;}
+.dark .phone-nav{background:#1e1e28;border-top-color:#2a2a38;}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;color:#999;gap:2px;}
+.nav-item .ni{font-size:18px;}
+.nav-item.active{color:#ff6b35;}
+
+/* Header bar */
+.phone-header{height:44px;background:linear-gradient(135deg,#ff6b35,#ff3e7f);display:flex;align-items:center;padding:0 14px;color:#fff;z-index:2;position:relative;}
+.phone-header .ph-title{font-size:14px;font-weight:800;}
+.phone-header .ph-sub{font-size:10px;opacity:0.7;margin-left:8px;}
+</style>
+</head>
+<body>
+
+<div class="demo-container">
+  <!-- Info panel -->
+  <div class="info-panel" id="infoPanel">
+    <div class="step-num" id="stepNum">STEP 1/14</div>
+    <div class="step-title" id="stepTitle">开始你的健身之旅</div>
+    <div class="step-desc" id="stepDesc">选择你的目标，FitBuddy 会自动生成周期化训练计划</div>
+  </div>
+
+  <!-- Phone -->
+  <div class="phone-frame" id="phoneFrame">
+    <div class="phone-notch"></div>
+    <div class="phone-screen" id="phoneScreen">
+      <div class="phone-header"><span class="ph-title">FitBuddy</span><span class="ph-sub" id="headerStreak">🔥 12天</span></div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+      <!-- SLIDES -->
+      <div class="slide active" data-slide="0">
+        <div class="slide-icon">🏋️</div>
+        <div class="slide-title">FitBuddy 健身助手</div>
+        <div class="slide-sub">免费 · 无广告 · 不用注册<br>智能周期化训练计划生成器</div>
+      </div>
+
+      <div class="slide" data-slide="1">
+        <div class="slide-title">🎯 选择你的目标</div>
+        <div class="slide-sub">5种目标，覆盖所有人</div>
+        <div class="goal-grid">
+          <div class="goal-btn active"><span class="gicon">💪</span>增肌</div>
+          <div class="goal-btn"><span class="gicon">🏆</span>力量</div>
+          <div class="goal-btn"><span class="gicon">🔥</span>减脂</div>
+          <div class="goal-btn"><span class="gicon">❤️</span>心肺</div>
+          <div class="goal-btn" style="grid-column:span 2"><span class="gicon">🏃</span>马拉松</div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="2">
+        <div class="slide-title">⚙️ 个性化配置</div>
+        <div class="slide-sub">3个水平 × 2-6天/周 × 3种设备</div>
+        <div class="slide-card">
+          <div class="row"><span>🌱 训练水平</span><span class="tag tag-orange">新手 · 3组</span></div>
+          <div class="row"><span>📅 每周天数</span><span class="tag tag-blue">周一、三、五</span></div>
+          <div class="row"><span>🏟️ 训练设备</span><span class="tag tag-green">哑铃+自重</span></div>
+          <div class="row"><span>🔄 训练周期</span><span class="tag tag-purple">4周周期化</span></div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="3">
+        <div class="slide-title">📋 本周训练计划</div>
+        <div class="slide-sub">推拉腿分化 · 周期第1周</div>
+        <div class="week-row" style="margin-top:10px;">
+          <div class="day-chip">一<br>推</div><div class="day-chip rest">二<br>休</div>
+          <div class="day-chip">三<br>拉</div><div class="day-chip rest">四<br>休</div>
+          <div class="day-chip">五<br>腿</div><div class="day-chip rest">六<br>休</div>
+          <div class="day-chip rest">日<br>休</div>
+        </div>
+        <div class="slide-card" style="margin-top:16px;">
+          <div style="font-weight:700;margin-bottom:6px;">周一 · 推 🔥380kcal</div>
+          <div class="ex-item"><div class="ex-check done"></div>杠铃卧推 4x8</div>
+          <div class="ex-item"><div class="ex-check done"></div>哑铃飞鸟 3x12</div>
+          <div class="ex-item"><div class="ex-check"></div>坐姿推举 4x8</div>
+          <div class="ex-item"><div class="ex-check"></div>侧平举 3x15</div>
+          <div class="ex-item"><div class="ex-check"></div>三头下压 3x12</div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="4">
+        <div class="slide-title">📹 点动作看GIF演示</div>
+        <div class="slide-sub">94个动作有高清动图演示</div>
+        <div style="width:100%;height:120px;background:#e8e8e8;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:48px;margin:12px 0;">🏋️‍♂️</div>
+        <div class="slide-card">
+          <div style="font-weight:700;">杠铃卧推</div>
+          <div style="font-size:11px;color:#888;margin:4px 0;">杠铃 · 胸部 · 中级</div>
+          <div style="font-size:11px;line-height:1.6;">✅ 肩胛收紧，脚踩实<br>✅ 触胸停顿1秒再推起<br>B站搜更多教程 →</div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="5">
+        <div class="slide-title">✓ 打卡完成</div>
+        <div class="slide-sub">勾选自动记录训练历史</div>
+        <div class="slide-card">
+          <div class="ex-item"><div class="ex-check done"></div><span style="text-decoration:line-through;color:#999;">杠铃卧推 4x8</span></div>
+          <div class="ex-item"><div class="ex-check done"></div><span style="text-decoration:line-through;color:#999;">哑铃飞鸟 3x12</span></div>
+          <div class="ex-item"><div class="ex-check done"></div><span style="text-decoration:line-through;color:#999;">坐姿推举 4x8</span></div>
+          <div class="ex-item"><div class="ex-check done"></div><span style="text-decoration:line-through;color:#999;">侧平举 3x15</span></div>
+          <div class="ex-item"><div class="ex-check done"></div><span style="text-decoration:line-through;color:#999;">三头下压 3x12</span></div>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:#22c55e;text-align:center;">✅ 全部完成！380kcal 已记录</div>
+      </div>
+
+      <div class="slide" data-slide="6">
+        <div class="slide-title">🏃 马拉松16周计划</div>
+        <div class="slide-sub">4个阶段 · 7种跑步类型</div>
+        <div class="slide-card">
+          <div class="row"><span>📅 第5周</span><span class="tag tag-orange">强化期</span></div>
+          <div class="row"><span>🏃 本周跑量</span><span>38 km</span></div>
+          <div class="row"><span>🏁 LSD长距离</span><span>16 km</span></div>
+          <div class="row"><span>⏱ 比赛配速</span><span>5:41/km</span></div>
+        </div>
+        <div class="pace-row" style="margin-top:8px;">
+          <div class="pace-chip p1">轻松跑<br>6:40/km</div>
+          <div class="pace-chip p2">节奏跑<br>5:20/km</div>
+          <div class="pace-chip p3">间歇跑<br>4:50/km</div>
+          <div class="pace-chip p1">LSD<br>6:15/km</div>
+          <div class="pace-chip p2">比赛<br>5:41/km</div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="7">
+        <div class="slide-title">🍽️ 动态营养计算</div>
+        <div class="slide-sub">训练日和休息日吃的不一样</div>
+        <div class="nutri-row">
+          <div class="nutri-card" style="border-top:3px solid #ff6b35;">
+            <div class="nlabel">🔥 训练日</div>
+            <div class="nval">2800</div>
+            <div style="font-size:10px;color:#888;">kcal</div>
+            <div style="font-size:10px;margin-top:4px;">蛋白 180g · 碳水 350g</div>
+          </div>
+          <div class="nutri-card" style="border-top:3px solid #3b82f6;">
+            <div class="nlabel">😴 休息日</div>
+            <div class="nval">2200</div>
+            <div style="font-size:10px;color:#888;">kcal</div>
+            <div style="font-size:10px;margin-top:4px;">蛋白 180g · 碳水 250g</div>
+          </div>
+        </div>
+        <div class="slide-card" style="margin-top:10px;">
+          <div style="font-weight:700;margin-bottom:4px;">📋 训练日食谱（份量自动缩放）</div>
+          <div style="font-size:10px;color:#888;">早餐 · 燕麦80g + 鸡蛋2个 + 牛奶250ml</div>
+          <div style="font-size:10px;color:#888;">加餐 · 香蕉1根 + 蛋白粉30g</div>
+          <div style="font-size:10px;color:#888;margin-top:2px;">…共6餐，每餐精确到5g</div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="8">
+        <div class="slide-title">📊 进度追踪</div>
+        <div class="slide-sub">热力图 · 跑量趋势 · 重量趋势</div>
+        <div class="slide-card">
+          <div style="font-weight:700;margin-bottom:6px;">近12周训练热力图</div>
+          <div class="heatmap-grid">
+            <div class="heatmap-cell"></div><div class="heatmap-cell l1"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l2"></div>
+            <div class="heatmap-cell"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l1"></div><div class="heatmap-cell l1"></div>
+            <div class="heatmap-cell l1"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell"></div><div class="heatmap-cell"></div>
+          </div>
+          <div style="font-size:9px;color:#888;text-align:right;margin-top:4px;">浅 → 深：少 → 多</div>
+        </div>
+        <div class="slide-card" style="margin-top:8px;">
+          <div class="row"><span>✅ 本周完成</span><span class="tag tag-green">3/3天</span></div>
+          <div class="row"><span>🏃 本周跑量</span><span>28 km</span></div>
+          <div class="row"><span>🔥 消耗热量</span><span>2,100 kcal</span></div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="9">
+        <div class="slide-title">🎮 游戏化激励</div>
+        <div class="slide-sub">让坚持变得好玩</div>
+        <div class="slide-card">
+          <div style="font-weight:700;margin-bottom:6px;">🏅 训练等级</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:28px;">🥇</span>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:700;">Lv3 健身爱好者</div>
+              <div style="height:6px;background:#eee;border-radius:3px;margin-top:4px;">
+                <div style="width:65%;height:100%;background:linear-gradient(90deg,#ff6b35,#ff3e7f);border-radius:3px;"></div>
+              </div>
+              <div style="font-size:9px;color:#888;margin-top:2px;">22/30 天 → Lv4</div>
+            </div>
+          </div>
+        </div>
+        <div class="slide-card" style="margin-top:8px;">
+          <div style="font-weight:700;margin-bottom:6px;">🏆 成就徽章 4/17</div>
+          <div class="badge-row">
+            <div class="badge">🌟</div><div class="badge">📅</div><div class="badge">💎</div><div class="badge">🔥</div>
+            <div class="badge locked">🏃</div><div class="badge locked">👑</div><div class="badge locked">🎯</div><div class="badge locked">⚡</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="10">
+        <div class="slide-title">🔥 热量具象化</div>
+        <div class="slide-sub">消耗的卡路里到底等于多少食物？</div>
+        <div style="text-align:center;margin:12px 0;">
+          <div style="font-size:36px;font-weight:800;color:#ff6b35;">2,100 kcal</div>
+          <div style="font-size:12px;color:#888;">本周消耗</div>
+        </div>
+        <div class="food-row" style="justify-content:center;flex-wrap:wrap;">
+          <div class="food-chip">🍚 12碗米饭</div>
+          <div class="food-chip">🍔 8.4个汉堡</div>
+          <div class="food-chip">🧋 5.5杯奶茶</div>
+          <div class="food-chip">🍺 9.8瓶啤酒</div>
+        </div>
+        <div style="margin-top:12px;font-size:11px;color:#888;text-align:center;font-style:italic;">"省下一顿欺骗餐的热量！"</div>
+      </div>
+
+      <div class="slide" data-slide="11">
+        <div class="slide-title">🔍 动作库搜索</div>
+        <div class="slide-sub">100+动作 · 部位/难度/设备筛选</div>
+        <div style="width:100%;background:#f0f0f0;border-radius:10px;padding:8px 12px;font-size:12px;color:#999;margin-bottom:10px;">🔍 搜索动作...</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+          <span class="tag tag-orange">全部</span><span class="tag" style="background:#eee;color:#888;">腿</span>
+          <span class="tag" style="background:#eee;color:#888;">胸</span><span class="tag" style="background:#eee;color:#888;">背</span>
+          <span class="tag" style="background:#eee;color:#888;">肩</span><span class="tag" style="background:#eee;color:#888;">臂</span>
+        </div>
+        <div class="slide-card">
+          <div class="ex-item"><span>🏋️ 杠铃深蹲</span><span class="tag tag-green">腿·中级</span></div>
+          <div class="ex-item"><span>🏋️ 保加利亚分腿蹲</span><span class="tag tag-green">腿·中级</span></div>
+          <div class="ex-item"><span>🏋️ 腿举</span><span class="tag tag-green">腿·初级</span></div>
+          <div class="ex-item"><span>🏋️ 罗马尼亚硬拉</span><span class="tag tag-purple">腿·中级</span></div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="12">
+        <div class="slide-title">🤕 伤病智能管理</div>
+        <div class="slide-sub">标记伤病，自动过滤危险动作</div>
+        <div class="slide-card">
+          <div style="font-weight:700;margin-bottom:6px;color:#f59e0b;">⚠️ 当前伤病：膝关节不适</div>
+          <div style="font-size:11px;color:#888;">所有腿部动作已自动变灰</div>
+          <div style="font-size:11px;color:#22c55e;margin-top:4px;">✅ 康复动作始终可用（21个）</div>
+        </div>
+        <div class="slide-card" style="margin-top:8px;">
+          <div class="ex-item" style="opacity:0.4;"><span>🚫 杠铃深蹲</span><span>⚠️已跳过</span></div>
+          <div class="ex-item" style="opacity:0.4;"><span>🚫 腿举</span><span>⚠️已跳过</span></div>
+          <div class="ex-item"><span>✅ 坐姿腿屈伸</span><span class="tag tag-green">康复</span></div>
+          <div class="ex-item"><span>✅ 卧推</span><span class="tag tag-blue">安全</span></div>
+        </div>
+      </div>
+
+      <div class="slide" data-slide="13">
+        <div class="slide-icon">💝</div>
+        <div class="slide-title">永久免费 · 为爱发电</div>
+        <div class="slide-sub">无需注册 · 无广告 · 数据存本地<br>觉得好用，请杯咖啡 ☕️</div>
+        <div class="slide-card" style="text-align:center;">
+          <div style="font-weight:700;margin-bottom:4px;">📱 如何获取</div>
+          <div style="font-size:11px;color:#888;">浏览器打开 → 添加到主屏幕<br>即装即用，无需下载</div>
+        </div>
+      </div>
+
+      <!-- Nav bar -->
+      <div class="phone-nav">
+        <div class="nav-item active"><span class="ni">📋</span>训练</div>
+        <div class="nav-item"><span class="ni">🍽️</span>营养</div>
+        <div class="nav-item"><span class="ni">📊</span>进度</div>
+        <div class="nav-item"><span class="ni">🔍</span>动作库</div>
+        <div class="nav-item"><span class="ni">💝</span>发电</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div style="text-align:center;margin-top:20px;">
+  <div class="controls" style="position:static;transform:none;">
+    <button class="ctrl-btn" onclick="prevSlide()" title="上一步">◀</button>
+    <button class="ctrl-btn play" id="playBtn" onclick="togglePlay()" title="播放/暂停">⏸</button>
+    <button class="ctrl-btn" onclick="nextSlide()" title="下一步">▶</button>
+  </div>
+  <div class="dots" style="justify-content:center;margin-top:12px;" id="dotRow"></div>
+</div>
+
+<script>
+var slides = document.querySelectorAll('.slide');
+var totalSlides = slides.length;
+var current = 0;
+var playing = true;
+var timer = null;
+var SPEED = 3500; // ms per slide
+
+var info = [
+  {num:'1/14', title:'开始你的健身之旅', desc:'FitBuddy 是一款永久免费的智能健身计划生成器，支持5种目标、周期化训练、营养计算和进度追踪'},
+  {num:'2/14', title:'5种训练目标', desc:'增肌、力量、减脂、心肺体能、马拉松——无论你的目标是什么，FitBuddy 都有对应的科学训练方案'},
+  {num:'3/14', title:'个性化配置', desc:'选择训练水平（新手/中级/进阶）、每周训练天数、可用设备（健身房/哑铃/自重），计划自动适配'},
+  {num:'4/14', title:'周期化训练计划', desc:'不是随机拼凑的动作列表。每4周一个周期：基础适应→渐进超负荷→挑战→减载恢复，动作每周轮换'},
+  {num:'5/14', title:'GIF动图演示', desc:'点任意动作名弹出全屏详情，94个动作有高清GIF演示。热身拉伸类保留B站搜索链接'},
+  {num:'6/14', title:'一键打卡记录', desc:'勾选动作自动计入训练日志。本周全部完成后勾选自动刷新，弹窗总结训练数据'},
+  {num:'7/14', title:'马拉松16周专项', desc:'基础期→强化期→巅峰期→减量期，7种跑步类型科学搭配。配速计算器一键算出5种配速'},
+  {num:'8/14', title:'动态营养系统', desc:'训练日和休息日各有一套食谱。碳水随运动消耗动态调整，份量根据你的身高体重自动缩放精确到5g'},
+  {num:'9/14', title:'数据可视化进度', desc:'GitHub风格训练热力图、跑量趋势柱状图、重量趋势折线图。跑鞋追踪自动提醒更换'},
+  {num:'10/14', title:'游戏化激励系统', desc:'6级等级、17枚成就徽章、6个里程碑庆祝弹窗。每天打卡就像玩游戏，让坚持变有趣'},
+  {num:'11/14', title:'热量具象化', desc:'2100大卡到底是多少？自动换算为12碗米饭/8.4个汉堡/5.5杯奶茶，直观感受运动成果'},
+  {num:'12/14', title:'100+动作库', desc:'腿胸背肩臂核心有氧7个部位，按难度和设备自动筛选。支持搜索和三维筛选'},
+  {num:'13/14', title:'伤病智能管理', desc:'标记膝/腰/肩/腕/踝任一伤病，相关危险动作自动变灰禁止。21个康复动作永不过滤'},
+  {num:'14/14', title:'永久免费 · 为爱发电', desc:'无需注册、无广告、数据存储在本地。PWA可安装到主屏幕，手机电脑都能用'}
+];
+
+function initDots(){
+  var row = document.getElementById('dotRow');
+  row.innerHTML = '';
+  for(var i=0;i<totalSlides;i++){
+    var d = document.createElement('div');
+    d.className = 'dot' + (i===current?' active':'');
+    d.onclick = (function(idx){ return function(){ goTo(idx); }; })(i);
+    row.appendChild(d);
+  }
+}
+
+function updateInfo(){
+  var d = info[current];
+  document.getElementById('stepNum').textContent = 'STEP '+d.num;
+  document.getElementById('stepTitle').textContent = d.title;
+  document.getElementById('stepDesc').textContent = d.desc;
+}
+
+function goTo(idx){
+  slides[current].classList.remove('active');
+  current = idx;
+  slides[current].classList.add('active');
+  updateDots();
+  updateInfo();
+  updateProgress();
+}
+
+function updateDots(){
+  var dots = document.querySelectorAll('#dotRow .dot');
+  dots.forEach(function(d,i){ d.classList.toggle('active', i===current); });
+}
+
+function updateProgress(){
+  document.getElementById('progressFill').style.width = ((current+1)/totalSlides*100)+'%';
+}
+
+function nextSlide(){
+  goTo((current+1) % totalSlides);
+}
+
+function prevSlide(){
+  goTo((current-1+totalSlides) % totalSlides);
+}
+
+function togglePlay(){
+  playing = !playing;
+  var btn = document.getElementById('playBtn');
+  btn.textContent = playing ? '⏸' : '▶';
+  if(playing) startTimer();
+  else stopTimer();
+}
+
+function startTimer(){
+  stopTimer();
+  if(playing) timer = setInterval(nextSlide, SPEED);
+}
+
+function stopTimer(){
+  if(timer){ clearInterval(timer); timer = null; }
+}
+
+// Init
+initDots();
+updateInfo();
+startTimer();
+
+// Dark mode for some slides
+var darkSlides = [8,9,10];
+var orig = setInterval(function(){
+  var isDark = darkSlides.indexOf(current) >= 0;
+  document.getElementById('phoneScreen').classList.toggle('dark', isDark);
+}, 500);
+</script>
+
+</body>
+</html>

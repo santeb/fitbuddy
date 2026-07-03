@@ -387,6 +387,18 @@ function petAddDay() {
   petSaveAllData(data);
 }
 
+// 道具加速：给当前精灵+1天（不受每日一次限制）
+function petAddBonusDay() {
+  var speciesId = localStorage.getItem('fitbuddy_pet_species');
+  if (!speciesId) return;
+  var data = petGetAllData();
+  if (!data[speciesId]) data[speciesId] = { days: 0, lastDate: null };
+  var oldDays = data[speciesId].days || 0;
+  data[speciesId].days = oldDays + 1;
+  petSaveAllData(data);
+  return { speciesId: speciesId, oldDays: oldDays, newDays: oldDays + 1 };
+}
+
 // 全局训练统计（用于连签、热力图等，仍从共享 history 读取）
 function petGetStats() {
   var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');

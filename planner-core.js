@@ -856,35 +856,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   updateTodayBanner();
 }
 
-function doGenerate() {
-  var btn = document.getElementById("genBtn");
-  if (btn) {
-    btn.classList.add("loading");
-    btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;"></span> 正在生成...';
-    document.getElementById("planResult").innerHTML = '<div class="loading-overlay"><div class="spinner"></div><div class="loading-text">正在生成你的专属计划...</div></div>';
-  }
-
-  savePrefs();
-
-
-  // 保存用户资料（用于热量计算）
-  (function saveProfile() {
-    var prof = {};
-    try { prof = JSON.parse(localStorage.getItem("fitbuddy_profile") || "{}"); } catch(e) {}
-    var w = parseFloat(document.getElementById('bodyWeight').value);
-    if (w && w >= 30 && w <= 200) prof.weight = w;
-    var h = parseFloat(document.getElementById('bodyHeight').value);
-    if (h && h >= 120 && h <= 250) prof.height = h;
-    var a = parseInt(document.getElementById('bodyAge').value);
-    if (a && a >= 10 && a <= 100) prof.age = a;
-    var g = document.querySelector('input[name="gender"]:checked');
-    if (g) prof.gender = g.value;
-    localStorage.setItem("fitbuddy_profile", JSON.stringify(prof));
-  })();
-
-  _trackStat('gens');
-
-  // ============ 训练提醒系统 ============
+// ============ 训练提醒系统 ============
 
   // 加载提醒设置并初始化 UI
   function initReminderUI() {
@@ -1159,6 +1131,36 @@ function doGenerate() {
     }
   }
 
+function doGenerate() {
+  var btn = document.getElementById("genBtn");
+  if (btn) {
+    btn.classList.add("loading");
+    btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block;vertical-align:middle;"></span> 正在生成...';
+    document.getElementById("planResult").innerHTML = '<div class="loading-overlay"><div class="spinner"></div><div class="loading-text">正在生成你的专属计划...</div></div>';
+  }
+
+  savePrefs();
+
+
+  // 保存用户资料（用于热量计算）
+  (function saveProfile() {
+    var prof = {};
+    try { prof = JSON.parse(localStorage.getItem("fitbuddy_profile") || "{}"); } catch(e) {}
+    var w = parseFloat(document.getElementById('bodyWeight').value);
+    if (w && w >= 30 && w <= 200) prof.weight = w;
+    var h = parseFloat(document.getElementById('bodyHeight').value);
+    if (h && h >= 120 && h <= 250) prof.height = h;
+    var a = parseInt(document.getElementById('bodyAge').value);
+    if (a && a >= 10 && a <= 100) prof.age = a;
+    var g = document.querySelector('input[name="gender"]:checked');
+    if (g) prof.gender = g.value;
+    localStorage.setItem("fitbuddy_profile", JSON.stringify(prof));
+  })();
+
+  _trackStat('gens');
+
+  
+
   try {
       var goal  = document.querySelector('input[name="goal"]:checked').value;
       var level = document.querySelector('input[name="level"]:checked').value;
@@ -1206,6 +1208,7 @@ function doGenerate() {
       btn.classList.remove("loading");
       btn.innerHTML = "✨ 生成我的计划";
     }
+  initReminderUI();
   }
 
 function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
@@ -2841,6 +2844,7 @@ function addTime(sec) {
 }
 function stopTimer() {
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  timerPaused = false;
   document.getElementById("timerOverlay").classList.remove("show");
 }
 
@@ -3811,3 +3815,199 @@ _saveStats();
     if (ogImage) ogImage.setAttribute('content', location.origin + '/exercise-images/og-image.png');
   }
 })();
+
+// ============ 计时器增强：FAB + 预设 + 暂停 + 音效 ============
+function openTimerFab() {
+  document.getElementById("timerOverlay").classList.add("show");
+  // 默认选中60秒预设
+  var presets = document.querySelectorAll("#timerPresets .timer-preset");
+  presets.forEach(function(p){ p.classList.remove("active"); });
+  var def = document.querySelector('#timerPresets [onclick*="60"]');
+  if (def) def.classList.add("active");
+  startRestTimerCustom(60);
+}
+
+function startRestTimerCustom(sec) {
+  // 高亮当前预设
+  var presets = document.querySelectorAll("#timerPresets .timer-preset");
+  presets.forEach(function(p){ p.classList.remove("active"); });
+  var target = document.querySelector('#timerPresets [onclick*="'+sec+'"]');
+  if (target) target.classList.add("active");
+
+  timerSeconds = sec;
+  timerPaused = false;
+  document.getElementById("timerOverlay").classList.add("show");
+  document.getElementById("timerNum").textContent = timerSeconds;
+  document.getElementById("timerPauseBtn").textContent = "⏸ 暂停";
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(function(){
+    timerSeconds--;
+    if (timerSeconds <= 0) {
+      stopTimer();
+      playTimerBeep();
+      return;
+    }
+    document.getElementById("timerNum").textContent = timerSeconds;
+  }, 1000);
+}
+
+var timerPaused = false;
+function pauseTimer() {
+  var btn = document.getElementById("timerPauseBtn");
+  if (!timerInterval && !timerPaused) {
+    // 恢复
+    timerPaused = false;
+    btn.textContent = "⏸ 暂停";
+    timerInterval = setInterval(function(){
+      timerSeconds--;
+      if (timerSeconds <= 0) { stopTimer(); playTimerBeep(); return; }
+      document.getElementById("timerNum").textContent = timerSeconds;
+    }, 1000);
+  } else {
+    // 暂停
+    timerPaused = true;
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    btn.textContent = "▶ 继续";
+  }
+}
+
+function playTimerBeep() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    gain.gain.value = 0.3;
+    var now = ctx.currentTime;
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.setValueAtTime(0, now + 0.15);
+    osc.frequency.setValueAtTime(880, now + 0.2);
+    gain.gain.setValueAtTime(0.3, now + 0.2);
+    gain.gain.setValueAtTime(0, now + 0.35);
+    osc.frequency.setValueAtTime(1100, now + 0.4);
+    gain.gain.setValueAtTime(0.3, now + 0.4);
+    gain.gain.setValueAtTime(0, now + 0.6);
+    osc.start(now); osc.stop(now + 0.65);
+  } catch(e) {}
+}
+
+// ============ 数据导出 / 导入 / 重置 ============
+function exportData() {
+  var data = {};
+  var keys = [];
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k.indexOf("fitbuddy_") === 0) {
+      try { data[k] = JSON.parse(localStorage.getItem(k)); }
+      catch(e) { data[k] = localStorage.getItem(k); }
+      keys.push(k);
+    }
+  }
+  data._exportKeys = keys;
+  data._exportTime = new Date().toISOString();
+  data._exportVersion = "1.1";
+
+  var blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "FitBuddy_backup_" + new Date().toISOString().slice(0,10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("✅ 数据已导出！共 " + keys.length + " 条记录");
+}
+
+function importData(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = JSON.parse(e.target.result);
+      var keys = data._exportKeys || Object.keys(data).filter(function(k){ return k.indexOf("_") !== 0 && k !== "fitbuddy_stats"; });
+      if (!keys.length) { showToast("❌ 无效的备份文件"); return; }
+
+      var count = 0;
+      keys.forEach(function(k) {
+        try {
+          var val = data[k];
+          if (typeof val === "object") localStorage.setItem(k, JSON.stringify(val));
+          else localStorage.setItem(k, val);
+          count++;
+        } catch(e2) {}
+      });
+
+      showToast("✅ 已恢复 " + count + " 条数据，刷新页面生效");
+      setTimeout(function(){ location.reload(); }, 2000);
+    } catch(e) {
+      showToast("❌ 文件格式错误，请选择 FitBuddy 备份文件");
+    }
+  };
+  reader.readAsText(file);
+  input.value = "";
+}
+
+function resetAllData() {
+  if (!confirm("⚠️ 确定要清除所有训练数据吗？\n\n这将删除：训练记录、宠物进度、RPG冒险数据、成就徽章、设置等\n\n此操作不可撤销！")) return;
+  if (!confirm("再次确认：真的要删除所有数据吗？")) return;
+
+  var keys = [];
+  for (var i = localStorage.length - 1; i >= 0; i--) {
+    var k = localStorage.key(i);
+    if (k.indexOf("fitbuddy_") === 0) {
+      keys.push(k);
+      localStorage.removeItem(k);
+    }
+  }
+  showToast("🔄 已清除 " + keys.length + " 条数据，即将刷新...");
+  setTimeout(function(){ location.reload(); }, 1500);
+}
+
+function showToast(msg) {
+  var t = document.createElement("div");
+  t.textContent = msg;
+  t.style.cssText = "position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;z-index:500;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;max-width:90vw;text-align:center;";
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 3000);
+}
+
+// ============ 1RM 极限重量计算器 ============
+var rmFormula = "epley";
+function switchRMFormula(f, btn) {
+  rmFormula = f;
+  var btns = document.querySelectorAll("#rmCalc .rm-actions button");
+  btns.forEach(function(b){ b.classList.remove("active"); });
+  btn.classList.add("active");
+  calc1RM();
+}
+
+function calc1RM() {
+  var w = parseFloat(document.getElementById("rmWeight").value);
+  var r = parseInt(document.getElementById("rmReps").value);
+  var res = document.getElementById("rmResult");
+  if (!w || !r || w <= 0 || r < 1) { res.style.display = "none"; return; }
+  if (r > 15) r = 15;
+
+  var rm;
+  if (rmFormula === "brzycki") {
+    rm = w * (36 / (37 - r));
+  } else {
+    rm = w * (1 + r / 30);
+  }
+  rm = Math.round(rm * 10) / 10;
+
+  document.getElementById("rmValue").textContent = rm + " kg";
+  document.getElementById("rmFormulaLabel").textContent = (rmFormula === "brzycki" ? "Brzycki" : "Epley") + " 公式估算";
+  document.getElementById("rm50").textContent = Math.round(rm * 0.5 * 10) / 10 + " kg";
+  document.getElementById("rm60").textContent = Math.round(rm * 0.6 * 10) / 10 + " kg";
+  document.getElementById("rm70").textContent = Math.round(rm * 0.7 * 10) / 10 + " kg";
+  document.getElementById("rm80").textContent = Math.round(rm * 0.8 * 10) / 10 + " kg";
+  document.getElementById("rm85").textContent = Math.round(rm * 0.85 * 10) / 10 + " kg";
+  document.getElementById("rm90").textContent = Math.round(rm * 0.9 * 10) / 10 + " kg";
+  document.getElementById("rm95").textContent = Math.round(rm * 0.95 * 10) / 10 + " kg";
+  res.style.display = "block";
+}
