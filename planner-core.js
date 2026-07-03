@@ -445,6 +445,7 @@ function loadAllData() {
     if (plan) {
       lastPlan = plan;
       if (plan.cycle) currentCycle = plan.cycle;
+      if (plan.week) currentWeek = plan.week;
     }
     var paces = localStorage.getItem("fitbuddy_marathon_paces");
     if (paces) { try { window._marathonPaces = JSON.parse(paces); } catch(e) {} }
@@ -1185,7 +1186,7 @@ function doGenerate() {
         trainingDays.forEach(function(day){ if (day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
       }
       // 保存到 lastPlan
-      lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now() };
+      lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek };
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄，用于心率 Zone 计算
       var ageVal = parseInt(document.getElementById('bodyAge').value) || 0;
