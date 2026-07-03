@@ -1154,13 +1154,37 @@ function showRarityUnlockCelebration(speciesId) {
 
 // ============ 🏟️ 社区大厅系统 ============
 
-// AI 训练者名字池
+// AI 训练者名字池 + 个性+口头禅+训练建议
 var TRAINER_NAMES = [
   '铁柱哥 💪','小美 🏃‍♀️','大力王 🦍','健身猫 🐱','举铁侠 🏋️',
   '钢铁姐 👩‍🔧','跑者阿飞 🏃','深蹲达人 🍑','瑜伽魂 🧘','体能怪兽 👹',
   '山本健太 🥋','LunaFit 🌙','筋肉博士 🧠','自律狂魔 ⏰','壶铃女神 🔔',
   '卷王小明 📚','硬拉战神 ⚡','晨跑骑士 🌅','街健阿杰 🏗️','蛋白粉狂魔 🥛'
 ];
+
+// 训练者个性配置
+var TRAINER_PERSONALITIES = {
+  '铁柱哥 💪': { style:'硬汉', catchphrase:'男人就该对自己狠一点！', tips:['深蹲要蹲到底，半蹲不叫深蹲','蛋白质吃不够，铁举了也白举','休息日和训练日一样重要'], specialty:'力量举' },
+  '小美 🏃‍♀️': { style:'元气少女', catchphrase:'今天流的汗是明天的星光✨', tips:['跑步前一定要热身，尤其是膝盖','有氧和力量搭配才最有效','别怕长肌肉，女生没那么容易变壮'], specialty:'有氧跑步' },
+  '大力王 🦍': { style:'憨厚猛男', catchphrase:'大力出奇迹！', tips:['硬拉时背部要打直，宁轻勿假','组间休息90秒是最佳增肌窗口','睡够7小时比多练一组更有效'], specialty:'三大项' },
+  '健身猫 🐱': { style:'高冷优雅', catchphrase:'喵~ 优雅永不过时', tips:['瑜伽垫不只是用来拉伸的','核心是一切动作的基础','空腹有氧效果更好但要适度'], specialty:'瑜伽/普拉提' },
+  '举铁侠 🏋️': { style:'热血中二', catchphrase:'感受肌肉的轰鸣吧！⚡', tips:['做动作时想着目标肌肉，念动一致','渐进超负荷才是增肌的真谛','练前碳水练后蛋白，别搞反了'], specialty:'健美训练' },
+  '钢铁姐 👩‍🔧': { style:'女强人', catchphrase:'没有练不出的身材，只有不努力的人', tips:['女生练臀要多做臀推和罗马尼亚硬拉','体脂不是越低越好，健康才是第一位','经期前三天别练腹部，对自己好一点'], specialty:'臀腿塑形' },
+  '跑者阿飞 🏃': { style:'自由散漫', catchphrase:'跑起来，风就是你的方向🌬️', tips:['LSD是马拉松的基础，别跳过','跑鞋每500公里就该换了','跑步不拉伸，早晚膝盖疼'], specialty:'马拉松/长跑' },
+  '深蹲达人 🍑': { style:'专注执着', catchphrase:'每天深蹲100个，你也能做翘臀之王！', tips:['先屈髋再屈膝，重心在脚跟','膝盖方向和脚尖方向一致','徒手深蹲没感觉了？试试保加利亚分腿蹲'], specialty:'下肢训练' },
+  '瑜伽魂 🧘': { style:'禅意疗愈', catchphrase:'呼吸即力量 🌿', tips:['早晨10分钟瑜伽比咖啡还提神','拉伸不是热身！心率提上来才是','睡前阴瑜伽能改善睡眠质量'], specialty:'瑜伽/柔韧性' },
+  '体能怪兽 👹': { style:'狂妄霸气', catchphrase:'极限？那只是起点！', tips:['HIIT每周2-3次就够了，多了反而掉肌肉','体能训练要多样化，别只做一种','Burpee+波比跳是最强燃脂组合'], specialty:'综合体能' },
+  '山本健太 🥋': { style:'武士道', catchphrase:'押忍！一日一生！', tips:['自重训练也能练出惊人的力量','坚持比强度更重要','训练日记是最好的进步证明'], specialty:'自重训练' },
+  'LunaFit 🌙': { style:'神秘文艺', catchphrase:'在月光下雕刻最美的自己', tips:['晚上训练不一定要喝氮泵，音乐就够了','保持记录，数据不会说谎','偶尔的放纵是为了更好地坚持'], specialty:'塑形/体态' },
+  '筋肉博士 🧠': { style:'学院派', catchphrase:'肌肉生长遵循科学规律🔬', tips:['肌酸是目前研究最充分的补剂','每公斤体重1.6-2.2g蛋白质','训练后30分钟是补充营养的黄金窗口'], specialty:'运动营养' },
+  '自律狂魔 ⏰': { style:'极端自律', catchphrase:'自律给我自由！', tips:['固定训练时间是坚持的最好方法','早起第一件事：喝500ml温水','手机放远点，专注训练45分钟'], specialty:'生活化健身' },
+  '壶铃女神 🔔': { style:'飒爽自信', catchphrase:'摇摆吧！壶铃会告诉你答案', tips:['壶铃swing是最好的后链动作之一','学会用臀部发力，而不是手臂','一周2次壶铃训练就能看到变化'], specialty:'壶铃/功能性' },
+  '卷王小明 📚': { style:'卷王学霸', catchphrase:'健身也要卷起来！📖', tips:['每4-6周换一次训练计划，避免平台期','RPE比绝对重量更重要','训练时注意力集中比赛前喝氮泵还管用'], specialty:'周期化训练' },
+  '硬拉战神 ⚡': { style:'专注冷峻', catchphrase:'杠铃从不骗人', tips:['硬拉是检验力量的唯一标准','握力不够？用助力带不丢人','相扑拉和传统拉都试试，找到适合你的'], specialty:'力量举' },
+  '晨跑骑士 🌅': { style:'阳光温暖', catchphrase:'每一个早晨都是新的开始☀️', tips:['晨跑前吃半根香蕉就够了','空腹有氧适合减脂但不适合增肌','跑步姿势比跑量更重要'], specialty:'晨跑/户外' },
+  '街健阿杰 🏗️': { style:'街头酷炫', catchphrase:'街头就是我的健身房！', tips:['先练俯卧撑和引体向上打好基础','双力臂的第一步是掌握节奏','街健的核心是身体控制力'], specialty:'街头健身' },
+  '蛋白粉狂魔 🥛': { style:'搞笑担当', catchphrase:'万物皆可蛋白粉！', tips:['蛋白粉只是补充，不是替代','天然食物中的微量元素蛋白粉没有','别拿蛋白粉当饭吃，肾会受不了'], specialty:'营养/补剂' }
+};
 
 // 生成确定性哈希（同一 session 中训练者不变）
 function communityHash(str) {
@@ -1183,7 +1207,6 @@ function generateTrainers() {
   for (var k in PET_SPECIES) { if (PET_SPECIES[k].rarityWeight > 0) normalIds.push(k); }
 
   var trainers = [];
-  var usedNames = {};
   var namesPool = TRAINER_NAMES.slice();
 
   // 打乱名字池
@@ -1194,6 +1217,7 @@ function generateTrainers() {
 
   for (var t = 0; t < 12; t++) {
     var name = namesPool[t];
+    var personality = TRAINER_PERSONALITIES[name] || { catchphrase:'坚持就是胜利！', tips:['科学训练+合理饮食+充足睡眠','坚持比强度更重要','记录你的每一次进步'], specialty:'综合健身' };
     var speciesId = normalIds[Math.floor(Math.random() * normalIds.length)];
     var sp = PET_SPECIES[speciesId];
     // 训练天数：正态分布20-80天
@@ -1208,6 +1232,8 @@ function generateTrainers() {
     var stageMult = [0.4, 1.0, 1.8, 3.0, 5.0][stage];
     var atk = Math.floor((8 + days * 4) * stageMult);
     var hp = Math.floor((25 + days * 6) * (1 + stage * 0.5));
+    // 随机挑一条训练建议
+    var randomTip = personality.tips[Math.floor(Math.random() * personality.tips.length)];
 
     trainers.push({
       id: 'trainer_' + t,
@@ -1222,7 +1248,13 @@ function generateTrainers() {
       wins: wins,
       losses: losses,
       power: atk,
-      hp: hp
+      hp: hp,
+      // 个性数据
+      style: personality.style,
+      catchphrase: personality.catchphrase,
+      tip: randomTip,
+      tips: personality.tips,
+      specialty: personality.specialty
     });
   }
 

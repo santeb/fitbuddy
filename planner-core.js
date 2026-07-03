@@ -2177,92 +2177,254 @@ function generateShareImage() {
   if (hist.length === 0) { alert('暂无训练数据，完成训练后再来生成分享图吧！'); return; }
   var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
   var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
+  var levelName = plan ? ({beginner:'入门',intermediate:'进阶',advanced:'高手'})[plan.level] || '' : '';
   var totalSessions = new Set(hist.map(function(h){ return h.date; })).size;
   var totalSets = hist.reduce(function(s,h){ return s + (h.count||h.sets||1); }, 0);
   var topEx = Object.keys(trainingLog).sort(function(a,b){
     return (trainingLog[b]||[]).length - (trainingLog[a]||[]).length;
   }).slice(0,3);
+  // 连续打卡
+  var dateSet = new Set(hist.map(function(h){ return h.date; }));
+  var today = new Date().toISOString().slice(0,10);
+  var streak = 0;
+  var check = new Date(today);
+  if (!dateSet.has(today) && hist.length > 0) {
+    check = new Date(today); check.setDate(check.getDate()-1);
+  }
+  while (dateSet.has(check.toISOString().slice(0,10))) {
+    streak++; check.setDate(check.getDate()-1);
+  }
+  // 精灵信息
+  var petInfo = (typeof petGetSpecies === 'function') ? petGetSpecies() : null;
+  var petSprite = '';
+  if (petInfo && typeof petGetDays === 'function') {
+    var pd = petGetDays(petInfo.speciesId);
+    var spu = PET_SPECIES ? PET_SPECIES[petInfo.speciesId] : null;
+    if (spu) {
+      var pstg = spu.stages.findIndex(function(s,i){ return i<spu.stages.length-1?pd<spu.stages[i+1].need:true; });
+      if (pstg<0) pstg=0;
+      petSprite = (spu && spu.stages[pstg]) ? spu.stages[pstg].emoji : '';
+    }
+  }
 
   var canvas = document.createElement('canvas');
-  canvas.width = 1080; canvas.height = 1350;
+  canvas.width = 1080; canvas.height = 1920;
   var ctx = canvas.getContext('2d');
-  var W = 1080, H = 1350;
+  var W = 1080, H = 1920;
 
-  // 背景
-  var grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, '#FF6B35'); grad.addColorStop(0.6, '#FF3E7F'); grad.addColorStop(1, '#8B5CF6');
+  // 背景 - 深色高级感
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1A1A2E'); grad.addColorStop(0.5, '#16213E'); grad.addColorStop(1, '#0F3460');
   ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
 
-  // 装饰
-  ctx.globalAlpha = 0.08; ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(W*0.85, H*0.1, 300, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(W*0.1, H*0.85, 200, 0, Math.PI*2); ctx.fill();
+  // 光斑装饰
+  ctx.globalAlpha = 0.06; ctx.fillStyle = '#FF6B35';
+  ctx.beginPath(); ctx.arc(W*0.85, H*0.05, 250, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W*0.1, H*0.2, 180, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#8B5CF6';
+  ctx.beginPath(); ctx.arc(W*0.9, H*0.6, 200, 0, Math.PI*2); ctx.fill();
   ctx.globalAlpha = 1;
 
-  // 标题
-  ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-  ctx.font = 'bold 900 56px sans-serif'; ctx.fillText('🏋️ FitBuddy', W/2, 120);
-  ctx.font = '700 30px sans-serif'; ctx.globalAlpha = 0.85;
-  ctx.fillText(goalName + ' · 训练成果', W/2, 175);
+  // 顶部区域 - 大标题
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 900 64px sans-serif';
+  ctx.fillText('🏋️ FitBuddy', W/2, 130);
+  ctx.font = 'bold 700 36px sans-serif'; ctx.globalAlpha = 0.9;
+  ctx.fillText('我的训练成果', W/2, 195);
   ctx.globalAlpha = 1;
 
-  // 数据卡片背景
-  ctx.fillStyle = 'rgba(255,255,255,0.13)';
+  // 目标&水平标签
+  ctx.font = '500 26px sans-serif';
+  var tagW = ctx.measureText(goalName + ' · ' + levelName).width + 60;
+  ctx.fillStyle = 'rgba(255,107,53,0.2)';
   ctx.beginPath();
-  ctx.moveTo(90, 230); ctx.arcTo(W-90,230,W-90,890, 36); ctx.arcTo(W-90,890,90,890, 36); ctx.arcTo(90,890,90,230, 36); ctx.arcTo(90,230,W-90,230, 36);
-  ctx.closePath(); ctx.fill();
+  ctx.roundRect(W/2-tagW/2, 220, tagW, 44, 22);
+  ctx.fill();
+  ctx.fillStyle = '#FF6B35'; ctx.font = '600 26px sans-serif';
+  ctx.fillText(goalName + ' · ' + levelName, W/2, 252);
 
-  // 三大数字
+  // 分隔线
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(80, 290); ctx.lineTo(W-80, 290); ctx.stroke();
+
+  // === 四大核心数据 ===
   var bigData = [
-    {val:totalSessions, sub:'次', label:'训练次数'},
-    {val:totalSets, sub:'组', label:'完成组数'},
-    {val:hist.length, sub:'个', label:'记录动作'}
+    {val: totalSessions, unit: '次训练', icon: '📅', color: '#FF6B35'},
+    {val: totalSets, unit: '组完成', icon: '💪', color: '#3B82F6'},
+    {val: streak, unit: '天连签', icon: '🔥', color: '#F59E0B'},
+    {val: hist.length, unit: '条记录', icon: '📊', color: '#22C55E'}
   ];
+
+  ctx.textAlign = 'center';
   bigData.forEach(function(d, i){
-    var cx = 90 + (i+0.5) * (W-180)/3;
-    ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
-    ctx.font = 'bold 900 88px sans-serif'; ctx.fillText(d.val, cx, 390);
-    ctx.font = '600 32px sans-serif'; ctx.globalAlpha = 0.7; ctx.fillText(d.sub, cx, 440);
-    ctx.font = '500 24px sans-serif'; ctx.globalAlpha = 0.55; ctx.fillText(d.label, cx, 478);
-    ctx.globalAlpha = 1;
+    var cx = 80 + (i%2+0.5)*((W-160)/2);
+    var cy = 390 + Math.floor(i/2)*220;
+    // 卡片背景
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.beginPath();
+    ctx.roundRect(cx-((W-160)/2-20)/2, cy-20, (W-160)/2-20, 190, 20);
+    ctx.fill();
+    // 图标
+    ctx.font = '48px sans-serif'; ctx.fillText(d.icon, cx, cy+45);
+    // 数字
+    ctx.fillStyle = d.color; ctx.font = 'bold 900 72px sans-serif';
+    ctx.fillText(d.val, cx, cy+115);
+    // 单位
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '500 24px sans-serif';
+    ctx.fillText(d.unit, cx, cy+152);
+  });
+
+  // 分隔线
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.moveTo(80, 850); ctx.lineTo(W-80, 850); ctx.stroke();
+
+  // 最常练动作
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 700 30px sans-serif';
+  ctx.fillText('💪 最常练的动作', 80, 910);
+
+  topEx.forEach(function(exName, i){
+    var log = trainingLog[exName] || [];
+    var lastW = log.length > 0 ? (log[log.length-1].weight||0) : 0;
+    var y = 950 + i*80;
+    // 序号圆圈
+    var colors = ['#FF6B35','#3B82F6','#22C55E'];
+    ctx.fillStyle = colors[i];
+    ctx.beginPath(); ctx.arc(140, y+12, 22, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.font = 'bold 700 28px sans-serif'; ctx.fillText(i+1, 140, y+23);
+    // 动作名
+    ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+    ctx.font = '600 28px sans-serif'; ctx.fillText(exName, 185, y+16);
+    // 最近重量
+    ctx.font = '500 22px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(log.length + '次记录', 185, y+48);
+    if (lastW > 0) {
+      ctx.textAlign = 'right';
+      ctx.fillText(lastW + 'kg', W-80, y+16);
+    }
+    ctx.textAlign = 'left';
   });
 
   // 分割线
-  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(150, 530); ctx.lineTo(W-150, 530); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.moveTo(80, 1190); ctx.lineTo(W-80, 1190); ctx.stroke();
 
-  // 最常练
-  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.font = 'bold 700 28px sans-serif';
-  ctx.fillText('💪  最常练的动作', 140, 590);
-  ctx.font = '500 24px sans-serif'; ctx.globalAlpha = 0.88;
-  topEx.forEach(function(exName, i){
-    var log = trainingLog[exName] || [];
-    var lastW = log.length > 0 ? (log[log.length-1].weight||'-') : '-';
-    ctx.fillText('0'+(i+1)+'.  '+exName+'  ·  最近 '+lastW+'kg  ×  '+log.length+'次记录', 140, 650 + i*55);
-  });
-  ctx.globalAlpha = 1;
+  // 精灵区域
+  if (petSprite) {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 700 30px sans-serif';
+    ctx.fillText('🐾 我的健身伙伴', 80, 1250);
+    ctx.textAlign = 'center';
+    ctx.font = '120px sans-serif';
+    ctx.fillText(petSprite, W/2, 1380);
+    if (spu) {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '500 24px sans-serif';
+      ctx.fillText(spu.name + ' · ' + spu.stages[pstg].name + ' · 已训练' + pd + '天', W/2, 1420);
+    }
+  }
 
-  // 日期
+  // 底部装饰线
+  var bottomY = petSprite ? 1500 : 1280;
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.beginPath(); ctx.moveTo(80, bottomY); ctx.lineTo(W-80, bottomY); ctx.stroke();
+
+  // 训练周期
   var dates = hist.map(function(h){ return h.date; }).sort();
-  ctx.textAlign = 'center'; ctx.font = '400 22px sans-serif'; ctx.globalAlpha = 0.55;
-  ctx.fillText('训练周期  '+dates[0]+' ~ '+dates[dates.length-1], W/2, 830);
+  ctx.textAlign = 'center';
+  ctx.font = '400 22px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText('训练周期  ' + dates[0] + ' ~ ' + dates[dates.length-1], W/2, bottomY + 50);
+
+  // 品牌区
+  ctx.font = 'bold 700 36px sans-serif'; ctx.fillStyle = '#fff';
+  ctx.fillText('你的训练，你的节奏 💪', W/2, bottomY + 120);
+  ctx.font = '500 24px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fillText('FitBuddy · 免费健身计划生成器', W/2, bottomY + 162);
+  ctx.font = '400 20px sans-serif';
+  ctx.fillText('扫码试试？用浏览器打开就能用！', W/2, bottomY + 198);
+
+  // 底部装饰圆点
+  ctx.globalAlpha = 0.3;
+  for (var dot = 0; dot < 5; dot++) {
+    ctx.fillStyle = ['#FF6B35','#3B82F6','#22C55E','#F59E0B','#8B5CF6'][dot];
+    ctx.beginPath(); ctx.arc(W/2-120+dot*60, bottomY+250, 10, 0, Math.PI*2); ctx.fill();
+  }
   ctx.globalAlpha = 1;
 
-  // 底部
-  ctx.font = 'bold 700 34px sans-serif'; ctx.fillStyle = '#fff';
-  ctx.fillText('你的训练，你的节奏  💪', W/2, H - 100);
-  ctx.font = '500 22px sans-serif'; ctx.globalAlpha = 0.7;
-  ctx.fillText('FitBuddy 免费健身计划生成器', W/2, H - 60);
+  // 水印
+  ctx.textAlign = 'center'; ctx.font = '400 18px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillText('fitbuddy.app', W/2, H-40);
 
-  // 下载
+  // 生成图片 + 弹窗预览
   canvas.toBlob(function(blob){
     var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'FitBuddy_训练成果_' + new Date().toISOString().slice(0,10) + '.png';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    showSharePreview(url, blob);
   }, 'image/png');
+}
+
+// 分享预览弹窗（支持下载/复制/WebShare）
+function showSharePreview(imageUrl, blob) {
+  var overlay = document.createElement('div');
+  overlay.id = 'sharePreviewOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', function(ev){ if(ev.target===overlay) overlay.remove(); });
+
+  var html = '<img src="'+imageUrl+'" style="max-height:65vh;max-width:90%;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,0.5);margin-bottom:20px;" id="sharePreviewImg">';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">';
+  html += '<button onclick="downloadShareImg()" style="padding:14px 32px;border-radius:16px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">💾 保存图片</button>';
+  html += '<button onclick="copyShareImg()" style="padding:14px 32px;border-radius:16px;background:linear-gradient(90deg,#3B82F6,#2563EB);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">📋 复制图片</button>';
+  if (navigator.share) {
+    html += '<button onclick="shareImgToSocial()" style="padding:14px 32px;border-radius:16px;background:linear-gradient(90deg,#22C55E,#16A34A);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">📱 分享到社交平台</button>';
+  }
+  html += '</div>';
+  html += '<button onclick="document.getElementById(\'sharePreviewOverlay\').remove()" style="margin-top:16px;padding:10px 24px;border-radius:14px;background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.2);font-size:13px;cursor:pointer;">关闭</button>';
+
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+
+  // 存储 blob 供后续使用
+  overlay._shareBlob = blob;
+  overlay._shareUrl = imageUrl;
+}
+
+function downloadShareImg() {
+  var overlay = document.getElementById('sharePreviewOverlay');
+  if (!overlay || !overlay._shareUrl) return;
+  var a = document.createElement('a');
+  a.href = overlay._shareUrl;
+  a.download = 'FitBuddy_训练成果_' + new Date().toISOString().slice(0,10) + '.png';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function copyShareImg() {
+  var overlay = document.getElementById('sharePreviewOverlay');
+  if (!overlay || !overlay._shareBlob) return;
+  try {
+    navigator.clipboard.write([
+      new ClipboardItem({'image/png': overlay._shareBlob})
+    ]).then(function(){
+      var toast = document.createElement('div');
+      toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10002;background:#22C55E;color:#fff;padding:14px 28px;border-radius:16px;font-size:15px;font-weight:700;';
+      toast.textContent = '✅ 已复制图片，可粘贴到聊天/朋友圈！';
+      document.body.appendChild(toast);
+      setTimeout(function(){ toast.remove(); }, 2500);
+    }).catch(function(){
+      alert('复制失败，请使用"保存图片"后手动分享');
+    });
+  } catch(e) {
+    alert('浏览器不支持图片复制，请使用"保存图片"后手动分享');
+  }
+}
+
+function shareImgToSocial() {
+  var overlay = document.getElementById('sharePreviewOverlay');
+  if (!overlay || !overlay._shareBlob) return;
+  navigator.share({
+    files: [new File([overlay._shareBlob], 'FitBuddy训练成果.png', {type:'image/png'})],
+    title: 'FitBuddy 训练成果',
+    text: '🏋️ 来看看我的 FitBuddy 训练成果吧！你的训练，你的节奏 💪'
+  }).catch(function(){});
 }
 
 // ============ 导出训练日记（可打印 HTML）============

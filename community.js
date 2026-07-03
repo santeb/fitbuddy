@@ -84,22 +84,26 @@ function renderCommunity() {
   html += '<div class="dc-pet">' + daily.stageEmoji + '</div>';
   html += '<div style="flex:1;">';
   html += '<div class="dc-name">' + daily.name + '</div>';
-  html += '<div style="font-size:12px;opacity:0.8;">' + daily.speciesName + ' · ' + daily.stageName + '</div>';
-  html += '<div style="font-size:11px;opacity:0.65;margin-top:2px;">训练 ' + daily.days + '天 · 战力 ' + daily.power + '</div>';
+  html += '<div style="font-size:12px;opacity:0.85;">「' + (daily.catchphrase || '今天也要加油！') + '」</div>';
+  html += '<div style="font-size:11px;opacity:0.55;margin-top:2px;">训练 ' + daily.days + '天 · 战力 ' + daily.power + ' · ' + (daily.specialty || '综合训练') + '</div>';
   html += '</div></div>';
   if (dailyDone) {
     html += '<div class="dc-done">✅ 今日已完成挑战！明天再来~</div>';
   } else if (!userHatched) {
     html += '<div class="dc-done" style="color:#F59E0B;">🥚 你的精灵还没孵化呢！先训练3天再来~</div>';
   } else {
-    html += '<div style="margin-top:10px;">';
-    html += '<button class="dc-btn" onclick="petChallengeDaily()">⚔️ 挑战他/她！</button>';
+    html += '<div style="margin-top:10px;display:flex;gap:8px;">';
+    html += '<button class="dc-btn" onclick="petChallengeDaily()" style="flex:1;">⚔️ 挑战</button>';
+    html += '<button class="dc-btn" onclick="showTrainerProfile(\'' + daily.id + '\')" style="flex:1;background:rgba(255,255,255,0.15);">📋 档案</button>';
     html += '</div>';
   }
   html += '</div>';
 
   // === 排行榜 ===
-  html += '<div class="card"><div class="card-title">🏆 训练者排行榜</div>';
+  html += '<div class="card"><div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">';
+  html += '<span>🏆 训练者排行榜</span>';
+  html += '<button onclick="shareMyRank()" style="font-size:11px;padding:5px 14px;border-radius:12px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-weight:600;cursor:pointer;">📤 分享我的战绩</button>';
+  html += '</div>';
   html += '<div class="rank-list">';
   for (var i = 0; i < board.length; i++) {
     var r = board[i];
@@ -117,22 +121,144 @@ function renderCommunity() {
   html += '</div></div>';
 
   // === 训练者广场 ===
-  html += '<div class="card"><div class="card-title">👥 训练者广场 <span style="font-size:11px;font-weight:400;color:var(--text3);">（点击切磋）</span></div>';
+  html += '<div class="card"><div class="card-title">👥 训练者广场 <span style="font-size:11px;font-weight:400;color:var(--text3);">（点击查看档案）</span></div>';
   html += '<div class="trainer-grid">';
   for (var t = 0; t < trainers.length; t++) {
     var tr = trainers[t];
-    html += '<div class="trainer-card" onclick="petChallengeTrainer(\'' + tr.id + '\')">';
+    html += '<div class="trainer-card" onclick="showTrainerProfile(\'' + tr.id + '\')">';
     html += '<span class="tc-pet">' + tr.stageEmoji + '</span>';
     html += '<div class="tc-name">' + tr.name + '</div>';
+    html += '<div style="font-size:10px;opacity:0.5;margin-bottom:2px;font-style:italic;">「' + (tr.catchphrase || '') + '」</div>';
     html += '<div class="tc-info">' + tr.speciesName + ' · ' + tr.stageName + '</div>';
     html += '<div class="tc-info">' + tr.days + '天 · 战力' + tr.power + '</div>';
     html += '<div class="tc-info">' + tr.wins + '胜/' + tr.losses + '负</div>';
-    html += '<span class="tc-challenge">⚔️ 切磋</span>';
+    html += '<span class="tc-challenge" onclick="event.stopPropagation();petChallengeTrainer(\'' + tr.id + '\')">⚔️ 切磋</span>';
     html += '</div>';
   }
   html += '</div></div>';
 
   container.innerHTML = html;
+}
+
+// ============ 训练者档案弹窗 ============
+function showTrainerProfile(trainerId) {
+  var trainers = getTrainers();
+  var trainer = null;
+  for (var i = 0; i < trainers.length; i++) {
+    if (trainers[i].id === trainerId) { trainer = trainers[i]; break; }
+  }
+  if (!trainer) return;
+
+  var spu = PET_SPECIES[trainer.speciesId];
+  var elChart = TYPE_CHART[trainer.element];
+
+  var overlay = document.createElement('div');
+  overlay.id = 'trainerProfileOverlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:9998;display:flex;align-items:center;justify-content:center;';
+  overlay.addEventListener('click', function(ev){ if(ev.target===overlay) overlay.remove(); });
+
+  var styleEmojis = { '硬汉':'🦾','元气少女':'✨','憨厚猛男':'🦍','高冷优雅':'🐱','热血中二':'⚡','女强人':'💪','自由散漫':'🌬️','专注执着':'🎯','禅意疗愈':'🧘','狂妄霸气':'👹','武士道':'🥋','神秘文艺':'🌙','学院派':'🔬','极端自律':'⏰','飒爽自信':'💃','卷王学霸':'📚','专注冷峻':'⚡','阳光温暖':'☀️','街头酷炫':'🏗️','搞笑担当':'🤣' };
+  var styleEmoji = styleEmojis[trainer.style] || '💪';
+
+  var tipsHtml = '';
+  if (trainer.tips) {
+    tipsHtml = '<div style="margin-top:10px;">';
+    trainer.tips.forEach(function(tip){
+      tipsHtml += '<div style="font-size:12px;color:var(--text2);padding:6px 0;border-bottom:1px solid var(--border);">💡 ' + tip + '</div>';
+    });
+    tipsHtml += '</div>';
+  }
+
+  var html = '<div style="background:var(--card);border-radius:20px;padding:20px;max-width:380px;width:92%;max-height:85vh;overflow-y:auto;animation:petEvo 0.3s ease-out;">';
+
+  // 头部
+  html += '<div style="text-align:center;">';
+  html += '<div style="font-size:72px;">' + trainer.stageEmoji + '</div>';
+  html += '<div style="font-size:24px;font-weight:900;color:var(--text);">' + trainer.name + '</div>';
+  html += '<div style="font-size:13px;color:var(--text3);margin-top:4px;">' + styleEmoji + ' ' + (trainer.style || '') + ' · ' + (trainer.specialty || '综合训练') + '</div>';
+  html += '<div style="font-size:14px;color:var(--primary);margin-top:6px;font-style:italic;">「' + (trainer.catchphrase || '') + '」</div>';
+  html += '</div>';
+
+  // 精灵信息
+  html += '<div style="background:var(--bg);border-radius:14px;padding:12px 16px;margin:14px 0;">';
+  html += '<div style="display:flex;justify-content:space-around;text-align:center;">';
+  html += '<div><div style="font-size:22px;font-weight:900;color:' + (elChart?elChart.color:'#FF6B35') + ';">' + (spu?spu.name:'') + '</div><div style="font-size:10px;color:var(--text3);">精灵</div></div>';
+  html += '<div><div style="font-size:22px;font-weight:900;">' + trainer.stageName + '</div><div style="font-size:10px;color:var(--text3);">阶段</div></div>';
+  html += '<div><div style="font-size:22px;font-weight:900;">' + trainer.days + '</div><div style="font-size:10px;color:var(--text3);">训练天</div></div>';
+  html += '</div>';
+  html += '<div style="display:flex;justify-content:space-around;text-align:center;margin-top:8px;">';
+  html += '<div><div style="font-size:20px;font-weight:900;color:#FF6B35;">' + trainer.power + '</div><div style="font-size:10px;color:var(--text3);">战力</div></div>';
+  html += '<div><div style="font-size:20px;font-weight:900;color:#3B82F6;">' + trainer.wins + '</div><div style="font-size:10px;color:var(--text3);">胜利</div></div>';
+  html += '<div><div style="font-size:20px;font-weight:900;color:#EF4444;">' + trainer.losses + '</div><div style="font-size:10px;color:var(--text3);">失败</div></div>';
+  html += '</div>';
+  html += '</div>';
+
+  // 训练建议
+  if (tipsHtml) {
+    html += '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;">💬 ' + trainer.name.slice(0, trainer.name.indexOf(' ')>0?trainer.name.indexOf(' '):4) + '的训练建议</div>';
+    html += tipsHtml;
+  }
+
+  // 操作按钮
+  html += '<div style="display:flex;gap:10px;margin-top:16px;">';
+  html += '<button onclick="document.getElementById(\'trainerProfileOverlay\').remove();petChallengeTrainer(\'' + trainer.id + '\')" style="flex:1;padding:12px;border-radius:14px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">⚔️ 切磋</button>';
+  html += '<button onclick="document.getElementById(\'trainerProfileOverlay\').remove()" style="flex:1;padding:12px;border-radius:14px;background:rgba(255,255,255,0.1);color:var(--text);border:1px solid var(--border);font-size:14px;font-weight:600;cursor:pointer;">关闭</button>';
+  html += '</div>';
+
+  html += '</div>';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+}
+
+// ============ 分享我的排名 ============
+function shareMyRank() {
+  var user = getUserRankData();
+  var board = getLeaderboard();
+  var myRank = 0;
+  for (var i = 0; i < board.length; i++) {
+    if (board[i].isUser) { myRank = i + 1; break; }
+  }
+
+  var shareText = '🏆 FitBuddy 训练者排行榜\n\n' +
+    '🔥 我的排名：第 ' + myRank + ' 名\n' +
+    '🐾 精灵：' + user.speciesName + ' · ' + user.stageName + '\n' +
+    '⚔️ 战力：' + user.power + '\n' +
+    '📅 训练：' + user.days + '天\n' +
+    '🏅 战绩：' + user.wins + '胜/' + user.losses + '负\n\n' +
+    '快来 FitBuddy 和我一起训练吧！💪\n' +
+    '免费健身计划生成器，打开浏览器就能用~';
+
+  // 尝试分享
+  if (navigator.share) {
+    navigator.share({
+      title: 'FitBuddy 我的训练排名',
+      text: shareText
+    }).catch(function(){
+      copyRankText(shareText);
+    });
+  } else {
+    copyRankText(shareText);
+  }
+}
+
+function copyRankText(text) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+
+    var toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10002;background:#22C55E;color:#fff;padding:14px 28px;border-radius:16px;font-size:15px;font-weight:700;text-align:center;';
+    toast.textContent = '✅ 已复制战绩！\n可以发给好友炫耀了~';
+    document.body.appendChild(toast);
+    setTimeout(function(){ toast.remove(); }, 2500);
+  } catch(e) {
+    alert('分享文案：\n\n' + text);
+  }
 }
 
 // ============ 挑战 AI 训练者 ============
