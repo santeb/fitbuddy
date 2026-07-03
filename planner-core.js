@@ -370,7 +370,7 @@ function checkAutoAdvanceWeek() {
 
   // 轻量 toast
   var t = document.createElement("div");
-  t.style.cssText = "position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#4F46E5;color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:999;box-shadow:0 4px 18px rgba(79,70,229,0.4);animation:rpgToastIn .3s ease;";
+  t.style.cssText = "position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#4F46E5;color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:999;box-shadow:0 4px 18px rgba(79,70,229,0.4);animation:fadeIn .3s ease;";
   t.textContent = "📅 第 " + (_cw-1) + " 周完成！自动进入第 " + _cw + " 周";
   document.body.appendChild(t);
   setTimeout(function(){ t.style.opacity = "0"; t.style.transition = "opacity .4s"; }, 2500);
@@ -3134,13 +3134,6 @@ function recordHistory(dist, exName, exDiff, exM) {
   }
   if (hist.length > 90) hist = hist.slice(-90);
   localStorage.setItem("fitbuddy_history", JSON.stringify(hist));
-  // RPG 系统hook
-  var entry = {date: today, name: exName, count: 1, calories: thisCal, distance: dist || 0};
-  if (typeof rpgOnTrainComplete === 'function') rpgOnTrainComplete(entry);
-  if (typeof rpgAddProgress === 'function') {
-    if (thisCal) rpgAddProgress('calories', Math.round(thisCal));
-    rpgAddProgress('minutes', 3); // 每组约3分钟
-  }
   console.log('recordHistory: saved', {date:today, count:found?(found.count||0)+1:1, exercises:found?(found.exercises||[]):[exName], calories:found?(found.calories||0)+thisCal:thisCal});
   // 自动跳周检测
   checkAutoAdvanceWeek();
@@ -3549,7 +3542,6 @@ function switchTab(btn) {
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
   if (tab === "page-community") { renderCommunity(); checkFirstVisitGuide(); }
-  if (tab === "page-rpg") { rpgRender(); rpgCheckBoss(); }
   if (tab === "page-donate") { _trackStat('donate'); }
   if (tab === "page-plan") {
     updateReminderTrainDays();
@@ -3952,7 +3944,7 @@ function importData(input) {
 }
 
 function resetAllData() {
-  if (!confirm("⚠️ 确定要清除所有训练数据吗？\n\n这将删除：训练记录、宠物进度、RPG冒险数据、成就徽章、设置等\n\n此操作不可撤销！")) return;
+  if (!confirm("⚠️ 确定要清除所有训练数据吗？\n\n这将删除：训练记录、宠物进度、成就徽章、设置等\n\n此操作不可撤销！")) return;
   if (!confirm("再次确认：真的要删除所有数据吗？")) return;
 
   var keys = [];

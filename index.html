@@ -784,29 +784,6 @@ input,select{font-family:inherit;}
 .catch-success { animation: catchSuccess 0.4s ease-out; }
 .catch-escaped { animation: catchEscape 0.6s ease-in forwards; }
 
-/* ====== 🗺️ RPG冒险系统 ====== */
-.rpg-gold-bar { background: linear-gradient(90deg, #F59E0B, #D97706); border-radius: 16px; padding: 14px 18px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; color: #fff; }
-.rpg-gold-bar .rg-icon { font-size: 32px; }
-.rpg-gold-bar .rg-amount { font-size: 24px; font-weight: 900; }
-.rpg-gold-bar .rg-label { font-size: 11px; opacity: 0.8; }
-.rpg-quest-card { background: var(--bg); border-radius: 12px; padding: 12px; margin-bottom: 8px; transition: opacity 0.3s; }
-.rpg-quest-card.quest-done { opacity: 0.55; }
-.rpg-progress-bar { background: rgba(255,255,255,0.1); border-radius: 6px; height: 6px; overflow: hidden; }
-.rpg-progress-fill { height: 100%; border-radius: 6px; transition: width 0.5s; }
-.rpg-boss-card { border: 2px solid #EF4444 !important; }
-.rpg-boss-hp-bar { background: var(--bg); border-radius: 8px; height: 14px; margin: 10px 0; overflow: hidden; }
-.rpg-boss-hp-fill { height: 100%; background: linear-gradient(90deg, #EF4444, #DC2626); border-radius: 8px; transition: width 0.5s; }
-.rpg-shop-item { background: var(--bg); border-radius: 14px; padding: 14px; text-align: center; cursor: pointer; transition: all 0.2s; }
-.rpg-shop-item:active { transform: scale(0.95); }
-.rpg-shop-item.disabled { opacity: 0.45; cursor: default; }
-.rpg-shop-item .rs-icon { font-size: 36px; }
-.rpg-shop-item .rs-name { font-size: 13px; font-weight: 700; color: var(--text); margin: 4px 0; }
-.rpg-shop-item .rs-desc { font-size: 10px; color: var(--text3); margin-bottom: 6px; }
-.rpg-shop-item .rs-price { font-size: 14px; font-weight: 900; color: #F59E0B; }
-@keyframes rpgToastIn { from { opacity: 0; transform: translate(-50%, -40%); } to { opacity: 1; transform: translate(-50%, -50%); } }
-@keyframes rpgToastOut { from { opacity: 1; } to { opacity: 0; } }
-@keyframes bossDmgFloat { 0% { opacity: 1; transform: translate(-50%, -10px); } 100% { opacity: 0; transform: translate(-50%, -50px); } }
-
 /* 收藏库 */
 .collection-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .collection-card {
@@ -1077,15 +1054,6 @@ input,select{font-family:inherit;}
     </div>
   </div>
 
-  <!-- RPG冒险页 -->
-  <div class="page" id="page-rpg">
-    <div class="community-banner" style="background:linear-gradient(135deg,#1A1A2E 0%,#16213E 50%,#2D1B69 100%);box-shadow:0 4px 18px rgba(139,92,246,0.3);">
-      <div class="cb-title">🗺️ 冒险任务</div>
-      <div class="cb-sub">训练=冒险，每天都有新挑战</div>
-    </div>
-    <div id="rpgContent"></div>
-  </div>
-
   <!-- 社区大厅页 -->
   <div class="page" id="page-community">
     <div class="community-banner">
@@ -1108,9 +1076,6 @@ input,select{font-family:inherit;}
     </button>
     <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)">
       <span class="icon">🏟️</span>社区
-    </button>
-    <button class="tab-btn" data-tab="page-rpg" onclick="switchTab(this)">
-      <span class="icon">🗺️</span>冒险
     </button>
     <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)">
       <span class="icon">💝</span>发电
@@ -1156,7 +1121,6 @@ input,select{font-family:inherit;}
 <script src="planner-core.js" defer></script>
 <script src="pets.js" defer></script>
 <script src="community.js" defer></script>
-<script src="rpg.js" defer></script>
 
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
   <div>FitBuddy v1.1 · 周期化训练计划引擎</div>
