@@ -319,14 +319,16 @@ function nextCycle() {
 
 // 训练打卡后自动检测：本周所有训练日完成 → 自动跳下一周
 function checkAutoAdvanceWeek() {
-  if (!lastPlan || !lastPlan.schedule) return;
+  console.log('[autoAdvance] 触发检测, lastPlan:', !!lastPlan, 'schedule:', !!(lastPlan&&lastPlan.schedule), 'currentWeek:', currentWeek, 'currentCycle:', currentCycle);
+  if (!lastPlan || !lastPlan.schedule) { console.log('[autoAdvance] 跳过: 无 lastPlan 或 schedule'); return; }
   var goal = lastPlan.goal;
   var totalWeeks = goal === "marathon" ? 16 : 4;
-  if (currentWeek >= totalWeeks) return; // 已在最后一周
+  if (currentWeek >= totalWeeks) { console.log('[autoAdvance] 跳过: 已在最后一周 ('+currentWeek+'/'+totalWeeks+')'); return; }
 
   // 本周需要训练的工作日名
   var trainDays = lastPlan.schedule.filter(function(s){return s.isTraining;}).map(function(s){return s.day;});
-  if (!trainDays.length) return;
+  console.log('[autoAdvance] 本周训练日:', trainDays.join(', '));
+  if (!trainDays.length) { console.log('[autoAdvance] 跳过: 无训练日'); return; }
 
   // 周一日期
   var now = new Date();
@@ -336,31 +338,40 @@ function checkAutoAdvanceWeek() {
   // 检查每个训练日是否有记录
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   var nameOff = {"周一":0,"周二":1,"周三":2,"周四":3,"周五":4,"周六":5,"周日":6};
+  var missing = [];
   var allDone = trainDays.every(function(dn){
     var d = new Date(mon); d.setDate(mon.getDate() + nameOff[dn]);
-    return hist.some(function(h){return h.date === d.toISOString().slice(0,10);});
+    var dateStr = d.toISOString().slice(0,10);
+    var hasEntry = hist.some(function(h){return h.date === dateStr;});
+    if (!hasEntry) missing.push(dn + ' (' + dateStr + ')');
+    return hasEntry;
   });
+  console.log('[autoAdvance] 完成状态:', allDone, '缺失:', missing.join(', ') || '无', '历史记录数:', hist.length);
+
   if (!allDone) return;
 
   // 防止同周重复跳转（用周一日期做标记）
   var tag = "fitbuddy_advance_" + currentCycle + "_" + currentWeek;
   var monStr = mon.toISOString().slice(0,10);
-  if (localStorage.getItem(tag) === monStr) return;
+  if (localStorage.getItem(tag) === monStr) { console.log('[autoAdvance] 跳过: 本周已跳转过 ('+tag+'='+monStr+')'); return; }
   localStorage.setItem(tag, monStr);
 
   // 前进！
+  console.log('[autoAdvance] ✅ 触发跳转! ' + currentWeek + ' -> ' + (currentWeek+1));
   currentWeek++;
   if (lastPlan) {
     lastPlan.week = currentWeek;
     localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
   }
   savePrefs();
-  doGenerate();
+  // 延迟执行避免与勾选回调的 DOM 操作冲突
+  var _cw = currentWeek;
+  setTimeout(function(){ doGenerate(); }, 50);
 
   // 轻量 toast
   var t = document.createElement("div");
   t.style.cssText = "position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#4F46E5;color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:999;box-shadow:0 4px 18px rgba(79,70,229,0.4);animation:rpgToastIn .3s ease;";
-  t.textContent = "📅 第 " + (currentWeek-1) + " 周完成！自动进入第 " + currentWeek + " 周";
+  t.textContent = "📅 第 " + (_cw-1) + " 周完成！自动进入第 " + _cw + " 周";
   document.body.appendChild(t);
   setTimeout(function(){ t.style.opacity = "0"; t.style.transition = "opacity .4s"; }, 2500);
   setTimeout(function(){ if (t.parentNode) t.remove(); }, 3000);
