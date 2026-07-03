@@ -317,6 +317,55 @@ function nextCycle() {
   doGenerate();
 }
 
+// 训练打卡后自动检测：本周所有训练日完成 → 自动跳下一周
+function checkAutoAdvanceWeek() {
+  if (!lastPlan || !lastPlan.schedule) return;
+  var goal = lastPlan.goal;
+  var totalWeeks = goal === "marathon" ? 16 : 4;
+  if (currentWeek >= totalWeeks) return; // 已在最后一周
+
+  // 本周需要训练的工作日名
+  var trainDays = lastPlan.schedule.filter(function(s){return s.isTraining;}).map(function(s){return s.day;});
+  if (!trainDays.length) return;
+
+  // 周一日期
+  var now = new Date();
+  var dow = now.getDay() || 7; // 1=Mon
+  var mon = new Date(now); mon.setDate(now.getDate() - dow + 1); mon.setHours(0,0,0,0);
+
+  // 检查每个训练日是否有记录
+  var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
+  var nameOff = {"周一":0,"周二":1,"周三":2,"周四":3,"周五":4,"周六":5,"周日":6};
+  var allDone = trainDays.every(function(dn){
+    var d = new Date(mon); d.setDate(mon.getDate() + nameOff[dn]);
+    return hist.some(function(h){return h.date === d.toISOString().slice(0,10);});
+  });
+  if (!allDone) return;
+
+  // 防止同周重复跳转（用周一日期做标记）
+  var tag = "fitbuddy_advance_" + currentCycle + "_" + currentWeek;
+  var monStr = mon.toISOString().slice(0,10);
+  if (localStorage.getItem(tag) === monStr) return;
+  localStorage.setItem(tag, monStr);
+
+  // 前进！
+  currentWeek++;
+  if (lastPlan) {
+    lastPlan.week = currentWeek;
+    localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
+  }
+  savePrefs();
+  doGenerate();
+
+  // 轻量 toast
+  var t = document.createElement("div");
+  t.style.cssText = "position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#4F46E5;color:#fff;padding:10px 22px;border-radius:24px;font-size:14px;font-weight:700;z-index:999;box-shadow:0 4px 18px rgba(79,70,229,0.4);animation:rpgToastIn .3s ease;";
+  t.textContent = "📅 第 " + (currentWeek-1) + " 周完成！自动进入第 " + currentWeek + " 周";
+  document.body.appendChild(t);
+  setTimeout(function(){ t.style.opacity = "0"; t.style.transition = "opacity .4s"; }, 2500);
+  setTimeout(function(){ if (t.parentNode) t.remove(); }, 3000);
+}
+
 // ============ 动作替换 ============
 var subTarget = null; // {dayIdx, exIdx, exName}
 function openSubModal(dayIdx, exIdx, exName) {
@@ -3069,7 +3118,16 @@ function recordHistory(dist, exName, exDiff, exM) {
   }
   if (hist.length > 90) hist = hist.slice(-90);
   localStorage.setItem("fitbuddy_history", JSON.stringify(hist));
+  // RPG 系统hook
+  var entry = {date: today, name: exName, count: 1, calories: thisCal, distance: dist || 0};
+  if (typeof rpgOnTrainComplete === 'function') rpgOnTrainComplete(entry);
+  if (typeof rpgAddProgress === 'function') {
+    if (thisCal) rpgAddProgress('calories', Math.round(thisCal));
+    rpgAddProgress('minutes', 3); // 每组约3分钟
+  }
   console.log('recordHistory: saved', {date:today, count:found?(found.count||0)+1:1, exercises:found?(found.exercises||[]):[exName], calories:found?(found.calories||0)+thisCal:thisCal});
+  // 自动跳周检测
+  checkAutoAdvanceWeek();
 }
 
 function renderProgress() {
@@ -3475,6 +3533,7 @@ function switchTab(btn) {
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
   if (tab === "page-community") { renderCommunity(); checkFirstVisitGuide(); }
+  if (tab === "page-rpg") { rpgRender(); rpgCheckBoss(); }
   if (tab === "page-donate") { _trackStat('donate'); }
   if (tab === "page-plan") {
     updateReminderTrainDays();
