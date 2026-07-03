@@ -124,32 +124,33 @@
   .step h4{font-size:17px;font-weight:700;margin-bottom:6px}
   .step p{color:#8888a0;font-size:14px}
 
-  /* ========== COMPARISON ========== */
+  /* ========== WHY FITBUDDY ========== */
   #compare{background:#12122A}
-  .table-wrap{overflow-x:auto;max-width:900px;margin:0 auto}
-  .comp-table{width:100%;border-collapse:collapse;font-size:14px;min-width:600px}
-  .comp-table th,.comp-table td{
-    padding:14px 18px;text-align:center;border-bottom:1px solid rgba(255,255,255,0.06)
+  .why-grid{max-width:860px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  .why-card{
+    background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+    border-radius:16px;padding:24px 28px;display:flex;align-items:center;gap:20px;
+    transition:border-color 0.3s
   }
-  .comp-table thead th{
-    font-size:15px;font-weight:700;color:#fff;background:rgba(255,107,53,0.08)
+  .why-card:hover{border-color:rgba(255,107,53,0.3)}
+  .why-left{flex:0 0 220px;text-align:center}
+  .why-left .wl-badge{
+    display:inline-block;background:rgba(255,255,255,0.05);color:#8888a0;
+    font-size:12px;font-weight:600;padding:4px 14px;border-radius:20px;margin-bottom:8px
   }
-  .comp-table thead th:first-child{text-align:left;border-radius:12px 0 0 0;background:transparent;color:#8888a0;font-size:12px;font-weight:500}
-  .comp-table thead th:last-child{background:rgba(255,107,53,0.15);color:#FF6B35;border-radius:0 12px 0 0}
-  .comp-table tbody td:first-child{text-align:left;color:#8888a0;font-weight:500}
-  .comp-table tbody td:last-child{color:#FF6B35;font-weight:700;background:rgba(255,107,53,0.04)}
-  .comp-table .check{color:#22C55E}
-  .comp-table .cross{color:#666}
-  .comp-table tbody tr:last-child td:first-child{border-radius:0 0 0 12px}
-  .comp-table tbody tr:last-child td:last-child{border-radius:0 0 12px 0}
+  .why-left .wl-text{color:#666;font-size:14px;text-decoration:line-through}
+  .why-arrow{font-size:22px;color:#FF6B35;flex-shrink:0}
+  .why-right{flex:1}
+  .why-right .wr-emoji{font-size:24px;margin-bottom:4px}
+  .why-right .wr-title{font-weight:700;font-size:16px;color:#fff;margin-bottom:4px}
+  .why-right .wr-desc{color:#8888a0;font-size:13px;line-height:1.5}
 
-  /* ========== TESTIMONIAL ZONE ========== */
-  .highlight-box{
+  .why-quote{
     max-width:800px;margin:60px auto 0;background:linear-gradient(135deg,rgba(255,107,53,0.06),rgba(255,62,127,0.06));
     border:1px solid rgba(255,107,53,0.15);border-radius:20px;padding:40px 32px;text-align:center
   }
-  .highlight-box .quote{font-size:18px;font-weight:500;line-height:1.7;margin-bottom:16px}
-  .highlight-box .author{color:#8888a0;font-size:14px}
+  .why-quote .q-text{font-size:18px;font-weight:500;line-height:1.7;margin-bottom:16px}
+  .why-quote .q-author{color:#8888a0;font-size:14px}
 
   /* ========== CTA ========== */
   #cta{text-align:center}
@@ -170,7 +171,9 @@
   @media(max-width:768px){
     .nav-links{display:none}
     .hero-stats{gap:24px}
-    .comp-table th,.comp-table td{padding:10px 12px;font-size:13px}
+    .why-card{flex-direction:column;text-align:center;gap:12px}
+    .why-left{flex:0;width:100%}
+    .why-arrow{transform:rotate(90deg)}
     .features-grid{grid-template-columns:1fr}
     .steps{flex-direction:column;gap:32px}
   }
@@ -184,7 +187,7 @@
   <ul class="nav-links">
     <li><a href="#features">功能</a></li>
     <li><a href="#how">怎么用</a></li>
-    <li><a href="#compare">对比</a></li>
+    <li><a href="#compare">为什么</a></li>
   </ul>
   <a href="index.html" class="nav-cta">立即使用</a>
 </nav>
@@ -278,87 +281,82 @@
   </div>
 </section>
 
-<!-- COMPARISON -->
+<!-- WHY FITBUDDY -->
 <section id="compare">
   <div class="section-header">
-    <div class="tag">📋 客观对比</div>
-    <h2>我们是怎么不一样的</h2>
-    <p>不说谁好谁坏，用数据说话</p>
+    <div class="tag">💡 为什么选择 FitBuddy</div>
+    <h2>常见做法 vs 我们的方式</h2>
+    <p>你可能已经习惯了这些——但可以有更好的选择</p>
   </div>
-  <div class="table-wrap">
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th></th>
-          <th>Keep</th>
-          <th>Strong</th>
-          <th>JEFIT</th>
-          <th>FitBuddy</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>价格</td>
-          <td>¥298/年</td>
-          <td>¥468/年</td>
-          <td>¥288/年</td>
-          <td><strong>永久免费</strong></td>
-        </tr>
-        <tr>
-          <td>周期化计划</td>
-          <td>—</td>
-          <td>—</td>
-          <td>—</td>
-          <td class="check">✅</td>
-        </tr>
-        <tr>
-          <td>开源</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="check">✅ MIT</td>
-        </tr>
-        <tr>
-          <td>本地存储</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="check">✅ 零云端</td>
-        </tr>
-        <tr>
-          <td>无需注册</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="check">✅ 开箱即用</td>
-        </tr>
-        <tr>
-          <td>马拉松专项</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="check">✅ 16周计划</td>
-        </tr>
-        <tr>
-          <td>游戏化养成</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td class="check">✅ 精灵+RPG</td>
-        </tr>
-        <tr>
-          <td>课程/社区</td>
-          <td class="check">✅</td>
-          <td class="cross">✕</td>
-          <td class="cross">✕</td>
-          <td>—</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="why-grid">
+    <div class="why-card">
+      <div class="why-left">
+        <div class="wl-badge">常见做法</div>
+        <div class="wl-text">每月 ¥25~¥40 订阅费</div>
+      </div>
+      <div class="why-arrow">→</div>
+      <div class="why-right">
+        <div class="wr-emoji">🆓</div>
+        <div class="wr-title">永久免费，真的一分钱不收</div>
+        <div class="wr-desc">开源 MIT 协议，代码公开，没有任何隐藏付费。不交钱也能用到老。</div>
+      </div>
+    </div>
+
+    <div class="why-card">
+      <div class="why-left">
+        <div class="wl-badge">常见做法</div>
+        <div class="wl-text">你的训练数据上传云端</div>
+      </div>
+      <div class="why-arrow">→</div>
+      <div class="why-right">
+        <div class="wr-emoji">🔒</div>
+        <div class="wr-title">数据 100% 留在你的设备上</div>
+        <div class="wr-desc">不注册、不登录、不联网。你的训练记录只有你自己能看到。断开网络照样用。</div>
+      </div>
+    </div>
+
+    <div class="why-card">
+      <div class="why-left">
+        <div class="wl-badge">常见做法</div>
+        <div class="wl-text">随机动作堆砌成"计划"</div>
+      </div>
+      <div class="why-arrow">→</div>
+      <div class="why-right">
+        <div class="wr-emoji">📊</div>
+        <div class="wr-title">科学周期化：增负荷 → 减载 → 再突破</div>
+        <div class="wr-desc">每个计划都是4周一个周期——渐进超负荷推动进步，减载周防止过度训练。这是力量训练教科书里的方法。</div>
+      </div>
+    </div>
+
+    <div class="why-card">
+      <div class="why-left">
+        <div class="wl-badge">常见做法</div>
+        <div class="wl-text">一套计划应付所有人</div>
+      </div>
+      <div class="why-arrow">→</div>
+      <div class="why-right">
+        <div class="wr-emoji">🎯</div>
+        <div class="wr-title">5 个目标 × 3 个水平 × 自定义天数</div>
+        <div class="wr-desc">增肌、力量、减脂、心肺、马拉松——每个目标有独立的训练逻辑。新手到进阶都能找到适配的计划。</div>
+      </div>
+    </div>
+
+    <div class="why-card">
+      <div class="why-left">
+        <div class="wl-badge">常见做法</div>
+        <div class="wl-text">枯燥打卡，难以坚持</div>
+      </div>
+      <div class="why-arrow">→</div>
+      <div class="why-right">
+        <div class="wr-emoji">🎮</div>
+        <div class="wr-title">训练精灵养成 + 成就系统</div>
+        <div class="wr-desc">每次训练都能让你的精灵成长进化。里程碑庆祝、热力图、徽章——让你想主动打开 App。</div>
+      </div>
+    </div>
   </div>
-  <div class="highlight-box">
-    <div class="quote">"Keep 的课程和社区是行业标杆，FitBuddy 不打算做这些。<br>我们只聚焦一件事：用科学给你一个不花钱的训练计划。"</div>
-    <div class="author">— FitBuddy 的定位</div>
+  <div class="why-quote">
+    <div class="q-text">"FitBuddy 不打算取代任何课程平台或社交 App。<br>我们只想做好一件事：<strong>给你一个科学、免费、尊重你隐私的训练计划。</strong>"</div>
+    <div class="q-author">— 这就是全部</div>
   </div>
 </section>
 
