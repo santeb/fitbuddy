@@ -714,6 +714,21 @@ input,select{font-family:inherit;}
   font-size: 13px; color: #A5B4FC; margin-top: 6px;
 }
 
+/* 加入训练群 */
+.join-group-card {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(255,62,127,0.08));
+  border: 1px solid rgba(255,107,53,0.15);
+  border-radius: var(--radius); padding: 16px 18px;
+  margin-top: 14px; cursor: pointer; transition: all 0.25s;
+}
+.join-group-card:active { transform: scale(0.98); }
+.join-group-card .jgc-icon { font-size: 36px; flex-shrink: 0; }
+.join-group-card .jgc-body { flex: 1; }
+.join-group-card .jgc-title { font-size: 16px; font-weight: 800; color: var(--text); }
+.join-group-card .jgc-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.join-group-card .jgc-arrow { font-size: 24px; color: var(--primary); flex-shrink: 0; font-weight: 300; }
+
 /* 野外探索 */
 .wild-explore {
   background: linear-gradient(135deg, #064E3B 0%, #047857 50%, #059669 100%);
