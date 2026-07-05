@@ -2891,9 +2891,9 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
     ctx.translate(dx, dy);
     ctx.scale(scale, scale);
 
-    // 混合模式：overlay 让热色和肌肉纹理自然融合
-    ctx.globalCompositeOperation = 'overlay';
-    ctx.globalAlpha = 0.85;
+    // 半透明叠加，不会溢出到底图空白区域
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.5;
 
     function hc(muscle) {
       if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
