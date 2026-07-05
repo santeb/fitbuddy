@@ -1,5 +1,5 @@
-// FitBuddy Service Worker v3.0 — 完整离线缓存 + 后台提醒
-var CACHE_STATIC = 'fitbuddy-static-v3';
+// FitBuddy Service Worker v3.1 — 完整离线缓存 + 后台提醒
+var CACHE_STATIC = 'fitbuddy-static-v4';
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
 
@@ -76,9 +76,15 @@ self.addEventListener('fetch', function(e) {
     return;
   }
 
-  // 静态资源（JS/CSS/HTML/JSON）：缓存优先
-  if (isLocal && (/\.(js|css|html|json|webmanifest)(\?|$)/i.test(url) ||
+  // HTML 文件：网络优先（确保 HTML 更新即时生效）
+  if (isLocal && (/\.(html|webmanifest)(\?|$)/i.test(url) ||
                   url === './' || url === '/' || url.endsWith(location.pathname))) {
+    e.respondWith(networkFirst(e.request, CACHE_STATIC));
+    return;
+  }
+
+  // JS/CSS/JSON：缓存优先（靠版本号 ?v= 刷新）
+  if (isLocal && /\.(js|css|json)(\?|$)/i.test(url)) {
     e.respondWith(cacheFirst(e.request, CACHE_STATIC));
     return;
   }

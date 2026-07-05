@@ -388,44 +388,32 @@ function nextCycle() {
   doGenerate();
 }
 
-// 训练打卡后自动检测：本周所有训练日完成 → 自动跳下一周
+// 标记本次打卡是否触发了自动跳周（防止 resetAllCheckmarks 冲突）
+var _autoAdvanced = false;
+
+// 训练打卡后自动检测：本周所有动作勾选完成 → 自动跳下一周
 function checkAutoAdvanceWeek() {
-  console.log('[autoAdvance] 触发检测, lastPlan:', !!lastPlan, 'schedule:', !!(lastPlan&&lastPlan.schedule), 'currentWeek:', currentWeek, 'currentCycle:', currentCycle);
-  if (!lastPlan || !lastPlan.schedule) { console.log('[autoAdvance] 跳过: 无 lastPlan 或 schedule'); return; }
+  console.log('[autoAdvance] 触发检测, lastPlan:', !!lastPlan, 'currentWeek:', currentWeek, 'currentCycle:', currentCycle);
+  if (!lastPlan || !lastPlan.trainingDays) { console.log('[autoAdvance] 跳过: 无 lastPlan 或 trainingDays'); return; }
   var goal = lastPlan.goal;
   var totalWeeks = goal === "marathon" ? 16 : 4;
   if (currentWeek >= totalWeeks) { console.log('[autoAdvance] 跳过: 已在最后一周 ('+currentWeek+'/'+totalWeeks+')'); return; }
 
-  // 本周需要训练的工作日名
-  var trainDays = lastPlan.schedule.filter(function(s){return s.isTraining;}).map(function(s){return s.day;});
-  console.log('[autoAdvance] 本周训练日:', trainDays.join(', '));
-  if (!trainDays.length) { console.log('[autoAdvance] 跳过: 无训练日'); return; }
-
-  // 周一日期
-  var now = new Date();
-  var dow = now.getDay() || 7; // 1=Mon
-  var mon = new Date(now); mon.setDate(now.getDate() - dow + 1); mon.setHours(0,0,0,0);
-
-  // 检查每个训练日是否有记录
-  var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
-  var nameOff = {"周一":0,"周二":1,"周三":2,"周四":3,"周五":4,"周六":5,"周日":6};
-  var missing = [];
-  var allDone = trainDays.every(function(dn){
-    var d = new Date(mon); d.setDate(mon.getDate() + nameOff[dn]);
-    var dateStr = d.toISOString().slice(0,10);
-    var hasEntry = hist.some(function(h){return h.date === dateStr;});
-    if (!hasEntry) missing.push(dn + ' (' + dateStr + ')');
-    return hasEntry;
-  });
-  console.log('[autoAdvance] 完成状态:', allDone, '缺失:', missing.join(', ') || '无', '历史记录数:', hist.length);
-
-  if (!allDone) return;
+  // 用 checkWeekComplete() 判断：所有动作是否已勾选（不依赖历史记录日期）
+  if (!checkWeekComplete()) { console.log('[autoAdvance] 跳过: 本周仍有未完成动作'); return; }
+  console.log('[autoAdvance] ✅ 本周全部完成');
 
   // 防止同周重复跳转（用周一日期做标记）
+  var now = new Date();
+  var dow = now.getDay() || 7;
+  var mon = new Date(now); mon.setDate(now.getDate() - dow + 1); mon.setHours(0,0,0,0);
   var tag = "fitbuddy_advance_" + currentCycle + "_" + currentWeek;
   var monStr = mon.toISOString().slice(0,10);
   if (localStorage.getItem(tag) === monStr) { console.log('[autoAdvance] 跳过: 本周已跳转过 ('+tag+'='+monStr+')'); return; }
   localStorage.setItem(tag, monStr);
+
+  // 标记已跳转，防止 toggleDone 中的 resetAllCheckmarks 冲突
+  _autoAdvanced = true;
 
   // 前进！
   console.log('[autoAdvance] ✅ 触发跳转! ' + currentWeek + ' -> ' + (currentWeek+1));
@@ -1945,9 +1933,11 @@ function renderTipsBanner(tips) {
     '<ul>'+tips.map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul></div>';
 }
 
-// 用 planId 做 key 前缀，防止不同计划间勾选串号
+// 用 planId 做 key 前缀，防止不同计划/周次间勾选串号
 function doneKey(id) {
-  var pid = (lastPlan && lastPlan.goal) ? (lastPlan.goal + '_' + lastPlan.level + '_' + lastPlan.days) : 'none';
+  var pid = (lastPlan && lastPlan.goal)
+    ? (lastPlan.goal + '_' + lastPlan.level + '_' + lastPlan.days + '_c' + (lastPlan.cycle || currentCycle) + '_w' + (lastPlan.week || currentWeek))
+    : 'none';
   return 'fitbuddy_done_' + pid + '_' + id;
 }
 
@@ -2834,227 +2824,6 @@ function drawDonutChart(canvasId, segments) {
   ctx.fillText('总训练', cx, cy + 12);
 }
 
-// ============ 热力色（从冷灰→橙→红）============
-function heatColor2(ratio) {
-  // ratio 0=冷灰 → 0.5=橙 → 1.0=热红
-  if (ratio <= 0) return '#4B5563';
-  if (ratio >= 1) return '#DC2626';
-  var r, g, b;
-  if (ratio <= 0.5) {
-    var t = ratio / 0.5;
-    r = Math.round(75 + t * (245 - 75));
-    g = Math.round(85 + t * (158 - 85));
-    b = Math.round(99 + t * (11 - 99));
-  } else {
-    var t = (ratio - 0.5) / 0.5;
-    r = Math.round(245 + t * (220 - 245));
-    g = Math.round(158 + t * (38 - 158));
-    b = Math.round(11 + t * (38 - 11));
-  }
-  return 'rgb('+r+','+g+','+b+')';
-}
-
-// ============ 人形肌肉热力图（正面视角，Canvas 绘制）============
-function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
-  var canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  var ctx = canvas.getContext('2d');
-  var dpr = window.devicePixelRatio || 1;
-  var rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  var W = rect.width, H = rect.height;
-  ctx.clearRect(0, 0, W, H);
-
-  // 加载/复用肌肉解剖底图
-  var img = window._muscleBodyImg;
-  if (!img) {
-    img = new Image();
-    img.src = 'muscle-body.png?v=2';
-    window._muscleBodyImg = img;
-  }
-
-  function doDraw() {
-    // 底图按画布 fit（保持比例，居中）
-    var scale = 1;
-    var dx = 0, dy = 0;
-    if (img && img.width && img.height) {
-      scale = Math.min(W / img.width, H / img.height);
-      dx = (W - img.width * scale) / 2;
-      dy = (H - img.height * scale) / 2;
-      ctx.drawImage(img, dx, dy, img.width * scale, img.height * scale);
-    }
-
-    // 在图片坐标系(832×1216)中绘制肌肉热力区域，再映射到画布
-    ctx.save();
-    ctx.translate(dx, dy);
-    ctx.scale(scale, scale);
-
-    // 半透明叠加，source-atop 会自动把超出人体透明背景的区域裁掉
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.globalAlpha = 0.7;
-
-    function hc(muscle) {
-      if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
-      return heatColor2(muscleCount[muscle] / maxCount);
-    }
-
-    // 胸部（左+右）
-    if (muscleCount['胸']) {
-      ctx.fillStyle = hc('胸');
-      // 左胸
-      ctx.beginPath();
-      ctx.moveTo(300, 250);
-      ctx.quadraticCurveTo(340, 235, 420, 250);
-      ctx.quadraticCurveTo(410, 360, 360, 420);
-      ctx.quadraticCurveTo(310, 360, 300, 250);
-      ctx.closePath();
-      ctx.fill();
-      // 右胸
-      ctx.beginPath();
-      ctx.moveTo(440, 250);
-      ctx.quadraticCurveTo(520, 235, 560, 250);
-      ctx.quadraticCurveTo(560, 360, 510, 420);
-      ctx.quadraticCurveTo(440, 360, 440, 250);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 肩部（左+右）
-    if (muscleCount['肩']) {
-      ctx.fillStyle = hc('肩');
-      // 左肩
-      ctx.beginPath();
-      ctx.moveTo(210, 220);
-      ctx.quadraticCurveTo(260, 210, 320, 240);
-      ctx.quadraticCurveTo(310, 320, 250, 330);
-      ctx.quadraticCurveTo(210, 290, 210, 220);
-      ctx.closePath();
-      ctx.fill();
-      // 右肩
-      ctx.beginPath();
-      ctx.moveTo(540, 240);
-      ctx.quadraticCurveTo(600, 210, 650, 220);
-      ctx.quadraticCurveTo(650, 290, 610, 330);
-      ctx.quadraticCurveTo(550, 320, 540, 240);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 手臂（左+右，上臂二头/三头区域）
-    if (muscleCount['臂']) {
-      ctx.fillStyle = hc('臂');
-      // 左上臂
-      ctx.beginPath();
-      ctx.moveTo(180, 330);
-      ctx.quadraticCurveTo(230, 340, 250, 450);
-      ctx.quadraticCurveTo(240, 560, 190, 580);
-      ctx.quadraticCurveTo(170, 500, 180, 330);
-      ctx.closePath();
-      ctx.fill();
-      // 右上臂
-      ctx.beginPath();
-      ctx.moveTo(610, 330);
-      ctx.quadraticCurveTo(650, 330, 690, 450);
-      ctx.quadraticCurveTo(680, 560, 640, 580);
-      ctx.quadraticCurveTo(600, 500, 610, 330);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 核心（腹肌区域）
-    if (muscleCount['核心']) {
-      ctx.fillStyle = hc('核心');
-      ctx.beginPath();
-      ctx.moveTo(330, 440);
-      ctx.quadraticCurveTo(430, 430, 530, 440);
-      ctx.quadraticCurveTo(530, 560, 520, 650);
-      ctx.quadraticCurveTo(430, 660, 330, 650);
-      ctx.quadraticCurveTo(330, 560, 330, 440);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    // 腿（左+右大腿）
-    if (muscleCount['腿']) {
-      ctx.fillStyle = hc('腿');
-      // 左大腿
-      ctx.beginPath();
-      ctx.moveTo(300, 700);
-      ctx.quadraticCurveTo(370, 680, 420, 700);
-      ctx.quadraticCurveTo(410, 900, 380, 1080);
-      ctx.quadraticCurveTo(320, 1060, 290, 920);
-      ctx.quadraticCurveTo(290, 800, 300, 700);
-      ctx.closePath();
-      ctx.fill();
-      // 右大腿
-      ctx.beginPath();
-      ctx.moveTo(440, 700);
-      ctx.quadraticCurveTo(500, 680, 570, 700);
-      ctx.quadraticCurveTo(580, 800, 570, 920);
-      ctx.quadraticCurveTo(540, 1060, 480, 1080);
-      ctx.quadraticCurveTo(450, 900, 440, 700);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    ctx.restore(); // 恢复混合模式
-
-    // 肌肉标签（直接绘制在画布上，不受 source-atop 影响）
-    var frontMuscles = ['胸','肩','臂','核心','腿'];
-    var labelPos = {
-      '胸': {x:430, y:330},
-      '肩': {x:240, y:270},
-      '臂': {x:190, y:450},
-      '核心': {x:430, y:540},
-      '腿': {x:350, y:900}
-    };
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1;
-    frontMuscles.forEach(function(m){
-      if (!muscleCount[m]) return;
-      var pos = labelPos[m];
-      var ratio = muscleCount[m] / maxCount;
-      ctx.fillStyle = ratio > 0.6 ? '#fff' : (getComputedStyle(document.body).getPropertyValue('--text').trim() || '#1f2937');
-      ctx.textAlign = 'center';
-      // 文字描边，确保在任何颜色上都可见
-      ctx.strokeStyle = ratio > 0.6 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 2;
-      ctx.strokeText(MUSCLE_LABELS[m], dx + pos.x * scale, dy + pos.y * scale);
-      ctx.fillText(MUSCLE_LABELS[m], dx + pos.x * scale, dy + pos.y * scale);
-    });
-
-    // 底部图例
-    ctx.font = '10px sans-serif';
-    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
-    ctx.textAlign = 'left';
-    ctx.fillText('练得少', 8, H - 12);
-    ctx.textAlign = 'right';
-    ctx.fillText('练得多', W - 8, H - 12);
-    var steps = 4;
-    var lw = 30;
-    var lx0 = (W - (steps * (lw + 4))) / 2;
-    var ly = H - 28;
-    for (var i = 0; i <= steps; i++) {
-      var ratio = i / steps;
-      ctx.fillStyle = heatColor2(ratio);
-      ctx.fillRect(lx0 + i * (lw + 4), ly, lw, 10);
-    }
-  }
-
-  if (img.complete && img.naturalWidth) {
-    doDraw();
-  } else {
-    img.onload = doDraw;
-    img.onerror = function() {
-      console.warn('肌肉底图加载失败');
-    };
-  }
-}
-
 // ============ 跑鞋里程 ============
 function addShoe() {
   var name = prompt('跑鞋名称（如：Nike Vaporfly 3）：');
@@ -3120,6 +2889,7 @@ function resetAllCheckmarks() {
 }
 
 function toggleDone(id) {
+  _autoAdvanced = false; // 每次打卡前重置跳周标记
   var el = document.getElementById(id);
   if (!el) { console.warn('toggleDone: el not found for id='+id); return; }
   var check = el.querySelector(".ex-check");
@@ -3204,8 +2974,8 @@ function toggleDone(id) {
     }
     // 🎮 游戏化：更新连续打卡/成就
     afterTrainingDone();
-    // 🔄 检测本周全部完成 → 自动刷新勾选
-    if (checkWeekComplete()) {
+    // 🔄 检测本周全部完成 → 自动刷新勾选（跳过已由 autoAdvance 处理的情况）
+    if (!_autoAdvanced && checkWeekComplete()) {
       setTimeout(resetAllCheckmarks, 1200);
     }
   }
@@ -3633,26 +3403,6 @@ function renderProgress() {
       '</div></div>';
   }
 
-  // 🏃 人形肌肉热力图（正面视角，训练越多的部位越红）
-  // 只展示正面可见肌肉：胸/肩/臂/核心/腿，背部在下方文字标注
-  var frontMuscles = ['胸','肩','臂','核心','腿'];
-  var bodyMuscles = frontMuscles.filter(function(m){ return muscleCount[m]; });
-  if (bodyMuscles.length >= 1) {
-    var maxMC = 0;
-    bodyMuscles.forEach(function(m){ maxMC = Math.max(maxMC, muscleCount[m]); });
-    html += '<div class="progress-card"><div class="card-title">🔥 肌肉热力图</div>'+
-      '<div class="chart-wrap"><canvas id="chartBodyHeat" style="width:100%;height:380px;"></canvas></div>'+
-      '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;justify-content:center;font-size:11px;">'+
-      bodyMuscles.map(function(m){
-        var pct = maxMC>0 ? Math.round(muscleCount[m]/maxMC*100) : 0;
-        return '<span style="color:var(--text2);">'+
-          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+heatColor2(pct/100)+';margin-right:3px;"></span>'+
-          MUSCLE_LABELS[m]+' '+muscleCount[m]+'次</span>';
-      }).join('')+
-      (muscleCount['背'] ? '<span style="color:var(--text2);margin-left:4px;">· 背部 '+muscleCount['背']+'次</span>' : '')+
-      '</div></div>';
-  }
-
   // 图表：力量进步曲线（有训练日志时）
   // 自重动作不画重量趋势（如俯卧撑、引体向上等），无意义
   var chartExNames = Object.keys(trainingLog).filter(function(k){
@@ -3858,12 +3608,6 @@ function renderProgress() {
     // 渲染部位训练分布
     if (hasMuscleDist) {
       drawDonutChart('chartMuscle', muscleSegments);
-    }
-    // 渲染人形肌肉热力图
-    if (bodyMuscles && bodyMuscles.length >= 1) {
-      var maxMC = 0;
-      bodyMuscles.forEach(function(m){ maxMC = Math.max(maxMC, muscleCount[m]||0); });
-      drawBodyHeatmap('chartBodyHeat', muscleCount, maxMC);
     }
     // 渲染训练量走势
     if (volDates.length >= 2) {
