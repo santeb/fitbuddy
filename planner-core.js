@@ -2771,6 +2771,327 @@ function drawChart(canvasId, data, opts) {
   }
 }
 
+// ============ 环形图（部位分布等）============
+function drawDonutChart(canvasId, segments) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var total = segments.reduce(function(s, seg){ return s + seg.value; }, 0);
+  if (total === 0) return;
+
+  var cx = W / 2, cy = H / 2;
+  var outerR = Math.min(W, H) / 2 - 10;
+  var innerR = outerR * 0.5;
+
+  var startAngle = -Math.PI / 2;
+  segments.forEach(function(seg){
+    var sliceAngle = (seg.value / total) * Math.PI * 2;
+    // 扇形
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, startAngle, startAngle + sliceAngle);
+    ctx.arc(cx, cy, innerR, startAngle + sliceAngle, startAngle, true);
+    ctx.closePath();
+    ctx.fillStyle = seg.color;
+    ctx.fill();
+    // 白色分割线
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 环形内部文字标签
+    var pct = Math.round(seg.value / total * 100);
+    if (pct >= 6) {
+      var midAngle = startAngle + sliceAngle / 2;
+      var labelR = (outerR + innerR) / 2;
+      var lx = cx + Math.cos(midAngle) * labelR;
+      var ly = cy + Math.sin(midAngle) * labelR;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pct + '%', lx, ly);
+    }
+
+    startAngle += sliceAngle;
+  });
+
+  // 中心文字：总次数
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text').trim() || '#1A1A2E';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(total + '次', cx, cy - 4);
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
+  ctx.fillText('总训练', cx, cy + 12);
+}
+
+// ============ 热力色（从冷灰→橙→红）============
+function heatColor2(ratio) {
+  // ratio 0=冷灰 → 0.5=橙 → 1.0=热红
+  if (ratio <= 0) return '#4B5563';
+  if (ratio >= 1) return '#DC2626';
+  var r, g, b;
+  if (ratio <= 0.5) {
+    var t = ratio / 0.5;
+    r = Math.round(75 + t * (245 - 75));
+    g = Math.round(85 + t * (158 - 85));
+    b = Math.round(99 + t * (11 - 99));
+  } else {
+    var t = (ratio - 0.5) / 0.5;
+    r = Math.round(245 + t * (220 - 245));
+    g = Math.round(158 + t * (38 - 158));
+    b = Math.round(11 + t * (38 - 11));
+  }
+  return 'rgb('+r+','+g+','+b+')';
+}
+
+// ============ 人形肌肉热力图（正面视角，Canvas 绘制）============
+function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // 设计坐标系 240×380 → 缩放到实际画布
+  var DW = 240, DH = 380;
+  var sx = W / DW, sy = H / DH;
+  function X(x){ return x*sx; }
+  function Y(y){ return y*sy; }
+  function RX(r){ return r*Math.min(sx,sy); }
+
+  // 获取热力颜色
+  function hc(muscle) {
+    if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
+    return heatColor2(muscleCount[muscle] / maxCount);
+  }
+
+  // ========== 身体轮廓 ==========
+  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#AAA';
+  ctx.lineWidth = 2;
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg2').trim() || '#F3F4F6';
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  // 头
+  ctx.beginPath();
+  ctx.ellipse(X(120), Y(42), RX(30), RX(34), 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 脖子
+  ctx.beginPath();
+  ctx.moveTo(X(108), Y(72));
+  ctx.lineTo(X(108), Y(85));
+  ctx.lineTo(X(132), Y(85));
+  ctx.lineTo(X(132), Y(72));
+  ctx.fill();
+  ctx.stroke();
+
+  // 躯干（梯形）
+  ctx.beginPath();
+  ctx.moveTo(X(55), Y(88));
+  ctx.lineTo(X(185), Y(88));
+  ctx.lineTo(X(174), Y(220));
+  ctx.lineTo(X(66), Y(220));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 左臂
+  ctx.beginPath();
+  ctx.moveTo(X(55), Y(88));
+  ctx.quadraticCurveTo(X(32), Y(150), X(28), Y(215));
+  ctx.quadraticCurveTo(X(24), Y(230), X(35), Y(230));
+  ctx.quadraticCurveTo(X(42), Y(230), X(44), Y(215));
+  ctx.quadraticCurveTo(X(48), Y(150), X(76), Y(95));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 右臂
+  ctx.beginPath();
+  ctx.moveTo(X(185), Y(88));
+  ctx.quadraticCurveTo(X(208), Y(150), X(212), Y(215));
+  ctx.quadraticCurveTo(X(216), Y(230), X(205), Y(230));
+  ctx.quadraticCurveTo(X(198), Y(230), X(196), Y(215));
+  ctx.quadraticCurveTo(X(192), Y(150), X(164), Y(95));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 左腿
+  ctx.beginPath();
+  ctx.moveTo(X(72), Y(220));
+  ctx.quadraticCurveTo(X(68), Y(300), X(72), Y(360));
+  ctx.lineTo(X(116), Y(360));
+  ctx.quadraticCurveTo(X(116), Y(300), X(112), Y(220));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 右腿
+  ctx.beginPath();
+  ctx.moveTo(X(128), Y(220));
+  ctx.quadraticCurveTo(X(124), Y(300), X(128), Y(360));
+  ctx.lineTo(X(172), Y(360));
+  ctx.quadraticCurveTo(X(172), Y(300), X(168), Y(220));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // ========== 肌肉热力区域（绘制在各部位内）==========
+
+  // 左胸
+  var lChestColor = hc('胸');
+  ctx.fillStyle = lChestColor;
+  ctx.beginPath();
+  ctx.moveTo(X(82), Y(105));
+  ctx.quadraticCurveTo(X(110), Y(100), X(124), Y(105));
+  ctx.quadraticCurveTo(X(120), Y(140), X(108), Y(155));
+  ctx.quadraticCurveTo(X(92), Y(155), X(84), Y(140));
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // 右胸
+  var rChestColor = hc('胸');
+  ctx.fillStyle = rChestColor;
+  ctx.beginPath();
+  ctx.moveTo(X(116), Y(105));
+  ctx.quadraticCurveTo(X(130), Y(100), X(158), Y(105));
+  ctx.quadraticCurveTo(X(156), Y(140), X(148), Y(155));
+  ctx.quadraticCurveTo(X(132), Y(155), X(120), Y(140));
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#000';
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // 左肩
+  ctx.fillStyle = hc('肩');
+  ctx.beginPath();
+  ctx.moveTo(X(50), Y(90));
+  ctx.quadraticCurveTo(X(68), Y(85), X(85), Y(93));
+  ctx.quadraticCurveTo(X(80), Y(112), X(65), Y(118));
+  ctx.quadraticCurveTo(X(52), Y(112), X(48), Y(98));
+  ctx.closePath();
+  ctx.fill();
+
+  // 右肩
+  ctx.fillStyle = hc('肩');
+  ctx.beginPath();
+  ctx.moveTo(X(155), Y(93));
+  ctx.quadraticCurveTo(X(172), Y(85), X(190), Y(90));
+  ctx.quadraticCurveTo(X(192), Y(98), X(188), Y(112));
+  ctx.quadraticCurveTo(X(175), Y(118), X(160), Y(112));
+  ctx.closePath();
+  ctx.fill();
+
+  // 左臂（上臂二头区域）
+  ctx.fillStyle = hc('臂');
+  ctx.beginPath();
+  ctx.moveTo(X(44), Y(118));
+  ctx.quadraticCurveTo(X(56), Y(125), X(52), Y(190));
+  ctx.quadraticCurveTo(X(42), Y(185), X(36), Y(128));
+  ctx.closePath();
+  ctx.fill();
+
+  // 右臂
+  ctx.fillStyle = hc('臂');
+  ctx.beginPath();
+  ctx.moveTo(X(196), Y(118));
+  ctx.quadraticCurveTo(X(184), Y(125), X(188), Y(190));
+  ctx.quadraticCurveTo(X(198), Y(185), X(204), Y(128));
+  ctx.closePath();
+  ctx.fill();
+
+  // 核心（腹肌区域）
+  ctx.fillStyle = hc('核心');
+  ctx.beginPath();
+  ctx.moveTo(X(96), Y(155));
+  ctx.quadraticCurveTo(X(120), Y(152), X(144), Y(155));
+  ctx.lineTo(X(148), Y(215));
+  ctx.quadraticCurveTo(X(120), Y(218), X(92), Y(215));
+  ctx.closePath();
+  ctx.fill();
+
+  // 左腿（股四头区域）
+  ctx.fillStyle = hc('腿');
+  ctx.beginPath();
+  ctx.moveTo(X(78), Y(225));
+  ctx.quadraticCurveTo(X(96), Y(222), X(110), Y(227));
+  ctx.quadraticCurveTo(X(108), Y(320), X(96), Y(322));
+  ctx.quadraticCurveTo(X(80), Y(320), X(78), Y(290));
+  ctx.closePath();
+  ctx.fill();
+
+  // 右腿
+  ctx.fillStyle = hc('腿');
+  ctx.beginPath();
+  ctx.moveTo(X(130), Y(227));
+  ctx.quadraticCurveTo(X(144), Y(222), X(162), Y(225));
+  ctx.quadraticCurveTo(X(162), Y(290), X(160), Y(320));
+  ctx.quadraticCurveTo(X(144), Y(322), X(132), Y(320));
+  ctx.quadraticCurveTo(X(130), Y(280), X(130), Y(227));
+  ctx.closePath();
+  ctx.fill();
+
+  // ========== 肌肉标签（只标注有数据的部位）==========
+  var frontMuscles = ['胸','肩','臂','核心','腿'];
+  var labelDefs = {
+    '胸': {x:102, y:130, align:'center'},
+    '肩': {x:66, y:105, align:'center'},
+    '臂': {x:46, y:165, align:'center'},
+    '核心': {x:120, y:192, align:'center'},
+    '腿': {x:96, y:278, align:'center'}
+  };
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textBaseline = 'middle';
+  frontMuscles.forEach(function(m){
+    if (!muscleCount[m]) return;
+    var ld = labelDefs[m];
+    ctx.fillStyle = muscleCount[m] / maxCount > 0.6 ? '#fff' : (getComputedStyle(document.body).getPropertyValue('--text').trim()||'#333');
+    ctx.textAlign = ld.align;
+    ctx.fillText(MUSCLE_LABELS[m], X(ld.x), Y(ld.y));
+  });
+
+  // 图例（底部）
+  var ly = Y(365);
+  var steps = 4;
+  var lw = X(20);
+  var lx0 = X(50);
+  ctx.font = '8px sans-serif';
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
+  ctx.textAlign = 'center';
+  for (var i = 0; i <= steps; i++) {
+    var ratio = i / steps;
+    var lx = lx0 + i * (lw + 4);
+    ctx.fillStyle = heatColor2(ratio);
+    ctx.fillRect(lx, ly, lw, RX(10));
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
+    ctx.fillText(Math.round(ratio*100)+'%', lx + lw/2, ly+RX(22));
+  }
+}
+
 // ============ 跑鞋里程 ============
 function addShoe() {
   var name = prompt('跑鞋名称（如：Nike Vaporfly 3）：');
@@ -3313,6 +3634,62 @@ function renderProgress() {
       '<div class="chart-wrap"><canvas id="chartVolume" style="width:100%;height:200px;"></canvas></div></div>';
   }
 
+  // 图表：热量消耗趋势
+  var hasCalories = hist.some(function(h){ return h.calories && h.calories > 0; });
+  if (hist.length >= 2 && hasCalories) {
+    html += '<div class="progress-card"><div class="card-title">🔥 热量消耗趋势</div>'+
+      '<div class="chart-wrap"><canvas id="chartCalories" style="width:100%;height:200px;"></canvas></div></div>';
+  }
+
+  // 图表：部位训练分布（环形图）
+  // 构建动作名→部位映射
+  var exMuscleMap = {};
+  EXES.forEach(function(ex){ exMuscleMap[ex.n] = ex.m; });
+  var muscleCount = {};
+  hist.forEach(function(h){
+    if (h.exercises) {
+      h.exercises.forEach(function(en){
+        var m = exMuscleMap[en] || '';
+        if (m) muscleCount[m] = (muscleCount[m] || 0) + 1;
+      });
+    }
+  });
+  var muscleSegments = MUSCLE_ORDER.filter(function(m){ return muscleCount[m]; }).map(function(m){
+    return {label: MUSCLE_LABELS[m]||m, value: muscleCount[m], color: (BADGE_COLORS[m]||['#999'])[0]};
+  });
+  var hasMuscleDist = muscleSegments.length >= 2;
+  if (hasMuscleDist) {
+    html += '<div class="progress-card"><div class="card-title">🎯 部位训练分布</div>'+
+      '<div class="chart-wrap"><canvas id="chartMuscle" style="width:100%;height:230px;"></canvas></div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;justify-content:center;">'+
+      muscleSegments.map(function(seg){
+        return '<span style="font-size:11px;color:var(--text2);">'+
+          '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+seg.color+';margin-right:4px;"></span>'+
+          seg.label+' '+seg.value+'次</span>';
+      }).join('')+
+      '</div></div>';
+  }
+
+  // 🏃 人形肌肉热力图（正面视角，训练越多的部位越红）
+  // 只展示正面可见肌肉：胸/肩/臂/核心/腿，背部在下方文字标注
+  var frontMuscles = ['胸','肩','臂','核心','腿'];
+  var bodyMuscles = frontMuscles.filter(function(m){ return muscleCount[m]; });
+  if (bodyMuscles.length >= 1) {
+    var maxMC = 0;
+    bodyMuscles.forEach(function(m){ maxMC = Math.max(maxMC, muscleCount[m]); });
+    html += '<div class="progress-card"><div class="card-title">🔥 肌肉热力图</div>'+
+      '<div class="chart-wrap"><canvas id="chartBodyHeat" style="width:100%;height:380px;"></canvas></div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;justify-content:center;font-size:11px;">'+
+      bodyMuscles.map(function(m){
+        var pct = maxMC>0 ? Math.round(muscleCount[m]/maxMC*100) : 0;
+        return '<span style="color:var(--text2);">'+
+          '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+heatColor2(pct/100)+';margin-right:3px;"></span>'+
+          MUSCLE_LABELS[m]+' '+muscleCount[m]+'次</span>';
+      }).join('')+
+      (muscleCount['背'] ? '<span style="color:var(--text2);margin-left:4px;">· 背部 '+muscleCount['背']+'次</span>' : '')+
+      '</div></div>';
+  }
+
   // 图表：力量进步曲线（有训练日志时）
   // 自重动作不画重量趋势（如俯卧撑、引体向上等），无意义
   var chartExNames = Object.keys(trainingLog).filter(function(k){
@@ -3328,6 +3705,21 @@ function renderProgress() {
       html += '<div class="progress-card"><div class="card-title">💪 '+exName+' 重量趋势</div>'+
         '<div class="chart-wrap"><canvas id="chartEx'+chi+'" style="width:100%;height:200px;"></canvas></div></div>';
     });
+  }
+
+  // 图表：训练量走势（从训练日志聚合每日总容量 weight×reps）
+  var volByDate = {};
+  Object.keys(trainingLog).forEach(function(exName){
+    trainingLog[exName].forEach(function(e){
+      if (e.weight && e.reps) {
+        volByDate[e.date] = (volByDate[e.date] || 0) + (e.weight * e.reps);
+      }
+    });
+  });
+  var volDates = Object.keys(volByDate).sort();
+  if (volDates.length >= 2) {
+    html += '<div class="progress-card"><div class="card-title">📊 训练量走势</div>'+
+      '<div class="chart-wrap"><canvas id="chartVolumeTrend" style="width:100%;height:200px;"></canvas></div></div>';
   }
 
   // 跑鞋里程
@@ -3495,6 +3887,26 @@ function renderProgress() {
       var colors = ['#FF6B35','#3B82F6','#22C55E'];
       drawChart('chartEx'+chi, cd, {type:'line', color:colors[chi]||'#8B5CF6', yMax:0, title:''});
     });
+    // 渲染热量消耗趋势
+    if (hist.length >= 2 && hasCalories) {
+      var calData = hist.map(function(h){ return {l:h.date.slice(5), v: Math.round(h.calories||0)}; });
+      drawChart('chartCalories', calData, {type:'bar', color:'#F59E0B', yMax:0, title:''});
+    }
+    // 渲染部位训练分布
+    if (hasMuscleDist) {
+      drawDonutChart('chartMuscle', muscleSegments);
+    }
+    // 渲染人形肌肉热力图
+    if (bodyMuscles && bodyMuscles.length >= 1) {
+      var maxMC = 0;
+      bodyMuscles.forEach(function(m){ maxMC = Math.max(maxMC, muscleCount[m]||0); });
+      drawBodyHeatmap('chartBodyHeat', muscleCount, maxMC);
+    }
+    // 渲染训练量走势
+    if (volDates.length >= 2) {
+      var volData = volDates.map(function(d){ return {l: d.slice(5), v: Math.round(volByDate[d]/100)*100}; });
+      drawChart('chartVolumeTrend', volData, {type:'bar', color:'#8B5CF6', yMax:0, title:''});
+    }
     // 渲染身体数据图表
     renderBodyLogChart('chartWeight', 'weight', '#FF6B35', '体重');
     renderBodyLogChart('chartBodyFat', 'bodyFat', '#22C55E', '体脂');
