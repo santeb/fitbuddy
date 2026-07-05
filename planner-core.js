@@ -2867,228 +2867,193 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
   var W = rect.width, H = rect.height;
   ctx.clearRect(0, 0, W, H);
 
-  // 设计坐标系 240×380 → 缩放到实际画布
-  var DW = 240, DH = 380;
-  var sx = W / DW, sy = H / DH;
-  function X(x){ return x*sx; }
-  function Y(y){ return y*sy; }
-  function RX(r){ return r*Math.min(sx,sy); }
-
-  // 获取热力颜色
-  function hc(muscle) {
-    if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
-    return heatColor2(muscleCount[muscle] / maxCount);
+  // 加载/复用肌肉解剖底图
+  var img = window._muscleBodyImg;
+  if (!img) {
+    img = new Image();
+    img.src = 'muscle-body.png';
+    window._muscleBodyImg = img;
   }
 
-  // ========== 身体轮廓 ==========
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#AAA';
-  ctx.lineWidth = 2;
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg2').trim() || '#F3F4F6';
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  function doDraw() {
+    // 底图按画布 fit（保持比例，居中）
+    var scale = 1;
+    var dx = 0, dy = 0;
+    if (img && img.width && img.height) {
+      scale = Math.min(W / img.width, H / img.height);
+      dx = (W - img.width * scale) / 2;
+      dy = (H - img.height * scale) / 2;
+      ctx.drawImage(img, dx, dy, img.width * scale, img.height * scale);
+    }
 
-  // 头
-  ctx.beginPath();
-  ctx.ellipse(X(120), Y(42), RX(30), RX(34), 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.stroke();
+    // 在图片坐标系(1024×1536)中绘制肌肉热力区域，再映射到画布
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.scale(scale, scale);
 
-  // 脖子
-  ctx.beginPath();
-  ctx.moveTo(X(108), Y(72));
-  ctx.lineTo(X(108), Y(85));
-  ctx.lineTo(X(132), Y(85));
-  ctx.lineTo(X(132), Y(72));
-  ctx.fill();
-  ctx.stroke();
+    // 混合模式：overlay 让热色和肌肉纹理自然融合
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = 0.85;
 
-  // 躯干（梯形）
-  ctx.beginPath();
-  ctx.moveTo(X(55), Y(88));
-  ctx.lineTo(X(185), Y(88));
-  ctx.lineTo(X(174), Y(220));
-  ctx.lineTo(X(66), Y(220));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    function hc(muscle) {
+      if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
+      return heatColor2(muscleCount[muscle] / maxCount);
+    }
 
-  // 左臂
-  ctx.beginPath();
-  ctx.moveTo(X(55), Y(88));
-  ctx.quadraticCurveTo(X(32), Y(150), X(28), Y(215));
-  ctx.quadraticCurveTo(X(24), Y(230), X(35), Y(230));
-  ctx.quadraticCurveTo(X(42), Y(230), X(44), Y(215));
-  ctx.quadraticCurveTo(X(48), Y(150), X(76), Y(95));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    // 胸部（左+右）
+    if (muscleCount['胸']) {
+      ctx.fillStyle = hc('胸');
+      // 左胸
+      ctx.beginPath();
+      ctx.moveTo(365, 270);
+      ctx.quadraticCurveTo(420, 255, 505, 270);
+      ctx.quadraticCurveTo(500, 380, 490, 460);
+      ctx.quadraticCurveTo(420, 470, 370, 430);
+      ctx.quadraticCurveTo(355, 350, 365, 270);
+      ctx.closePath();
+      ctx.fill();
+      // 右胸
+      ctx.beginPath();
+      ctx.moveTo(520, 270);
+      ctx.quadraticCurveTo(605, 255, 660, 270);
+      ctx.quadraticCurveTo(670, 350, 655, 430);
+      ctx.quadraticCurveTo(605, 470, 535, 460);
+      ctx.quadraticCurveTo(525, 380, 520, 270);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // 右臂
-  ctx.beginPath();
-  ctx.moveTo(X(185), Y(88));
-  ctx.quadraticCurveTo(X(208), Y(150), X(212), Y(215));
-  ctx.quadraticCurveTo(X(216), Y(230), X(205), Y(230));
-  ctx.quadraticCurveTo(X(198), Y(230), X(196), Y(215));
-  ctx.quadraticCurveTo(X(192), Y(150), X(164), Y(95));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    // 肩部（左+右）
+    if (muscleCount['肩']) {
+      ctx.fillStyle = hc('肩');
+      ctx.beginPath();
+      ctx.moveTo(230, 245);
+      ctx.quadraticCurveTo(300, 235, 355, 265);
+      ctx.quadraticCurveTo(340, 335, 295, 350);
+      ctx.quadraticCurveTo(245, 330, 230, 245);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(669, 265);
+      ctx.quadraticCurveTo(724, 235, 794, 245);
+      ctx.quadraticCurveTo(779, 330, 729, 350);
+      ctx.quadraticCurveTo(684, 335, 669, 265);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // 左腿
-  ctx.beginPath();
-  ctx.moveTo(X(72), Y(220));
-  ctx.quadraticCurveTo(X(68), Y(300), X(72), Y(360));
-  ctx.lineTo(X(116), Y(360));
-  ctx.quadraticCurveTo(X(116), Y(300), X(112), Y(220));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    // 手臂（左+右，上臂二头/三头区域）
+    if (muscleCount['臂']) {
+      ctx.fillStyle = hc('臂');
+      // 左上臂
+      ctx.beginPath();
+      ctx.moveTo(175, 360);
+      ctx.quadraticCurveTo(230, 370, 245, 460);
+      ctx.quadraticCurveTo(225, 620, 180, 640);
+      ctx.quadraticCurveTo(150, 600, 155, 450);
+      ctx.quadraticCurveTo(165, 390, 175, 360);
+      ctx.closePath();
+      ctx.fill();
+      // 右上臂
+      ctx.beginPath();
+      ctx.moveTo(849, 360);
+      ctx.quadraticCurveTo(794, 370, 779, 460);
+      ctx.quadraticCurveTo(799, 620, 844, 640);
+      ctx.quadraticCurveTo(874, 600, 869, 450);
+      ctx.quadraticCurveTo(859, 390, 849, 360);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // 右腿
-  ctx.beginPath();
-  ctx.moveTo(X(128), Y(220));
-  ctx.quadraticCurveTo(X(124), Y(300), X(128), Y(360));
-  ctx.lineTo(X(172), Y(360));
-  ctx.quadraticCurveTo(X(172), Y(300), X(168), Y(220));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+    // 核心（腹肌区域）
+    if (muscleCount['核心']) {
+      ctx.fillStyle = hc('核心');
+      ctx.beginPath();
+      ctx.moveTo(430, 520);
+      ctx.quadraticCurveTo(512, 510, 595, 520);
+      ctx.quadraticCurveTo(605, 620, 590, 710);
+      ctx.quadraticCurveTo(512, 720, 435, 710);
+      ctx.quadraticCurveTo(420, 620, 430, 520);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // ========== 肌肉热力区域（绘制在各部位内）==========
+    // 腿（左+右大腿）
+    if (muscleCount['腿']) {
+      ctx.fillStyle = hc('腿');
+      // 左大腿
+      ctx.beginPath();
+      ctx.moveTo(350, 780);
+      ctx.quadraticCurveTo(420, 765, 495, 790);
+      ctx.quadraticCurveTo(480, 1000, 445, 1230);
+      ctx.quadraticCurveTo(375, 1230, 335, 1000);
+      ctx.quadraticCurveTo(330, 900, 350, 780);
+      ctx.closePath();
+      ctx.fill();
+      // 右大腿
+      ctx.beginPath();
+      ctx.moveTo(530, 790);
+      ctx.quadraticCurveTo(605, 765, 675, 780);
+      ctx.quadraticCurveTo(690, 900, 690, 1000);
+      ctx.quadraticCurveTo(650, 1230, 580, 1230);
+      ctx.quadraticCurveTo(545, 1000, 530, 790);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // 左胸
-  var lChestColor = hc('胸');
-  ctx.fillStyle = lChestColor;
-  ctx.beginPath();
-  ctx.moveTo(X(82), Y(105));
-  ctx.quadraticCurveTo(X(110), Y(100), X(124), Y(105));
-  ctx.quadraticCurveTo(X(120), Y(140), X(108), Y(155));
-  ctx.quadraticCurveTo(X(92), Y(155), X(84), Y(140));
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#000';
-  ctx.fill();
-  ctx.globalAlpha = 1;
+    ctx.restore(); // 恢复混合模式
 
-  // 右胸
-  var rChestColor = hc('胸');
-  ctx.fillStyle = rChestColor;
-  ctx.beginPath();
-  ctx.moveTo(X(116), Y(105));
-  ctx.quadraticCurveTo(X(130), Y(100), X(158), Y(105));
-  ctx.quadraticCurveTo(X(156), Y(140), X(148), Y(155));
-  ctx.quadraticCurveTo(X(132), Y(155), X(120), Y(140));
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = '#000';
-  ctx.fill();
-  ctx.globalAlpha = 1;
+    // 肌肉标签（直接绘制在画布上，不受 overlay 影响）
+    var frontMuscles = ['胸','肩','臂','核心','腿'];
+    var labelPos = {
+      '胸': {x:512, y:360},
+      '肩': {x:290, y:290},
+      '臂': {x:195, y:500},
+      '核心': {x:512, y:615},
+      '腿': {x:420, y:1000}
+    };
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    frontMuscles.forEach(function(m){
+      if (!muscleCount[m]) return;
+      var pos = labelPos[m];
+      var ratio = muscleCount[m] / maxCount;
+      ctx.fillStyle = ratio > 0.6 ? '#fff' : (getComputedStyle(document.body).getPropertyValue('--text').trim() || '#1f2937');
+      ctx.textAlign = 'center';
+      // 文字描边，确保在任何颜色上都可见
+      ctx.strokeStyle = ratio > 0.6 ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeText(MUSCLE_LABELS[m], dx + pos.x * scale, dy + pos.y * scale);
+      ctx.fillText(MUSCLE_LABELS[m], dx + pos.x * scale, dy + pos.y * scale);
+    });
 
-  // 左肩
-  ctx.fillStyle = hc('肩');
-  ctx.beginPath();
-  ctx.moveTo(X(50), Y(90));
-  ctx.quadraticCurveTo(X(68), Y(85), X(85), Y(93));
-  ctx.quadraticCurveTo(X(80), Y(112), X(65), Y(118));
-  ctx.quadraticCurveTo(X(52), Y(112), X(48), Y(98));
-  ctx.closePath();
-  ctx.fill();
-
-  // 右肩
-  ctx.fillStyle = hc('肩');
-  ctx.beginPath();
-  ctx.moveTo(X(155), Y(93));
-  ctx.quadraticCurveTo(X(172), Y(85), X(190), Y(90));
-  ctx.quadraticCurveTo(X(192), Y(98), X(188), Y(112));
-  ctx.quadraticCurveTo(X(175), Y(118), X(160), Y(112));
-  ctx.closePath();
-  ctx.fill();
-
-  // 左臂（上臂二头区域）
-  ctx.fillStyle = hc('臂');
-  ctx.beginPath();
-  ctx.moveTo(X(44), Y(118));
-  ctx.quadraticCurveTo(X(56), Y(125), X(52), Y(190));
-  ctx.quadraticCurveTo(X(42), Y(185), X(36), Y(128));
-  ctx.closePath();
-  ctx.fill();
-
-  // 右臂
-  ctx.fillStyle = hc('臂');
-  ctx.beginPath();
-  ctx.moveTo(X(196), Y(118));
-  ctx.quadraticCurveTo(X(184), Y(125), X(188), Y(190));
-  ctx.quadraticCurveTo(X(198), Y(185), X(204), Y(128));
-  ctx.closePath();
-  ctx.fill();
-
-  // 核心（腹肌区域）
-  ctx.fillStyle = hc('核心');
-  ctx.beginPath();
-  ctx.moveTo(X(96), Y(155));
-  ctx.quadraticCurveTo(X(120), Y(152), X(144), Y(155));
-  ctx.lineTo(X(148), Y(215));
-  ctx.quadraticCurveTo(X(120), Y(218), X(92), Y(215));
-  ctx.closePath();
-  ctx.fill();
-
-  // 左腿（股四头区域）
-  ctx.fillStyle = hc('腿');
-  ctx.beginPath();
-  ctx.moveTo(X(78), Y(225));
-  ctx.quadraticCurveTo(X(96), Y(222), X(110), Y(227));
-  ctx.quadraticCurveTo(X(108), Y(320), X(96), Y(322));
-  ctx.quadraticCurveTo(X(80), Y(320), X(78), Y(290));
-  ctx.closePath();
-  ctx.fill();
-
-  // 右腿
-  ctx.fillStyle = hc('腿');
-  ctx.beginPath();
-  ctx.moveTo(X(130), Y(227));
-  ctx.quadraticCurveTo(X(144), Y(222), X(162), Y(225));
-  ctx.quadraticCurveTo(X(162), Y(290), X(160), Y(320));
-  ctx.quadraticCurveTo(X(144), Y(322), X(132), Y(320));
-  ctx.quadraticCurveTo(X(130), Y(280), X(130), Y(227));
-  ctx.closePath();
-  ctx.fill();
-
-  // ========== 肌肉标签（只标注有数据的部位）==========
-  var frontMuscles = ['胸','肩','臂','核心','腿'];
-  var labelDefs = {
-    '胸': {x:102, y:130, align:'center'},
-    '肩': {x:66, y:105, align:'center'},
-    '臂': {x:46, y:165, align:'center'},
-    '核心': {x:120, y:192, align:'center'},
-    '腿': {x:96, y:278, align:'center'}
-  };
-  ctx.font = 'bold 11px sans-serif';
-  ctx.textBaseline = 'middle';
-  frontMuscles.forEach(function(m){
-    if (!muscleCount[m]) return;
-    var ld = labelDefs[m];
-    ctx.fillStyle = muscleCount[m] / maxCount > 0.6 ? '#fff' : (getComputedStyle(document.body).getPropertyValue('--text').trim()||'#333');
-    ctx.textAlign = ld.align;
-    ctx.fillText(MUSCLE_LABELS[m], X(ld.x), Y(ld.y));
-  });
-
-  // 图例（底部）
-  var ly = Y(365);
-  var steps = 4;
-  var lw = X(20);
-  var lx0 = X(50);
-  ctx.font = '8px sans-serif';
-  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
-  ctx.textAlign = 'center';
-  for (var i = 0; i <= steps; i++) {
-    var ratio = i / steps;
-    var lx = lx0 + i * (lw + 4);
-    ctx.fillStyle = heatColor2(ratio);
-    ctx.fillRect(lx, ly, lw, RX(10));
+    // 底部图例
+    ctx.font = '10px sans-serif';
     ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
-    ctx.fillText(Math.round(ratio*100)+'%', lx + lw/2, ly+RX(22));
+    ctx.textAlign = 'left';
+    ctx.fillText('练得少', 8, H - 12);
+    ctx.textAlign = 'right';
+    ctx.fillText('练得多', W - 8, H - 12);
+    var steps = 4;
+    var lw = 30;
+    var lx0 = (W - (steps * (lw + 4))) / 2;
+    var ly = H - 28;
+    for (var i = 0; i <= steps; i++) {
+      var ratio = i / steps;
+      ctx.fillStyle = heatColor2(ratio);
+      ctx.fillRect(lx0 + i * (lw + 4), ly, lw, 10);
+    }
+  }
+
+  if (img.complete && img.naturalWidth) {
+    doDraw();
+  } else {
+    img.onload = doDraw;
+    img.onerror = function() {
+      console.warn('肌肉底图加载失败');
+    };
   }
 }
 
