@@ -2,7 +2,53 @@
 // 本文件包含计划生成/渲染/进度追踪/营养计算/提醒系统UI
 // 依赖 data-constants.js（必须先加载）
 
-function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, nEasy, longDay, dayLabel) {
+// ============ 晨跑/夜跑进食时机切换 ============
+function switchRunTiming(timingId, mode) {
+  window._currentRunTime = mode; // 记住当前晨跑/夜跑模式，供 selectNutriDay 使用
+  var container = document.getElementById(timingId);
+  if (!container) return;
+
+  var morningBtn = document.getElementById(timingId + '_morning');
+  var eveningBtn = document.getElementById(timingId + '_evening');
+
+  // 按钮高亮切换
+  if (mode === 'morning') {
+    morningBtn.style.background = 'linear-gradient(90deg,#FF6B35,#FF3E7F)';
+    morningBtn.style.color = '#fff';
+    eveningBtn.style.background = 'var(--bg)';
+    eveningBtn.style.color = 'var(--text3)';
+  } else {
+    eveningBtn.style.background = 'linear-gradient(90deg,#FF6B35,#FF3E7F)';
+    eveningBtn.style.color = '#fff';
+    morningBtn.style.background = 'var(--bg)';
+    morningBtn.style.color = 'var(--text3)';
+  }
+
+  // 更新进食时机
+  var fg = FOOD_GUIDE.marathon;
+  var timingData = (mode === 'morning') ? (fg.timingMorning || []) :
+    (window._marathonTiming && window._marathonTiming[timingId]) || [];
+  var html = '';
+  timingData.forEach(function(t) {
+    html += '<div style="font-size:12px;color:var(--text2);line-height:1.7;padding-left:14px;position:relative;">' +
+      '<span style="position:absolute;left:0;">\u2022</span>' + t + '</div>';
+  });
+  container.innerHTML = html;
+
+  // 更新示例食谱
+  var mealsId = timingId.replace('_timing', '_meals');
+  var mealsContainer = document.getElementById(mealsId);
+  var params = window._marathonMealsParams && window._marathonMealsParams[mealsId];
+  if (mealsContainer && params) {
+    mealsContainer.innerHTML = renderDynamicMealPlan(
+      params.nRest, params.goal, undefined,
+      params.nTrain, params.dayCalBurns, params.nEasy,
+      undefined, undefined, mode
+    );
+  }
+}
+
+function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, nEasy, longDay, dayLabel, runTime) {
   // 根据营养数据计算蛋白质/碳水乘数
   function calcMul(n) {
     if (!n) return { pMul: 1, cMul: 1 };
@@ -19,6 +65,7 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, 
   function makeMeals(training, n, longDay) {
     var mul = calcMul(n);
     var pMul = mul.pMul, cMul = mul.cMul;
+    // runTime 来自外层 renderDynamicMealPlan 闭包
     if (goal === 'cut') {
       if (training) {
         return [
@@ -55,26 +102,50 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, 
     }
     // 马拉松专项
     if (goal === 'marathon') {
+      var isEvening = runTime === 'evening';
       if (training) {
         if (longDay) {
-          // 长距离日（LSD/节奏跑 ≥800kcal）：高碳水 + 跑中补给
-          return [
-            {label:'早餐（跑前2h）', items:'燕麦'+sc(80,cMul)+'g + 香蕉1根 + 蜂蜜1勺 + 水300ml'},
-            {label:'跑中补给', items:'能量胶1条/45min + 运动饮料200ml（LSD>15km时）'},
-            {label:'跑后恢复（30min内）', items:'巧克力奶300ml + 香蕉1根 + 小面包1个'},
-            {label:'午餐', items:'意面/米饭'+sc(200,cMul)+'g + 鸡胸肉/三文鱼'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
-            {label:'加餐', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把 + 坚果10g'},
-            {label:'晚餐', items:'米饭/面条'+sc(180,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g'}
-          ];
+          if (isEvening) {
+            // 夜跑 - 长距离日
+            return [
+              {label:'早餐', items:'燕麦'+sc(60,cMul)+'g + 水煮蛋2个 + 香蕉1根 + 水300ml'},
+              {label:'午餐（跑前3-4h）', items:'意面/米饭'+sc(200,cMul)+'g + 鸡胸肉/三文鱼'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+              {label:'跑前加餐（跑前1h）', items:'香蕉1根 + 全麦面包1片 + 花生酱'+sc(10,pMul)+'g + 水200ml'},
+              {label:'跑中补给', items:'能量胶1条/45min + 运动饮料200ml（LSD>15km时）'},
+              {label:'跑后恢复（30min内）', items:'巧克力奶300ml + 香蕉1根 + 小面包1个'},
+              {label:'晚餐（跑后正餐）', items:'米饭/面条'+sc(180,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g + 坚果10g'}
+            ];
+          } else {
+            // 晨跑 - 长距离日（LSD/节奏跑 ≥800kcal）：高碳水 + 跑中补给
+            return [
+              {label:'早餐（跑前2h）', items:'燕麦'+sc(80,cMul)+'g + 香蕉1根 + 蜂蜜1勺 + 水300ml'},
+              {label:'跑中补给', items:'能量胶1条/45min + 运动饮料200ml（LSD>15km时）'},
+              {label:'跑后恢复（30min内）', items:'巧克力奶300ml + 香蕉1根 + 小面包1个'},
+              {label:'午餐', items:'意面/米饭'+sc(200,cMul)+'g + 鸡胸肉/三文鱼'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+              {label:'加餐', items:'希腊酸奶'+sc(150,pMul)+'g + 蓝莓一小把 + 坚果10g'},
+              {label:'晚餐', items:'米饭/面条'+sc(180,cMul)+'g + 虾仁/豆腐'+sc(110,pMul)+'g + 菠菜200g'}
+            ];
+          }
         } else {
-          // 轻松训练日（恢复跑/短距离 <800kcal）：适度碳水，无跑中补给
-          return [
-            {label:'早餐（跑前1-2h）', items:'燕麦'+sc(60,cMul)+'g + 香蕉1根 + 水200ml'},
-            {label:'跑后恢复', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
-            {label:'午餐', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
-            {label:'加餐', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
-            {label:'晚餐', items:'米饭/面条'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
-          ];
+          if (isEvening) {
+            // 夜跑 - 轻松训练日
+            return [
+              {label:'早餐', items:'燕麦'+sc(50,cMul)+'g + 水煮蛋2个 + 香蕉1根 + 水200ml'},
+              {label:'午餐（跑前3-4h）', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+              {label:'跑前加餐（跑前1h）', items:'香蕉1根 + 全麦面包1片 + 水200ml'},
+              {label:'跑后恢复', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
+              {label:'晚餐（跑后正餐）', items:'米饭/面条'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
+            ];
+          } else {
+            // 晨跑 - 轻松训练日（恢复跑/短距离 <800kcal）
+            return [
+              {label:'早餐（跑前1-2h）', items:'燕麦'+sc(60,cMul)+'g + 香蕉1根 + 水200ml'},
+              {label:'跑后恢复', items:'巧克力奶250ml 或 蛋白粉+香蕉'},
+              {label:'午餐', items:'糙米饭'+sc(160,cMul)+'g + 鸡胸肉/鱼肉'+sc(120,pMul)+'g + 西兰花200g + 橄榄油5g'},
+              {label:'加餐', items:'全麦面包1片 + 花生酱'+sc(10,pMul)+'g + 香蕉半根'},
+              {label:'晚餐', items:'米饭/面条'+sc(150,cMul)+'g + 虾仁/豆腐'+sc(100,pMul)+'g + 菠菜200g'}
+            ];
+          }
         }
       } else {
         return [
@@ -1742,16 +1813,56 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
   // 进食时机
   html += '</div>'+
     '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">'+
-    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">⏰ 进食时机</div>';
-  fg.timing.forEach(function(t){
-    html += '<div style="font-size:12px;color:var(--text2);line-height:1.7;padding-left:14px;position:relative;">'+
-      '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
-  });
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text);">⏰ 进食时机</div>';
+
+  // 马拉松目标：晨跑/夜跑切换
+  if (goal === 'marathon' && fg.timingMorning) {
+    var timingId = nutriPanelId + '_timing';
+    html += '<div style="display:flex;gap:0;border-radius:10px;overflow:hidden;border:1px solid var(--border);">'+
+      '<button id="'+timingId+'_morning" onclick="switchRunTiming(\''+timingId+'\',\'morning\')" style="padding:5px 14px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;">🌅 晨跑</button>'+
+      '<button id="'+timingId+'_evening" onclick="switchRunTiming(\''+timingId+'\',\'evening\')" style="padding:5px 14px;font-size:12px;font-weight:700;border:none;cursor:pointer;background:var(--bg);color:var(--text3);">🌙 夜跑</button>'+
+    '</div>';
+
+    // 默认显示晨跑
+    html += '</div>';
+    html += '<div id="'+timingId+'">';
+    fg.timingMorning.forEach(function(t){
+      html += '<div style="font-size:12px;color:var(--text2);line-height:1.7;padding-left:14px;position:relative;">'+
+        '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
+    });
+    html += '</div>';
+
+    // 存储夜跑数据供切换使用（直接在JS中赋值，不依赖innerHTML中的script标签）
+    if (!window._marathonTiming) window._marathonTiming = {};
+    window._marathonTiming[timingId] = fg.timingEvening;
+  } else {
+    // 非马拉松目标：保持原逻辑
+    html += '</div>';
+    if (fg.timing) {
+      fg.timing.forEach(function(t){
+        html += '<div style="font-size:12px;color:var(--text2);line-height:1.7;padding-left:14px;position:relative;">'+
+          '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
+      });
+    } else if (fg.timingMorning) {
+      fg.timingMorning.forEach(function(t){
+        html += '<div style="font-size:12px;color:var(--text2);line-height:1.7;padding-left:14px;position:relative;">'+
+          '<span style="position:absolute;left:0;">•</span>'+t+'</div>';
+      });
+    }
+  }
 
   // 动态示例食谱：训练日 + 休息日 两版（包裹容器，供 chip 切换时动态替换）
-  html += '<div id="'+nutriPanelId+'_meals">';
-  html += renderDynamicMealPlan(n, goal, undefined, nTrain, dayCalBurns, nEasy);
+  var mealsId = nutriPanelId + '_meals';
+  html += '<div id="'+mealsId+'">';
+  html += renderDynamicMealPlan(n, goal, undefined, nTrain, dayCalBurns, nEasy, undefined, undefined, 'morning');
   html += '</div>';
+
+  // 马拉松目标：存储渲染参数，供晨跑/夜跑切换时重新渲染食谱（直接在JS中赋值，不依赖innerHTML中的script标签）
+  if (goal === 'marathon') {
+    if (!window._marathonMealsParams) window._marathonMealsParams = {};
+    window._marathonMealsParams[mealsId] = {nRest:n, goal:goal, nTrain:nTrain, dayCalBurns:dayCalBurns, nEasy:nEasy};
+  }
 
   html += '</div></div>';
   return html;
@@ -1807,9 +1918,10 @@ function selectNutriDay(panelId, idx, restCal, trainCal) {
   var mealsEl = document.getElementById(panelId + '_meals');
   if (!mealsEl || !_lastNutriCtx) return;
   var ctx = _lastNutriCtx;
+  var rt = window._currentRunTime || 'morning'; // 读取当前晨跑/夜跑模式
   if (idx < 0) {
     // 平均：恢复默认多版本展示（休息日+训练日 / 马拉松三档）
-    mealsEl.innerHTML = renderDynamicMealPlan(ctx.nRest, ctx.goal, undefined, ctx.nTrain, ctx.dayCalBurns, ctx.nEasy);
+    mealsEl.innerHTML = renderDynamicMealPlan(ctx.nRest, ctx.goal, undefined, ctx.nTrain, ctx.dayCalBurns, ctx.nEasy, undefined, undefined, rt);
   } else {
     // 指定日程：按该日消耗重新计算营养并渲染单日食谱
     var selChip2 = panel.querySelector('.nutri-chip[data-ni="'+idx+'"]');
@@ -1822,7 +1934,7 @@ function selectNutriDay(panelId, idx, restCal, trainCal) {
     if (!dayN) return;
     var isLong = burn >= 800;
     var dayLabel = dayName ? (isTraining ? '🔥 ' + dayName : '😴 ' + dayName) : null;
-    mealsEl.innerHTML = renderDynamicMealPlan(dayN, ctx.goal, isTraining, dayN, null, null, isLong, dayLabel);
+    mealsEl.innerHTML = renderDynamicMealPlan(dayN, ctx.goal, isTraining, dayN, null, null, isLong, dayLabel, rt);
   }
 }
 
