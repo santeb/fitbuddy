@@ -2871,7 +2871,7 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
   var img = window._muscleBodyImg;
   if (!img) {
     img = new Image();
-    img.src = 'muscle-body.png';
+    img.src = 'muscle-body.png?v=2';
     window._muscleBodyImg = img;
   }
 
@@ -2886,14 +2886,14 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
       ctx.drawImage(img, dx, dy, img.width * scale, img.height * scale);
     }
 
-    // 在图片坐标系(1024×1536)中绘制肌肉热力区域，再映射到画布
+    // 在图片坐标系(832×1216)中绘制肌肉热力区域，再映射到画布
     ctx.save();
     ctx.translate(dx, dy);
     ctx.scale(scale, scale);
 
-    // 半透明叠加，不会溢出到底图空白区域
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.5;
+    // 半透明叠加，source-atop 会自动把超出人体透明背景的区域裁掉
+    ctx.globalCompositeOperation = 'source-atop';
+    ctx.globalAlpha = 0.7;
 
     function hc(muscle) {
       if (!muscleCount[muscle] || maxCount <= 0) return '#4B5563';
@@ -2905,20 +2905,18 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
       ctx.fillStyle = hc('胸');
       // 左胸
       ctx.beginPath();
-      ctx.moveTo(365, 270);
-      ctx.quadraticCurveTo(420, 255, 505, 270);
-      ctx.quadraticCurveTo(500, 380, 490, 460);
-      ctx.quadraticCurveTo(420, 470, 370, 430);
-      ctx.quadraticCurveTo(355, 350, 365, 270);
+      ctx.moveTo(300, 250);
+      ctx.quadraticCurveTo(340, 235, 420, 250);
+      ctx.quadraticCurveTo(410, 360, 360, 420);
+      ctx.quadraticCurveTo(310, 360, 300, 250);
       ctx.closePath();
       ctx.fill();
       // 右胸
       ctx.beginPath();
-      ctx.moveTo(520, 270);
-      ctx.quadraticCurveTo(605, 255, 660, 270);
-      ctx.quadraticCurveTo(670, 350, 655, 430);
-      ctx.quadraticCurveTo(605, 470, 535, 460);
-      ctx.quadraticCurveTo(525, 380, 520, 270);
+      ctx.moveTo(440, 250);
+      ctx.quadraticCurveTo(520, 235, 560, 250);
+      ctx.quadraticCurveTo(560, 360, 510, 420);
+      ctx.quadraticCurveTo(440, 360, 440, 250);
       ctx.closePath();
       ctx.fill();
     }
@@ -2926,18 +2924,20 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
     // 肩部（左+右）
     if (muscleCount['肩']) {
       ctx.fillStyle = hc('肩');
+      // 左肩
       ctx.beginPath();
-      ctx.moveTo(230, 245);
-      ctx.quadraticCurveTo(300, 235, 355, 265);
-      ctx.quadraticCurveTo(340, 335, 295, 350);
-      ctx.quadraticCurveTo(245, 330, 230, 245);
+      ctx.moveTo(210, 220);
+      ctx.quadraticCurveTo(260, 210, 320, 240);
+      ctx.quadraticCurveTo(310, 320, 250, 330);
+      ctx.quadraticCurveTo(210, 290, 210, 220);
       ctx.closePath();
       ctx.fill();
+      // 右肩
       ctx.beginPath();
-      ctx.moveTo(669, 265);
-      ctx.quadraticCurveTo(724, 235, 794, 245);
-      ctx.quadraticCurveTo(779, 330, 729, 350);
-      ctx.quadraticCurveTo(684, 335, 669, 265);
+      ctx.moveTo(540, 240);
+      ctx.quadraticCurveTo(600, 210, 650, 220);
+      ctx.quadraticCurveTo(650, 290, 610, 330);
+      ctx.quadraticCurveTo(550, 320, 540, 240);
       ctx.closePath();
       ctx.fill();
     }
@@ -2947,20 +2947,18 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
       ctx.fillStyle = hc('臂');
       // 左上臂
       ctx.beginPath();
-      ctx.moveTo(175, 360);
-      ctx.quadraticCurveTo(230, 370, 245, 460);
-      ctx.quadraticCurveTo(225, 620, 180, 640);
-      ctx.quadraticCurveTo(150, 600, 155, 450);
-      ctx.quadraticCurveTo(165, 390, 175, 360);
+      ctx.moveTo(180, 330);
+      ctx.quadraticCurveTo(230, 340, 250, 450);
+      ctx.quadraticCurveTo(240, 560, 190, 580);
+      ctx.quadraticCurveTo(170, 500, 180, 330);
       ctx.closePath();
       ctx.fill();
       // 右上臂
       ctx.beginPath();
-      ctx.moveTo(849, 360);
-      ctx.quadraticCurveTo(794, 370, 779, 460);
-      ctx.quadraticCurveTo(799, 620, 844, 640);
-      ctx.quadraticCurveTo(874, 600, 869, 450);
-      ctx.quadraticCurveTo(859, 390, 849, 360);
+      ctx.moveTo(610, 330);
+      ctx.quadraticCurveTo(650, 330, 690, 450);
+      ctx.quadraticCurveTo(680, 560, 640, 580);
+      ctx.quadraticCurveTo(600, 500, 610, 330);
       ctx.closePath();
       ctx.fill();
     }
@@ -2969,11 +2967,11 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
     if (muscleCount['核心']) {
       ctx.fillStyle = hc('核心');
       ctx.beginPath();
-      ctx.moveTo(430, 520);
-      ctx.quadraticCurveTo(512, 510, 595, 520);
-      ctx.quadraticCurveTo(605, 620, 590, 710);
-      ctx.quadraticCurveTo(512, 720, 435, 710);
-      ctx.quadraticCurveTo(420, 620, 430, 520);
+      ctx.moveTo(330, 440);
+      ctx.quadraticCurveTo(430, 430, 530, 440);
+      ctx.quadraticCurveTo(530, 560, 520, 650);
+      ctx.quadraticCurveTo(430, 660, 330, 650);
+      ctx.quadraticCurveTo(330, 560, 330, 440);
       ctx.closePath();
       ctx.fill();
     }
@@ -2983,34 +2981,34 @@ function drawBodyHeatmap(canvasId, muscleCount, maxCount) {
       ctx.fillStyle = hc('腿');
       // 左大腿
       ctx.beginPath();
-      ctx.moveTo(350, 780);
-      ctx.quadraticCurveTo(420, 765, 495, 790);
-      ctx.quadraticCurveTo(480, 1000, 445, 1230);
-      ctx.quadraticCurveTo(375, 1230, 335, 1000);
-      ctx.quadraticCurveTo(330, 900, 350, 780);
+      ctx.moveTo(300, 700);
+      ctx.quadraticCurveTo(370, 680, 420, 700);
+      ctx.quadraticCurveTo(410, 900, 380, 1080);
+      ctx.quadraticCurveTo(320, 1060, 290, 920);
+      ctx.quadraticCurveTo(290, 800, 300, 700);
       ctx.closePath();
       ctx.fill();
       // 右大腿
       ctx.beginPath();
-      ctx.moveTo(530, 790);
-      ctx.quadraticCurveTo(605, 765, 675, 780);
-      ctx.quadraticCurveTo(690, 900, 690, 1000);
-      ctx.quadraticCurveTo(650, 1230, 580, 1230);
-      ctx.quadraticCurveTo(545, 1000, 530, 790);
+      ctx.moveTo(440, 700);
+      ctx.quadraticCurveTo(500, 680, 570, 700);
+      ctx.quadraticCurveTo(580, 800, 570, 920);
+      ctx.quadraticCurveTo(540, 1060, 480, 1080);
+      ctx.quadraticCurveTo(450, 900, 440, 700);
       ctx.closePath();
       ctx.fill();
     }
 
     ctx.restore(); // 恢复混合模式
 
-    // 肌肉标签（直接绘制在画布上，不受 overlay 影响）
+    // 肌肉标签（直接绘制在画布上，不受 source-atop 影响）
     var frontMuscles = ['胸','肩','臂','核心','腿'];
     var labelPos = {
-      '胸': {x:512, y:360},
-      '肩': {x:290, y:290},
-      '臂': {x:195, y:500},
-      '核心': {x:512, y:615},
-      '腿': {x:420, y:1000}
+      '胸': {x:430, y:330},
+      '肩': {x:240, y:270},
+      '臂': {x:190, y:450},
+      '核心': {x:430, y:540},
+      '腿': {x:350, y:900}
     };
     ctx.font = 'bold 12px sans-serif';
     ctx.textBaseline = 'middle';
