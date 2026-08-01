@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>补剂封面</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #111; }
+  .cover {
+    width: 1080px;
+    height: 1440px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 40%, #0f3460 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  }
+  /* 装饰圆 */
+  .deco1 {
+    position: absolute;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,107,53,0.15) 0%, transparent 70%);
+    top: -200px; right: -200px;
+  }
+  .deco2 {
+    position: absolute;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(78,205,196,0.12) 0%, transparent 70%);
+    bottom: 100px; left: -150px;
+  }
+  /* 顶部标签 */
+  .top-tag {
+    position: absolute;
+    top: 60px; left: 60px;
+    background: #ff6b35;
+    color: #fff;
+    font-size: 36px;
+    font-weight: 900;
+    padding: 12px 36px;
+    border-radius: 8px;
+    letter-spacing: 4px;
+  }
+  /* 主标题 */
+  .main-title {
+    position: absolute;
+    top: 200px;
+    left: 60px;
+    right: 60px;
+  }
+  .main-title .line1 {
+    font-size: 96px;
+    font-weight: 900;
+    color: #fff;
+    line-height: 1.1;
+    letter-spacing: 8px;
+  }
+  .main-title .line2 {
+    font-size: 72px;
+    font-weight: 900;
+    color: #ff6b35;
+    line-height: 1.2;
+    margin-top: 10px;
+    letter-spacing: 4px;
+  }
+  /* 核心结论区 */
+  .core-box {
+    position: absolute;
+    top: 560px;
+    left: 60px;
+    right: 60px;
+    background: rgba(255,255,255,0.06);
+    border: 2px solid rgba(255,107,53,0.4);
+    border-radius: 24px;
+    padding: 40px 48px;
+  }
+  .core-title {
+    font-size: 38px;
+    color: #ff6b35;
+    font-weight: 700;
+    margin-bottom: 28px;
+    letter-spacing: 2px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .item:last-child { margin-bottom: 0; }
+  .check { font-size: 52px; margin-right: 20px; }
+  .cross { font-size: 52px; margin-right: 20px; }
+  .item-text {
+    font-size: 42px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 2px;
+  }
+  .item-desc {
+    font-size: 28px;
+    color: rgba(255,255,255,0.5);
+    margin-left: 72px;
+    margin-top: 4px;
+  }
+  /* 底部大字 */
+  .bottom-text {
+    position: absolute;
+    bottom: 140px;
+    left: 60px;
+    right: 60px;
+    text-align: center;
+  }
+  .bottom-text .big {
+    font-size: 80px;
+    font-weight: 900;
+    color: #4ecdc4;
+    letter-spacing: 6px;
+    line-height: 1.2;
+  }
+  .bottom-text .sub {
+    font-size: 36px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 16px;
+    letter-spacing: 2px;
+  }
+  /* 底部装饰线 */
+  .bottom-line {
+    position: absolute;
+    bottom: 80px;
+    left: 200px; right: 200px;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, #ff6b35, #4ecdc4, transparent);
+    border-radius: 2px;
+  }
+  /* 蛋白粉罐子简笔画 */
+  .jar {
+    position: absolute;
+    right: 80px;
+    top: 1050px;
+    width: 160px;
+    height: 220px;
+  }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="deco1"></div>
+  <div class="deco2"></div>
+
+  <div class="top-tag">干货科普</div>
+
+  <div class="main-title">
+    <div class="line1">健身补剂</div>
+    <div class="line2">真相大揭秘</div>
+  </div>
+
+  <div class="core-box">
+    <div class="core-title">✅ 真的有用</div>
+    <div class="item">
+      <div class="check">💪</div>
+      <div>
+        <div class="item-text">蛋白粉</div>
+        <div class="item-desc">补蛋白质缺口，方便便宜</div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="check">⚡</div>
+      <div>
+        <div class="item-text">肌酸 Creatine</div>
+        <div class="item-desc">研究最充分，提升力量</div>
+      </div>
+    </div>
+
+    <div class="core-title" style="margin-top:32px;">❌ 智商税</div>
+    <div class="item">
+      <div class="cross">💸</div>
+      <div>
+        <div class="item-text">左旋肉碱 / 燃脂丸</div>
+        <div class="item-desc">普通健身者基本没用</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-text">
+    <div class="big">只买这2种</div>
+    <div class="sub">其余都是花冤枉钱</div>
+  </div>
+
+  <div class="bottom-line"></div>
+</div>
+</body>
+</html>

@@ -1,5 +1,9 @@
 // ============ FitBuddy 社区系统 ============
 // 包含 AI训练者 / 排行榜 / 收藏库 / 成就徽章
+
+// 安全文本插入 helper — 防止 XSS（替代直接 innerHTML 赋值含用户可控数据）
+function safeText(el, text) { el.textContent = text; }
+function safeSetAttr(el, attr, val) { el.setAttribute(attr, val); el.textContent = val; }
 // 依赖 planner-core.js + pets.js
 
 // 获取每日挑战训练者（基于今天日期确定）
@@ -136,6 +140,36 @@ function renderCommunity() {
     html += '</div>';
   }
   html += '</div></div>';
+
+  // === 训练者动态 ===
+  var feedTemplates = [
+    function(tr) { return { emoji:'💪', text:tr.name+' 完成了今日训练！'+tr.days+'天打卡第'+((tr.days%7)+1)+'天，继续加油！', time:Math.floor(Math.random()*23)+'小时前' }; },
+    function(tr) { return { emoji:'🏆', text:tr.name+' 的战力突破 '+Math.floor(tr.power*1.2)+'！距离超越上一名只差'+(board.length>1 ? Math.max(1,board[0].power-tr.power+Math.floor(Math.random()*30)) : '很多')+' 了', time:Math.floor(Math.random()*47)+'小时前' }; },
+    function(tr) { return { emoji:'📝', text:tr.name+' 的训练心得：'+tr.tip, time:Math.floor(Math.random()*72)+'小时前' }; },
+    function(tr) { return { emoji:'🔥', text:tr.name+' 已经坚持训练 '+tr.days+' 天了！'+tr.specialty+'是TA的主攻方向', time:Math.floor(Math.random()*96)+'小时前' }; },
+    function(tr) { return { emoji:'🎯', text:tr.name+' 战胜了 '+Math.floor(Math.random()*5+2)+' 位对手！战绩更新为 '+(tr.wins+1)+'胜/'+tr.losses+'负', time:Math.floor(Math.random()*36)+'小时前' }; }
+  ];
+  var feedItems = [];
+  for (var fi = 0; fi < Math.min(6, trainers.length); fi++) {
+    var tmpl = feedTemplates[fi % feedTemplates.length];
+    feedItems.push(tmpl(trainers[fi]));
+  }
+  // 打乱顺序
+  for (var si = feedItems.length - 1; si > 0; si--) {
+    var sj = Math.floor(Math.random() * (si + 1));
+    var stmp = feedItems[si]; feedItems[si] = feedItems[sj]; feedItems[sj] = stmp;
+  }
+  html += '<div class="card" style="margin-top:12px;"><div class="card-title">📣 训练者动态</div>';
+  for (var fd = 0; fd < feedItems.length; fd++) {
+    var item = feedItems[fd];
+    html += '<div class="feed-item">';
+    html += '<div class="feed-emoji">'+item.emoji+'</div>';
+    html += '<div class="feed-body">';
+    html += '<div class="feed-text">'+item.text+'</div>';
+    html += '<div class="feed-time">'+item.time+'</div>';
+    html += '</div></div>';
+  }
+  html += '</div>';
 
   // === 加入训练群 ===
   html += '<div class="join-group-card" onclick="showGroupQR()">';
@@ -427,7 +461,7 @@ function petChallengeTrainer(trainerId, isDaily) {
     if (enDmg < 1) enDmg = 1;
     enHP -= myDmg; myHP -= enDmg;
     log.push('第' + n + '回合：你对' + enemy.name + '造成 ' + myDmg + ' 点伤害，受到 ' + enDmg + ' 点伤害');
-    logEl.innerHTML = log.join('<br>');
+    logEl.replaceChildren(); log.forEach(function(line){ var d=document.createElement('div'); d.textContent=line; logEl.appendChild(d); });
 
     // 震动动画
     var cards = overlay.querySelectorAll('div[style]');
@@ -445,15 +479,15 @@ function petChallengeTrainer(trainerId, isDaily) {
 
     resultEl.style.display = 'block';
     if (myWin) {
-      resultEl.innerHTML = '🎉 你打败了 ' + enemy.name + '！';
+      safeText(resultEl, '🎉 你打败了 ' + enemy.name + '！');
       resultEl.style.color = '#22C55E';
       saveBattleRecord(true, enemy);
     } else if (draw) {
-      resultEl.innerHTML = '🤝 平局！都是高手！';
+      safeText(resultEl, '🤝 平局！都是高手！');
       resultEl.style.color = '#F59E0B';
       saveBattleRecord('draw', enemy);
     } else {
-      resultEl.innerHTML = '💔 你输给了 ' + enemy.name + '…继续训练吧！';
+      safeText(resultEl, '💔 你输给了 ' + enemy.name + '…继续训练吧！');
       resultEl.style.color = '#EF4444';
       saveBattleRecord(false, enemy);
     }

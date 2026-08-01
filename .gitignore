@@ -1,10 +1,23 @@
-# RPG冒险系统 - 暂不上传
+# RPG冒险系统 - 仅本地不上传
 rpg.js
 battle-preview.html
 
 # 本地临时文件
 FitBuddy演示视频.html
 index-tmp.html
+sw-tmp.js
+manifest-tmp.json
+_check.js
+_check_braces.js
+_check_fixed.js
+_find_extra_brace.js
+tips_check.txt
+verify_result.txt
+
+# Node
+node_modules/
+package-lock.json
+package.json
 
 # OS
 .DS_Store

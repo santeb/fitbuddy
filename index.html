@@ -202,8 +202,19 @@ input,select{font-family:inherit;}
 .lib-item-name{font-size:14px;font-weight:600;margin-bottom:3px;}
 .lib-item-meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);}
 .lib-item-arrow{color:var(--text3);font-size:18px;}
+.lib-del-btn{background:none;border:none;font-size:16px;cursor:pointer;padding:4px 8px;opacity:.5;transition:opacity .2s;flex-shrink:0;}
+.lib-del-btn:active{opacity:1;}
+.add-ex-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:14px;border:2px dashed var(--border);border-radius:14px;background:var(--card);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;margin-bottom:14px;}
+.add-ex-btn:hover,.add-ex-btn:active{border-color:var(--primary);color:var(--primary);background:var(--primary)0a;}
 .diff-dot{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0;}
 .eq-badge{background:var(--bg);padding:1px 7px;border-radius:6px;font-size:11px;}
+.lib-thumb-wrap{width:56px;height:56px;border-radius:10px;overflow:hidden;flex-shrink:0;margin-right:10px;position:relative;background:var(--bg);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.lib-thumb-skeleton{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;background:linear-gradient(135deg,var(--border),var(--card));color:var(--text3);border-radius:10px;transition:opacity 0.3s;}
+.lib-thumb-img{width:100%;height:100%;object-fit:cover;border-radius:10px;opacity:0;transition:opacity 0.4s;}
+.lib-thumb-img.loading{opacity:0;}
+.lib-thumb-img:not(.loading){opacity:1;}
+.lib-item .ex-badge.no-thumb{margin-right:10px;}
+.lib-item:has(.lib-thumb-wrap) .ex-badge.no-thumb{display:none;}
 [data-theme="dark"] .eq-badge{background:rgba(255,255,255,0.08);}
 
 /* Modal */
@@ -463,6 +474,34 @@ input,select{font-family:inherit;}
 .sub-confirm{background:var(--primary);color:#fff;border:none;}
 .sub-confirm:active{transform:scale(0.96);}
 
+/* ====== Pro Tools ====== */
+/* 减载周开关 */
+.deload-toggle-wrap{background:var(--bg);border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;}
+.deload-toggle-wrap .dt-title{font-size:13px;font-weight:700;color:var(--text);}
+.deload-toggle-wrap .dt-sub{font-size:11px;color:var(--text3);margin-top:2px;}
+.deload-toggle-wrap .dt-badge{font-size:11px;font-weight:700;color:#8B5CF6;margin-left:6px;}
+/* 补课重排 */
+.reschedule-banner{background:linear-gradient(135deg,#FEF3C7,#FDE68A);border:1px solid #F59E0B;border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+.reschedule-banner .rs-title{font-size:13px;font-weight:700;color:#92400E;}
+.reschedule-banner .rs-body{font-size:12px;color:#78350F;margin-top:4px;line-height:1.6;}
+.reschedule-banner .rs-btns{display:flex;gap:8px;margin-top:10px;}
+.reschedule-banner .rs-btn{flex:1;padding:8px;border-radius:10px;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:all .15s;}
+.reschedule-btn-compress{background:#F59E0B;color:#fff;}
+.reschedule-btn-shift{background:var(--card);color:#92400E;border:1.5px solid #F59E0B;}
+.reschedule-btn-dismiss{padding:8px 12px;border-radius:10px;background:var(--card);color:var(--text3);border:1px solid var(--border);font-size:12px;cursor:pointer;}
+/* 疲劳警告 */
+.fatigue-banner{background:linear-gradient(135deg,#FEE2E2,#FECACA);border:1px solid #EF4444;border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+.fatigue-banner .ft-title{font-size:13px;font-weight:700;color:#DC2626;}
+.fatigue-banner .ft-body{font-size:12px;color:#991B1B;margin-top:6px;}
+/* RPE自调节badge */
+.rpe-adj-badge{display:inline;}
+/* 周期化日历 */
+.periodization-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
+/* 趋势图卡片 */
+.prog-chart-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
+/* Pro计算器容器 */
+#proCalcContainer{margin-top:14px;}
+
 /* Pace Calculator */
 .pace-calc{background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
 .pace-calc-header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;user-select:none;font-size:14px;font-weight:700;color:var(--text);}
@@ -476,20 +515,36 @@ input,select{font-family:inherit;}
 
 /* Print */
 @media print{
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge{display:none!important;}
-  .app{max-width:100%;padding:0;}
-  body{background:#fff;color:#000;font-size:12px;}
-  .card,.plan-day,.nutrition-card,.rest-day,.tips-banner,.warmup-section,.week-info,.summary-card{box-shadow:none;border:1px solid #ddd;page-break-inside:avoid;margin-bottom:8px;}
-  .summary-card{background:#f5f5f5!important;color:#000!important;border:1px solid #ccc!important;}
-  .summary-card::after{display:none;}
+  @page { margin: 12mm 10mm; size: A4 portrait; }
+  /* 隐藏所有 UI 交互元素 */
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,#communityGuide,#leaderboardWrap,#achievementWrap,#collectionWrap,#dailyChallengeWrap,.reminder-banner,.injury-banner,#communityContent .cb-btns,#communityContent .cb-ai,#communityContent .cb-weekly,.community-card,.community-guide,.leaderboard-card,.achievement-badge,.collection-card,.daily-challenge-card,#proPlanModules,#proCalcContainer,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card{display:none!important;}
+  .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
+  body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* 强制白色背景+黑色文字 */
+  .card,.plan-day,.nutrition-card,.rest-day,.tips-banner,.warmup-section,.week-info,.summary-card,.pet-card{background:#fff!important;color:#000!important;box-shadow:none!important;border:1px solid #ccc!important;page-break-inside:avoid!important;margin-bottom:8px!important;}
+  .summary-card{background:#f5f5f5!important;border:1px solid #bbb!important;}
+  .summary-card::after{display:none!important;}
   .summary-tag{background:#eee!important;color:#333!important;}
+  /* 强制展开所有折叠内容 */
   .plan-day-body{display:block!important;}
   .plan-day.collapsed .plan-day-body{display:block!important;}
+  /* 完成状态清晰可见 */
   .ex-row.done{opacity:1!important;}
-  .ex-check.done{background:#fff!important;border-color:#22C55E!important;color:#22C55E!important;}
-  .week-info{background:#f9f9f9!important;border-left:4px solid #FF6B35!important;}
-  [data-theme="dark"] .card,[data-theme="dark"] .plan-day,[data-theme="dark"] .nutrition-card,[data-theme="dark"] .rest-day,[data-theme="dark"] .tips-banner,[data-theme="dark"] .warmup-section,[data-theme="dark"] .week-info{background:#fff!important;color:#000!important;}
-  [data-theme="dark"] .summary-card{background:#f5f5f5!important;color:#000!important;}
+  .ex-check.done{background:#fff!important;border:2px solid #22C55E!important;color:#22C55E!important;font-weight:700!important;}
+  .ex-row.done .ex-name{text-decoration:none!important;}
+  .ex-row.done .ex-name::after{content:" (已完成)";color:#22C55E;font-size:10px;}
+  /* 训练日标题样式 */
+  .plan-day{border-left:4px solid #FF6B35!important;padding:8px 12px!important;background:#fafafa!important;}
+  .plan-day h3{color:#000!important;font-size:14px!important;}
+  /* 休息日样式 */
+  .rest-day{background:#f0f7ff!important;border-left:4px solid #3B82F6!important;}
+  /* 热身/营养区 */
+  .warmup-section{background:#fffde7!important;border-left:4px solid #F59E0B!important;}
+  .nutrition-card{background:#fffde7!important;}
+  .tips-banner{background:#f5f5f5!important;}
+  .week-info{background:#f9f9f9!important;border-left:4px solid #FF6B35!important;padding:6px 10px!important;}
+  /* 页脚：打印信息 */
+  .page::after{content:"FitBuddy 训练计划 | 打印日期: " attr(data-print-date) " | fitbuddy.app";display:block!important;text-align:center;font-size:9px;color:#aaa!important;border-top:1px solid #eee;padding-top:8px;margin-top:20px;}
 }
 
 /* ====== 健身精灵宠物（多物种） ====== */
@@ -687,6 +742,13 @@ input,select{font-family:inherit;}
   background: #FF6B35; color: #fff; font-size: 9px; padding: 2px 7px;
   border-radius: 8px; font-weight: 700;
 }
+/* 训练者动态 */
+.feed-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.feed-item:last-child{border-bottom:none;}
+.feed-emoji{font-size:22px;flex-shrink:0;width:36px;height:36px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.feed-body{flex:1;}
+.feed-text{font-size:13px;color:var(--text);line-height:1.5;}
+.feed-time{font-size:10px;color:var(--text3);margin-top:3px;}
 
 /* 每日挑战 */
 .daily-challenge {
@@ -822,8 +884,10 @@ input,select{font-family:inherit;}
 </style>
 </head>
 <body>
+<!-- 屏幕阅读器跳转链接 -->
+<a href="#main-content" class="skip-link" style="position:absolute;top:-9999px;left:-9999px;z-index:9999;background:var(--primary);color:#fff;padding:12px 20px;border-radius:0 0 12px 12px;font-weight:700;text-decoration:none;font-size:14px;" onfocus="this.style.top='0';this.style.left='50%';transform='translateX(-50%)';" onblur="this.style.top='-9999px';">跳到主内容</a>
 <div class="app">
-  <div class="header">
+  <header class="header" role="banner" aria-label="FitBuddy 应用标题">
     <div class="header-left">
       <h1>🏋️ FitBuddy</h1>
       <p>智能健身计划生成器</p>
@@ -832,13 +896,21 @@ input,select{font-family:inherit;}
       <div class="streak-badge" id="headerStreak" style="display:none;"><span class="fire">🔥</span><span id="streakNum">0</span>天</div>
       <div class="level-badge" id="headerLevel" style="display:none;"></div>
     </div>
-    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">☀️</button>
-  </div>
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" aria-label="切换深色模式" aria-pressed="false" title="切换深色模式">☀️</button>
+  </header>
+    <!-- PWA Install Button -->
+    <button id="installBtn" onclick="installApp()"
+      style="display:none;position:fixed;bottom:80px;right:20px;z-index:9999;
+      background:#FF6B35;color:white;border:none;border-radius:50px;
+      padding:12px 20px;font-size:14px;font-weight:600;
+      box-shadow:0 4px 12px rgba(255,107,53,0.4);cursor:pointer;"
+      aria-label="Install App">Install FitBuddy</button>
 
+  <main id="main-content">
   <!-- 计划页 -->
-  <div class="page active" id="page-plan">
+  <div class="page active" id="page-plan" role="tabpanel" aria-label="训练计划" tabindex="0">
     <!-- 训练提醒横幅 -->
-    <div id="reminderBanner" class="reminder-banner" style="display:none;">
+    <div id="reminderBanner" class="reminder-banner" style="display:none;" role="alert" aria-live="assertive" aria-atomic="true">
       <div class="reminder-banner-left">
         <div class="reminder-banner-icon">🔔</div>
         <div>
@@ -853,7 +925,7 @@ input,select{font-family:inherit;}
     </div>
 
     <!-- 今日训练提醒 Banner -->
-    <div id="todayBanner" style="display:none;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;box-shadow:0 4px 15px rgba(255,107,53,0.3);animation:fadeIn 0.3s ease;">
+    <div id="todayBanner" style="display:none;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;box-shadow:0 4px 15px rgba(255,107,53,0.3);animation:fadeIn 0.3s ease;" role="status" aria-live="polite">
       <div style="font-size:13px;opacity:0.85;" id="bannerDate"></div>
       <div style="font-size:17px;font-weight:700;margin:4px 0;" id="bannerTitle"></div>
       <div style="font-size:12px;opacity:0.9;" id="bannerSub"></div>
@@ -865,18 +937,20 @@ input,select{font-family:inherit;}
 
       <div class="form-group">
         <label>健身目标</label>
-        <div class="radio-group" id="goalGroup">
+        <div class="radio-group" id="goalGroup" role="radiogroup" aria-label="健身目标">
           <div class="radio-item"><input type="radio" name="goal" id="g1" value="muscle" checked onchange="toggleEquip()"><label for="g1">💪 增肌</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g2" value="strength" onchange="toggleEquip()"><label for="g2">🔱 力量</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g3" value="cut" onchange="toggleEquip()"><label for="g3">🔥 减脂</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g4" value="cardio" onchange="toggleEquip()"><label for="g4">❤️ 心肺</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g5" value="marathon" onchange="toggleEquip()"><label for="g5">🏃 马拉松</label></div>
+          
+          
         </div>
       </div>
 
       <div class="form-group">
         <label>训练水平</label>
-        <div class="radio-group">
+        <div class="radio-group" role="radiogroup" aria-label="训练水平">
           <div class="radio-item"><input type="radio" name="level" id="l1" value="beginner" checked><label for="l1">🌱 新手</label></div>
           <div class="radio-item"><input type="radio" name="level" id="l2" value="intermediate"><label for="l2">⚡ 中级</label></div>
           <div class="radio-item"><input type="radio" name="level" id="l3" value="advanced"><label for="l3">🔥 进阶</label></div>
@@ -896,7 +970,7 @@ input,select{font-family:inherit;}
 
       <div class="form-group" id="equipGroup">
         <label>可用设备</label>
-        <div class="radio-group">
+        <div class="radio-group" role="radiogroup" aria-label="可用设备">
           <div class="radio-item"><input type="radio" name="equip" id="e1" value="gym" checked><label for="e1">🏟️ 健身房</label></div>
           <div class="radio-item"><input type="radio" name="equip" id="e2" value="dumbbell"><label for="e2">🏠 哑铃+自重</label></div>
           <div class="radio-item"><input type="radio" name="equip" id="e3" value="bodyweight"><label for="e3">🤸 仅自重</label></div>
@@ -904,7 +978,7 @@ input,select{font-family:inherit;}
       </div>
       <div class="form-group" id="runEquipGroup" style="display:none;">
         <label>跑步环境</label>
-        <div class="radio-group">
+        <div class="radio-group" role="radiogroup" aria-label="跑步环境">
           <div class="radio-item"><input type="radio" name="runEquip" id="re1" value="outdoor" checked><label for="re1">🌳 户外路跑</label></div>
           <div class="radio-item"><input type="radio" name="runEquip" id="re2" value="treadmill"><label for="re2">🖥️ 跑步机</label></div>
         </div>
@@ -923,7 +997,7 @@ input,select{font-family:inherit;}
             <div class="chip" data-injury="腕">✋ 手腕不适</div>
             <div class="chip" data-injury="踝">🦶 脚踝不适</div>
           </div>
-          <input type="text" class="text-input" id="injuryNote" placeholder="备注（如：右膝半月板术后恢复中…）" style="font-size:12px;">
+          <input type="text" class="text-input" id="injuryNote" placeholder="备注（如：右膝半月板术后恢复中…）" aria-label="伤病备注" style="font-size:12px;">
           <div style="display:flex;gap:8px;margin-top:8px;">
             <button class="btn-generate" style="flex:1;padding:8px;font-size:12px;margin-top:0;background:var(--primary);" onclick="saveInjury()">✅ 应用限制</button>
             <button style="flex:1;padding:8px;border-radius:10px;font-size:12px;font-weight:600;background:var(--bg);color:var(--text2);border:1px solid var(--border);cursor:pointer;" onclick="clearInjury()">清除</button>
@@ -935,16 +1009,16 @@ input,select{font-family:inherit;}
         <label>身体数据 <span style="font-weight:400;color:var(--text3);font-size:12px;">（用于营养建议，可不填）</span></label>
         <div class="input-row">
           <div class="form-group" style="margin-bottom:0;">
-            <div class="radio-group" style="margin-bottom:8px;">
+            <div class="radio-group" style="margin-bottom:8px;" role="radiogroup" aria-label="性别">
               <div class="radio-item"><input type="radio" name="gender" id="gd1" value="male" checked><label for="gd1">男</label></div>
               <div class="radio-item"><input type="radio" name="gender" id="gd2" value="female"><label for="gd2">女</label></div>
             </div>
           </div>
         </div>
         <div class="input-row">
-          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyWeight" placeholder="体重 kg" min="30" max="200"></div>
-          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyHeight" placeholder="身高 cm" min="120" max="250"></div>
-          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyAge" placeholder="年龄" min="10" max="100"></div>
+          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyWeight" placeholder="体重 kg" min="30" max="200" aria-label="体重（公斤）"></div>
+          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyHeight" placeholder="身高 cm" min="120" max="250" aria-label="身高（厘米）"></div>
+          <div class="form-group" style="margin-bottom:0;"><input type="number" class="text-input" id="bodyAge" placeholder="年龄" min="10" max="100" aria-label="年龄"></div>
         </div>
       </div>
 
@@ -972,12 +1046,12 @@ input,select{font-family:inherit;}
       <button class="btn-generate" id="genBtn" onclick="doGenerate()">✨ 生成我的计划</button>
     </div>
 
-    <div id="planResult"></div>
+    <div id="planResult" aria-live="polite" aria-label="训练计划输出区域"></div>
   </div>
 
   <!-- 动作库页 -->
-  <div class="page" id="page-lib">
-    <input type="text" class="search-bar" id="searchEx" placeholder="🔍 搜索动作名称..." oninput="renderLib()">
+  <div class="page" id="page-lib" role="tabpanel" aria-label="动作库" tabindex="0">
+    <input type="search" class="search-bar" id="searchEx" placeholder="🔍 搜索动作名称..." oninput="renderLibDebounced()" aria-label="搜索动作名称" role="searchbox" autocomplete="off">
     <div class="filter-row" id="partFilter">
       <div class="filter-chip active" data-part="all">全部部位</div>
       <div class="filter-chip" data-part="腿">🦵 腿</div>
@@ -987,6 +1061,8 @@ input,select{font-family:inherit;}
       <div class="filter-chip" data-part="臂">💪 臂</div>
       <div class="filter-chip" data-part="核心">🧘 核心</div>
       <div class="filter-chip" data-part="有氧">❤️ 有氧</div>
+      <div class="filter-chip" data-part="康复">🩺 康复</div>
+      
     </div>
     <div class="filter-row" id="diffFilter">
       <div class="filter-chip active" data-diff="all">全部难度</div>
@@ -1000,7 +1076,11 @@ input,select{font-family:inherit;}
       <div class="filter-chip" data-eq="dumbbell">🏠 哑铃</div>
       <div class="filter-chip" data-eq="bodyweight">🤸 自重</div>
     </div>
-    <div id="libList"></div>
+    <!-- 自定义动作添加按钮 -->
+    <button class="add-ex-btn" onclick="openAddExModal()">
+      <span style="font-size:18px;">➕</span> 添加自定义动作
+    </button>
+    <div id="libList" aria-live="polite" aria-label="动作库列表"></div>
     <!-- 1RM 极限重量计算器 -->
     <div class="rm-calc" id="rmCalc">
       <div class="rm-title">🏋️ 1RM 极限重量计算器</div>
@@ -1009,8 +1089,8 @@ input,select{font-family:inherit;}
         <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
       </div>
       <div class="rm-input-row">
-        <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()"></div>
-        <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()"></div>
+        <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()" aria-label="举起重量（公斤）"></div>
+        <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()" aria-label="完成次数"></div>
       </div>
       <div class="rm-result" id="rmResult" style="display:none;">
         <div class="rm-result-num" id="rmValue">--</div>
@@ -1026,15 +1106,17 @@ input,select{font-family:inherit;}
         </table>
       </div>
     </div>
+    <!-- Pro Tools: 热身组+杠铃片计算器 -->
+    <div id="proCalcContainer"></div>
   </div>
 
   <!-- 进度页 -->
-  <div class="page" id="page-prog">
-    <div id="progContent"></div>
+  <div class="page" id="page-prog" role="tabpanel" aria-label="进度追踪" tabindex="0">
+    <div id="progContent" aria-live="polite" aria-label="进度追踪内容"></div>
   </div>
 
   <!-- 为爱发电页 -->
-  <div class="page" id="page-donate">
+  <div class="page" id="page-donate" role="tabpanel" aria-label="打赏支持" tabindex="0">
     <div class="donate-hero">
       <div class="dh-icon">⚡</div>
       <div class="dh-title">为爱发电</div>
@@ -1070,36 +1152,37 @@ input,select{font-family:inherit;}
   </div>
 
   <!-- 社区大厅页 -->
-  <div class="page" id="page-community">
+  <div class="page" id="page-community" role="tabpanel" aria-label="社区" tabindex="0">
     <div class="community-banner">
       <div class="cb-title">🏟️ 训练者社区</div>
       <div class="cb-sub">与全世界的 FitBuddy 训练者一起成长</div>
     </div>
-    <div id="communityContent"></div>
+    <div id="communityContent" aria-live="polite" aria-label="社区内容"></div>
   </div>
+  </main>
 
   <!-- 底部导航 -->
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="page-plan" onclick="switchTab(this)">
-      <span class="icon">📋</span>计划
+  <nav class="tab-bar" role="tablist" aria-label="应用导航">
+    <button class="tab-btn active" data-tab="page-plan" onclick="switchTab(this)" role="tab" aria-selected="true" aria-controls="page-plan" tabindex="0">
+      <span class="icon" aria-hidden="true">📋</span><span>计划</span>
     </button>
-    <button class="tab-btn" data-tab="page-lib" onclick="switchTab(this)">
-      <span class="icon">📚</span>动作库
+    <button class="tab-btn" data-tab="page-lib" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-lib" tabindex="-1">
+      <span class="icon" aria-hidden="true">📚</span><span>动作库</span>
     </button>
-    <button class="tab-btn" data-tab="page-prog" onclick="switchTab(this)">
-      <span class="icon">📊</span>进度
+    <button class="tab-btn" data-tab="page-prog" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-prog" tabindex="-1">
+      <span class="icon" aria-hidden="true">📊</span><span>进度</span>
     </button>
-    <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)">
-      <span class="icon">🏟️</span>社区
+    <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-community" tabindex="-1">
+      <span class="icon" aria-hidden="true">🏟️</span><span>社区</span>
     </button>
-    <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)">
-      <span class="icon">💝</span>发电
+    <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-donate" tabindex="-1">
+      <span class="icon" aria-hidden="true">💝</span><span>发电</span>
     </button>
-  </div>
+  </nav>
 
   <!-- 动作详情弹窗 -->
-  <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
-    <div class="modal" id="modalBody"></div>
+  <div class="modal-overlay" id="modal" role="dialog" aria-modal="true" onclick="if(event.target===this)closeModal()">
+    <div class="modal" id="modalBody" aria-live="polite"></div>
   </div>
 
   <!-- FAB 浮动计时按钮 -->
@@ -1126,20 +1209,21 @@ input,select{font-family:inherit;}
   </div>
 
   <!-- 动作替换弹窗 -->
-  <div class="sub-modal-overlay" id="subModal" onclick="if(event.target===this)closeSubModal()">
-    <div class="sub-modal" id="subModalBody"></div>
+  <div class="sub-modal-overlay" id="subModal" role="dialog" aria-modal="true" onclick="if(event.target===this)closeSubModal()">
+    <div class="sub-modal" id="subModalBody" aria-live="polite"></div>
   </div>
 </div>
 
 
-<script src="data-constants.js" defer></script>
+<script src="data-constants.js?v=16" defer></script>
 
-<script src="planner-core.js?v=14" defer></script>
+<script src="planner-core.js?v=20" defer></script>
+<script src="pro-tools.js?v=3" defer></script>
 <script src="pets.js" defer></script>
 <script src="community.js" defer></script>
 
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
-  <div>FitBuddy v1.1 · 周期化训练计划引擎</div>
+  <div>FitBuddy v2.0 · 周期化训练引擎 + Pro Tools</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
 </footer>
@@ -1155,5 +1239,17 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
+<script>
+function installApp() {
+  var evt = window._deferredPrompt;
+  if (!evt) return;
+  evt.prompt();
+  evt.userChoice.then(function(choice) {
+    window._deferredPrompt = null;
+    var btn = document.getElementById('installBtn');
+    if (btn) btn.style.display = 'none';
+  });
+}
+</script>
 </body>
 </html>

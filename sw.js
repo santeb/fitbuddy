@@ -1,5 +1,8 @@
 // FitBuddy Service Worker v3.1 — 完整离线缓存 + 后台提醒
-var CACHE_STATIC = 'fitbuddy-static-v4';
+// 生产环境禁用 console.log（控制台执行 self._DEBUG=1 可重新启用）
+(function(){ if (!self._DEBUG) { var _noOp=function(){}; try{console.log=_noOp;}catch(e){} } })();
+
+var CACHE_STATIC = 'fitbuddy-static-v5';
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
 

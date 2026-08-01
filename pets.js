@@ -886,9 +886,9 @@ function playBattleRounds(myMaxHP, enMaxHP, log, myWin, draw, mySp) {
   delay+=1400; setTimeout(function(){
     var r=document.getElementById('battleResult'), b=document.getElementById('battleCloseBtn');
     var mb=document.getElementById('battleMyHP'), eb=document.getElementById('battleEnHP');
-    if(draw){ if(r){r.style.display='block';r.innerHTML='🤝 平局！不相上下…';r.style.color='#A8A29E';}}
-    else if(myWin){ if(r){r.style.display='block';r.innerHTML='🎉 胜利！'+mySp.name+' 赢了！';r.style.color='#22C55E';} if(mb)mb.style.background='linear-gradient(90deg,#22C55E,#FACC15)';}
-    else { if(r){r.style.display='block';r.innerHTML='💔 败北…对手战胜了你';r.style.color='#EF4444';} if(eb)eb.style.background='linear-gradient(90deg,#EF4444,#FACC15)';}
+    if(draw){ if(r){r.style.display='block';r.textContent='🤝 平局！不相上下…';r.style.color='#A8A29E';}}
+    else if(myWin){ if(r){r.style.display='block';r.textContent='🎉 胜利！'+(mySp.name||'我方宠物')+' 赢了！';r.style.color='#22C55E';} if(mb)mb.style.background='linear-gradient(90deg,#22C55E,#FACC15)';}
+    else { if(r){r.style.display='block';r.textContent='💔 败北…对手战胜了你';r.style.color='#EF4444';} if(eb)eb.style.background='linear-gradient(90deg,#EF4444,#FACC15)';}
     if(b)b.style.display='inline-block';
   }, delay);
 }
@@ -1168,34 +1168,34 @@ function showRarityUnlockCelebration(speciesId) {
 
 // AI 训练者名字池 + 个性+口头禅+训练建议
 var TRAINER_NAMES = [
-  '铁柱哥 💪','小美 🏃‍♀️','大力王 🦍','健身猫 🐱','举铁侠 🏋️',
-  '钢铁姐 👩‍🔧','跑者阿飞 🏃','深蹲达人 🍑','瑜伽魂 🧘','体能怪兽 👹',
-  '山本健太 🥋','LunaFit 🌙','筋肉博士 🧠','自律狂魔 ⏰','壶铃女神 🔔',
-  '卷王小明 📚','硬拉战神 ⚡','晨跑骑士 🌅','街健阿杰 🏗️','蛋白粉狂魔 🥛'
+  '阿杰举铁 🏋️','林小跑 🏃','大志增肌 💪','陈自律 📅','杨铁人 ⚡',
+  '张瑶瑜伽 🧘','王教练 🏅','李肌肉 💨','周跑者 🏃','健身小陈 🏃‍♀️',
+  '马大力 🔥','杨小燕 🌸','郑硬拉 🦵','健身小美 💃','老王撸铁 🏋️‍♀️',
+  '程跑步 🏃‍♂️','小张拉伸 🧘‍♀️','阿东肌肉 💪','小红健身 🤸‍♀️','健身老赵 🏃'
 ];
 
 // 训练者个性配置
 var TRAINER_PERSONALITIES = {
-  '铁柱哥 💪': { style:'硬汉', catchphrase:'男人就该对自己狠一点！', tips:['深蹲要蹲到底，半蹲不叫深蹲','蛋白质吃不够，铁举了也白举','休息日和训练日一样重要'], specialty:'力量举' },
-  '小美 🏃‍♀️': { style:'元气少女', catchphrase:'今天流的汗是明天的星光✨', tips:['跑步前一定要热身，尤其是膝盖','有氧和力量搭配才最有效','别怕长肌肉，女生没那么容易变壮'], specialty:'有氧跑步' },
-  '大力王 🦍': { style:'憨厚猛男', catchphrase:'大力出奇迹！', tips:['硬拉时背部要打直，宁轻勿假','组间休息90秒是最佳增肌窗口','睡够7小时比多练一组更有效'], specialty:'三大项' },
-  '健身猫 🐱': { style:'高冷优雅', catchphrase:'喵~ 优雅永不过时', tips:['瑜伽垫不只是用来拉伸的','核心是一切动作的基础','空腹有氧效果更好但要适度'], specialty:'瑜伽/普拉提' },
-  '举铁侠 🏋️': { style:'热血中二', catchphrase:'感受肌肉的轰鸣吧！⚡', tips:['做动作时想着目标肌肉，念动一致','渐进超负荷才是增肌的真谛','练前碳水练后蛋白，别搞反了'], specialty:'健美训练' },
-  '钢铁姐 👩‍🔧': { style:'女强人', catchphrase:'没有练不出的身材，只有不努力的人', tips:['女生练臀要多做臀推和罗马尼亚硬拉','体脂不是越低越好，健康才是第一位','经期前三天别练腹部，对自己好一点'], specialty:'臀腿塑形' },
-  '跑者阿飞 🏃': { style:'自由散漫', catchphrase:'跑起来，风就是你的方向🌬️', tips:['LSD是马拉松的基础，别跳过','跑鞋每500公里就该换了','跑步不拉伸，早晚膝盖疼'], specialty:'马拉松/长跑' },
-  '深蹲达人 🍑': { style:'专注执着', catchphrase:'每天深蹲100个，你也能做翘臀之王！', tips:['先屈髋再屈膝，重心在脚跟','膝盖方向和脚尖方向一致','徒手深蹲没感觉了？试试保加利亚分腿蹲'], specialty:'下肢训练' },
-  '瑜伽魂 🧘': { style:'禅意疗愈', catchphrase:'呼吸即力量 🌿', tips:['早晨10分钟瑜伽比咖啡还提神','拉伸不是热身！心率提上来才是','睡前阴瑜伽能改善睡眠质量'], specialty:'瑜伽/柔韧性' },
-  '体能怪兽 👹': { style:'狂妄霸气', catchphrase:'极限？那只是起点！', tips:['HIIT每周2-3次就够了，多了反而掉肌肉','体能训练要多样化，别只做一种','Burpee+波比跳是最强燃脂组合'], specialty:'综合体能' },
-  '山本健太 🥋': { style:'武士道', catchphrase:'押忍！一日一生！', tips:['自重训练也能练出惊人的力量','坚持比强度更重要','训练日记是最好的进步证明'], specialty:'自重训练' },
-  'LunaFit 🌙': { style:'神秘文艺', catchphrase:'在月光下雕刻最美的自己', tips:['晚上训练不一定要喝氮泵，音乐就够了','保持记录，数据不会说谎','偶尔的放纵是为了更好地坚持'], specialty:'塑形/体态' },
-  '筋肉博士 🧠': { style:'学院派', catchphrase:'肌肉生长遵循科学规律🔬', tips:['肌酸是目前研究最充分的补剂','每公斤体重1.6-2.2g蛋白质','训练后30分钟是补充营养的黄金窗口'], specialty:'运动营养' },
-  '自律狂魔 ⏰': { style:'极端自律', catchphrase:'自律给我自由！', tips:['固定训练时间是坚持的最好方法','早起第一件事：喝500ml温水','手机放远点，专注训练45分钟'], specialty:'生活化健身' },
-  '壶铃女神 🔔': { style:'飒爽自信', catchphrase:'摇摆吧！壶铃会告诉你答案', tips:['壶铃swing是最好的后链动作之一','学会用臀部发力，而不是手臂','一周2次壶铃训练就能看到变化'], specialty:'壶铃/功能性' },
-  '卷王小明 📚': { style:'卷王学霸', catchphrase:'健身也要卷起来！📖', tips:['每4-6周换一次训练计划，避免平台期','RPE比绝对重量更重要','训练时注意力集中比赛前喝氮泵还管用'], specialty:'周期化训练' },
-  '硬拉战神 ⚡': { style:'专注冷峻', catchphrase:'杠铃从不骗人', tips:['硬拉是检验力量的唯一标准','握力不够？用助力带不丢人','相扑拉和传统拉都试试，找到适合你的'], specialty:'力量举' },
-  '晨跑骑士 🌅': { style:'阳光温暖', catchphrase:'每一个早晨都是新的开始☀️', tips:['晨跑前吃半根香蕉就够了','空腹有氧适合减脂但不适合增肌','跑步姿势比跑量更重要'], specialty:'晨跑/户外' },
-  '街健阿杰 🏗️': { style:'街头酷炫', catchphrase:'街头就是我的健身房！', tips:['先练俯卧撑和引体向上打好基础','双力臂的第一步是掌握节奏','街健的核心是身体控制力'], specialty:'街头健身' },
-  '蛋白粉狂魔 🥛': { style:'搞笑担当', catchphrase:'万物皆可蛋白粉！', tips:['蛋白粉只是补充，不是替代','天然食物中的微量元素蛋白粉没有','别拿蛋白粉当饭吃，肾会受不了'], specialty:'营养/补剂' }
+  '阿杰举铁 🏋️': { style:'稳重硬汉', catchphrase:'日积月累，力大无穷！', tips:['深蹲蹲到底才有效果，半蹲等于白练','三大项是增肌的王道动作','蛋白质不够，肌肉就长不出来'], specialty:'力量举' },
+  '林小跑 🏃': { style:'阳光活力', catchphrase:'跑起来，每一步都是进步！', tips:['跑前热身5分钟，跑后拉伸5分钟','步频180步/分钟最省力高效','跑姿比跑量更重要，宁慢勿错'], specialty:'有氧跑步' },
+  '大志增肌 💪': { style:'热血追梦', catchphrase:'肌肉是对努力最好的回报！', tips:['渐进超负荷是增肌核心原理','复合动作优先，孤立动作锦上添花','睡眠是增肌的第三大支柱'], specialty:'健美增肌' },
+  '陈自律 📅': { style:'极简高效', catchphrase:'规律训练才是最快的捷径', tips:['固定时间训练，坚持比强度重要','每次训练不超过60分钟','记录每一次重量和感受'], specialty:'生活化健身' },
+  '杨铁人 ⚡': { style:'永不言败', catchphrase:'挑战极限，超越昨天的自己！', tips:['HIIT每次20分钟足够，不要贪多','运动后补充碳水和蛋白质','休息不好就降低训练强度'], specialty:'综合体能' },
+  '张瑶瑜伽 🧘': { style:'身心平衡', catchphrase:'在呼吸中遇见更好的自己', tips:['早晨瑜伽比咖啡更能唤醒身体','核心稳定是所有动作的基石','阴瑜伽对改善睡眠特别有效'], specialty:'瑜伽/柔韧' },
+  '王教练 🏅': { style:'专业严谨', catchphrase:'科学健身不走弯路', tips:['训练前热身激活目标肌群','动作质量永远比重量重要','每周至少安排1-2天完全休息'], specialty:'综合训练' },
+  '李肌肉 💨': { style:'爆发型', catchphrase:'力量决定一切！💪', tips:['大重量低次数主攻力量','握力是最容易被忽视的短板','协同肌群也要均衡发展'], specialty:'力量训练' },
+  '周跑者 🏃': { style:'耐力型', catchphrase:'终点在前方，一步一步来', tips:['LSD训练是马拉松的必经之路','跑鞋800公里必须更换','跑步后补充电解质很重要'], specialty:'长跑/耐力' },
+  '健身小陈 🏃‍♀️': { style:'健康生活', catchphrase:'健身是一种生活方式', tips:['体态比体重更重要','核心训练是一切运动的基础','训练多样性防止平台期'], specialty:'体态改善' },
+  '马大力 🔥': { style:'燃脂狂人', catchphrase:'汗水不会骗人！', tips:['空腹有氧减脂效果好但要适度','波比跳是燃脂效率最高的动作','高强度训练每周2-3次足矣'], specialty:'减脂训练' },
+  '杨小燕 🌸': { style:'柔美健康', catchphrase:'运动让我更爱自己', tips:['女性要多关注臀部和小腿','跑步+力量才是完美组合','经期适当降低运动强度'], specialty:'女性健身' },
+  '郑硬拉 🦵': { style:'下盘稳健', catchphrase:'腿是力量的根基！', tips:['硬拉时保持背部平直','臀推是练臀最有效的动作','单腿训练能发现两侧不平衡'], specialty:'下肢/硬拉' },
+  '健身小美 💃': { style:'自信活力', catchphrase:'自律让我更自由！', tips:['练前热身，练后拉伸，缺一不可','小重量多组数塑造线条','饮食控制比运动本身更重要'], specialty:'塑形/体态' },
+  '老王撸铁 🏋️‍♀️': { style:'老练沉稳', catchphrase:'坚持就是胜利！', tips:['新手先学动作，再加重量','肌肉在休息时生长，不在训练时','记录数据是突破平台期的关键'], specialty:'综合力量' },
+  '程跑步 🏃‍♂️': { style:'坚韧不拔', catchphrase:'每一步都算数', tips:['跑步最重要的是坚持而不是速度','跑姿矫正能预防大部分伤痛','交叉训练能提升跑步表现'], specialty:'户外跑步' },
+  '小张拉伸 🧘‍♀️': { style:'疗愈放松', catchphrase:'让身体好好休息也是一种训练', tips:['每天10分钟拉伸改善体态','久坐人群要重点拉伸髋屈肌','睡前拉伸有助于改善睡眠'], specialty:'拉伸/康复' },
+  '阿东肌肉 💪': { style:'肌肉派', catchphrase:'肌肉是男人的勋章', tips:['每组6-12次是增肌最佳区间','训练后30分钟补充蛋白质','肌肉群要轮流刺激，不要天天练同一部位'], specialty:'增肌训练' },
+  '小红健身 🤸‍♀️': { style:'活泼开朗', catchphrase:'动起来就会变好！', tips:['空腹有氧适合减脂人群','力量训练女性不会练成肌肉女','功能性训练让日常生活更轻松'], specialty:'功能性健身' },
+  '健身老赵 🏃': { style:'经验老道', catchphrase:'健身是一辈子的事', tips:['年纪大了更要注重关节保护','柔韧性训练比年轻时更重要','规律比强度更能坚持']  , specialty:'综合健身' }
 };
 
 // 生成确定性哈希（同一 session 中训练者不变）
