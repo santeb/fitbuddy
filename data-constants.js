@@ -235,6 +235,23 @@ var WEEK_INFO = [
   {note:"减载周（Deload）— 重量降至70%，让身体充分恢复", deload:true, weightAdjust:"-30%"}
 ];
 
+// 心肺目标4周周期化配置（覆盖 WEEK_INFO 和 goalCfg 中的心肺参数）
+// durationAdjust: 在基础 totalDuration(分钟数)上的增减
+// hiitRoundsAdjust: 在基础 sets 上的增减（控制 HIIT 组数）
+// hiitPerSet: HIIT 每组的工作/休息比例
+// intensity: 心率区间
+// rpe: RPE 范围
+var CARDIO_WEEK_CONFIG = [
+  {note:"基础适应周 — 建立有氧基础，保持轻松节奏，感受身体反应", deload:false, weightAdjust:"总量 -20%",
+   durationAdjust:-10, hiitRoundsAdjust:0, hiitPerSet:"30秒工作 + 30秒休息", intensity:"心率 55-65%", rpe:"RPE 4-5"},
+  {note:"渐进递增 — 延长LISS时长，HIIT增加1组，逐步提升心率", deload:false, weightAdjust:"总量 +15%",
+   durationAdjust:0, hiitRoundsAdjust:1, hiitPerSet:"30秒工作 + 30秒休息", intensity:"心率 60-75%", rpe:"RPE 5-7"},
+  {note:"挑战周 — 提升强度，HIIT工作时间延长，接近极限心率", deload:false, weightAdjust:"总量 +25%",
+   durationAdjust:+5, hiitRoundsAdjust:1, hiitPerSet:"40秒工作 + 20秒休息", intensity:"心率 70-85%", rpe:"RPE 7-9"},
+  {note:"恢复周 — 降低总时长30%，减少HIIT组数，让心肺充分适应", deload:true, weightAdjust:"总量 -30%",
+   durationAdjust:-15, hiitRoundsAdjust:-1, hiitPerSet:"30秒工作 + 45秒休息", intensity:"心率 55-70%", rpe:"RPE 4-5"}
+];
+
 // 马拉松16周训练周期
 var MARATHON_PHASES = [
   {name:"基础期", weeks:[1,2,3,4], color:"#F59E0B", desc:"建立有氧基础，每周跑量渐进，以轻松跑+LSD为主"},

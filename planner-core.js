@@ -850,6 +850,21 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   var levelNames = {beginner:"新手 🌱",intermediate:"中级 ⚡",advanced:"进阶 🔥"};
   var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var wkInfo = WEEK_INFO[(currentWeek - 1) % 4];
+  // 心肺目标:使用心肺专用周期化配置覆盖 wkInfo 和 goalCfg
+  var cardioWeekCfg = null;
+  if (goal === 'cardio' && typeof CARDIO_WEEK_CONFIG !== 'undefined') {
+    cardioWeekCfg = CARDIO_WEEK_CONFIG[(currentWeek - 1) % 4];
+    wkInfo = {note: cardioWeekCfg.note, deload: cardioWeekCfg.deload, weightAdjust: cardioWeekCfg.weightAdjust};
+    // 覆盖 goalCfg 中的心肺参数为周特定值
+    var baseDuration = parseInt(goalCfg.totalDuration) || 30;
+    var weekDuration = Math.max(10, baseDuration + cardioWeekCfg.durationAdjust);
+    goalCfg = Object.assign({}, goalCfg, {
+      totalDuration: weekDuration + '分钟',
+      hiitPerSet: cardioWeekCfg.hiitPerSet,
+      intensity: cardioWeekCfg.intensity,
+      rpe: cardioWeekCfg.rpe
+    });
+  }
   var warmup = getWarmup(level, goal);
   var tips = GOAL_TIPS[goal] || [];
   var nutrition = null;
@@ -922,9 +937,15 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain, nutritionEasy);
   }
   var trainSchedule = schedule.filter(function(s){ return s.isTraining; });
+  // 心肺目标:按周调整 HIIT 组数
+  var cardioSets = cfg.sets;
+  if (cardioWeekCfg) {
+    cardioSets = Math.max(2, cfg.sets + cardioWeekCfg.hiitRoundsAdjust);
+  }
   trainingDays.forEach(function(day, i){
     var di = trainSchedule[i] || {day:"第"+(i+1)+"天", isTraining:true};
-    html += renderDayCard(di.day, day, cfg.sets, goalCfg, warmup, wkInfo, goal, dayCalBurns[i] || 0, cfg, i);
+    var daySets = goal === 'cardio' ? cardioSets : cfg.sets;
+    html += renderDayCard(di.day, day, daySets, goalCfg, warmup, wkInfo, goal, dayCalBurns[i] || 0, cfg, i);
   });
   var restDays = schedule.filter(function(s){ return !s.isTraining; });
   if (restDays.length) {
@@ -1704,8 +1725,9 @@ function renderWeekBar(goal) {
 function renderWeekInfo(wk) {
   var displayWeek = ((currentWeek - 1) % 4) + 1;
   var icon = wk.deload ? "🔄" : "📈";
+  var adjustLabel = (lastPlan && lastPlan.goal === 'cardio') ? '强度调整' : '重量调整';
   return '<div class="week-info">'+icon+' <strong>第'+displayWeek+'周</strong> - '+wk.note+
-    ' <span style="float:right;font-weight:700;">重量调整: '+wk.weightAdjust+'</span></div>';
+    ' <span style="float:right;font-weight:700;">'+adjustLabel+': '+wk.weightAdjust+'</span></div>';
 }
 
 function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
