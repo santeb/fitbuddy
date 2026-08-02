@@ -1430,10 +1430,14 @@ function buildCutPlan(level, days, equip, wOff) {
 }
 
 function buildCardioPlan(level, days, equip, wOff) {
+  // 用 advanced 级别取出所有有氧动作,再按难度分组,避免 beginner 时 getExes 只返回初级导致 HIIT 为空
+  var allCardio = getExes("有氧", equip, "advanced");
   // LISS:低强度持续有氧(初级动作),每次选2-3个
-  var liss = getExes("有氧",equip,level).filter(function(e){return e.diff==="初级";});
+  var liss = allCardio.filter(function(e){return e.diff==="初级";});
   // HIIT:高强度间歇(中级+高级动作),每次选3-4个
-  var hiit = getExes("有氧",equip,level).filter(function(e){return e.diff==="中级"||e.diff==="高级";});
+  var hiit = allCardio.filter(function(e){return e.diff==="中级"||e.diff==="高级";});
+  // 初级水平:HIIT 从中级里选(降级使用),避免空列表
+  if (level === "beginner" && hiit.length > 3) hiit = hiit.filter(function(e){return e.diff==="中级";});
   var str = getFullBody(equip,level,"cardio",wOff);
   var plan = [];
   for (var i=0; i<days; i++) {
@@ -3094,6 +3098,8 @@ function startRestTimer(restStr) {
     timerSeconds--;
     if (timerSeconds <= 0) {
       stopTimer();
+      playTimerBeep();
+      showHydraReminder();
       return;
     }
     document.getElementById("timerNum").textContent = timerSeconds;
@@ -3900,6 +3906,7 @@ function switchTab(btn) {
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
   if (tab === "page-community") { renderCommunity(); checkFirstVisitGuide(); }
+  if (tab === "page-supps") renderSuppsPage();
   if (tab === "page-donate") { _trackStat('donate'); }
   if (tab === "page-plan") {
     updateReminderTrainDays();
@@ -4009,6 +4016,10 @@ window.addEventListener('load', function() {
     planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">选择目标、水平和天数,点击「生成我的计划」开始训练,顺便领养你的健身精灵!</div></div>';
   }
   updateHeaderStreak();
+  // 初始化补给页面
+  renderSuppsPage();
+  // 启动补水间隔提醒
+  startHydraInterval();
 });
 
 // ============ 游戏化系统:等级、成就、连签 ============
@@ -4255,6 +4266,7 @@ function startRestTimerCustom(sec) {
     if (timerSeconds <= 0) {
       stopTimer();
       playTimerBeep();
+      showHydraReminder();
       return;
     }
     document.getElementById("timerNum").textContent = timerSeconds;
@@ -4270,7 +4282,7 @@ function pauseTimer() {
     btn.textContent = "⏸ 暂停";
     timerInterval = setInterval(function(){
       timerSeconds--;
-      if (timerSeconds <= 0) { stopTimer(); playTimerBeep(); return; }
+      if (timerSeconds <= 0) { stopTimer(); playTimerBeep(); showHydraReminder(); return; }
       document.getElementById("timerNum").textContent = timerSeconds;
     }, 1000);
   } else {
@@ -4303,7 +4315,145 @@ function playTimerBeep() {
   } catch(e) {}
 }
 
-// ============ 数据导出 / 导入 / 重置 ============
+// ============ 补水提醒 ============
+var hydraInterval = null;
+var hydraLastDismiss = 0;
+
+function showHydraReminder() {
+  var now = Date.now();
+  if (now - hydraLastDismiss < 30000) return; // 30秒内不重复弹
+  var banner = document.getElementById("hydraBanner");
+  if (!banner) return;
+  banner.classList.add("show");
+  if (navigator.vibrate) navigator.vibrate(200);
+  // 5秒后自动消失
+  setTimeout(function(){
+    if (banner.classList.contains("show")) {
+      banner.classList.remove("show");
+      hydraLastDismiss = Date.now();
+    }
+  }, 5000);
+}
+
+function dismissHydraBanner() {
+  var banner = document.getElementById("hydraBanner");
+  if (banner) banner.classList.remove("show");
+  hydraLastDismiss = Date.now();
+}
+
+function startHydraInterval() {
+  if (hydraInterval) clearInterval(hydraInterval);
+  // 每15分钟提醒一次补水
+  hydraInterval = setInterval(function(){
+    showHydraReminder();
+  }, 15 * 60 * 1000);
+}
+
+function stopHydraInterval() {
+  if (hydraInterval) { clearInterval(hydraInterval); hydraInterval = null; }
+}
+
+// ============ 补给指南页 ============
+var SUPPS_DATA = [
+  {
+    emoji: "🥛",
+    name: "蛋白粉（乳清蛋白）",
+    tag: "最常用 · 新手友好",
+    timing: "训练后30分钟内，或早餐补充",
+    dose: "体重(kg) × 1.6~2.2g 蛋白质/天（含食物），每勺约24g蛋白",
+    cycle: "每日可服，无周期限制",
+    note: "不要完全依赖蛋白粉，优先从天然食物（鸡胸肉、鸡蛋、鱼）获取蛋白质。乳糖不耐受可选分离乳清蛋白。"
+  },
+  {
+    emoji: "💪",
+    name: "肌酸（一水肌酸）",
+    tag: "最有效 · 力量提升",
+    timing: "每天任意时间，建议训练后",
+    dose: "每天5g（无需冲击期，长期服用更安全）",
+    cycle: "可长期服用，无需循环",
+    note: "目前研究最充分的补剂之一，安全性高。会增加细胞内水分（体重可能涨1-2kg，属正常）。多喝水。"
+  },
+  {
+    emoji: "🧂",
+    name: "BCAA / EAA",
+    tag: "可选 · 热量限制期",
+    timing: "练前或练中，空腹有氧时更有效",
+    dose: "5~10g，EAA效果优于BCAA",
+    cycle: "减脂期使用，增肌期可不用",
+    note: "如果每天蛋白质量已达标，BCAA的额外效果有限。热量限制+空腹训练时补充有助于减少肌肉流失。"
+  },
+  {
+    emoji: "⚡",
+    name: "氮泵（Pre-Workout）",
+    tag: "进阶 · 提神兴奋",
+    timing: "训练前20~30分钟",
+    dose: "按产品说明，新手半份试耐受",
+    cycle: "避免每天使用，建议4周停1周防耐受",
+    note: "含咖啡因+β-丙氨酸+精氨酸等。下午6点后训练不建议用（影响睡眠）。咖啡因敏感者慎用。心率异常时停用。"
+  },
+  {
+    emoji: "🐟",
+    name: "鱼油（Omega-3）",
+    tag: "健康 · 抗炎恢复",
+    timing: "随餐服用，早晚各一次",
+    dose: "EPA+DHA合计 1~3g/天",
+    cycle: "每日长期服用",
+    note: "有助于关节恢复和心血管健康。选高浓度EPA+DHA产品，注意是否新鲜（氧化变质的鱼油反而有害）。"
+  },
+  {
+    emoji: "🦴",
+    name: "维生素D3 + 钙",
+    tag: "基础 · 骨骼健康",
+    timing: "随含油脂的餐食服用（脂溶性）",
+    dose: "维D3 1000~2000 IU/天，钙 500~1000mg/天",
+    cycle: "每日长期服用，冬季维D可加量",
+    note: "室内训练者普遍缺维D。维D3+钙+镁联合补充效果更好。维D过量有毒性，不要超量。"
+  },
+  {
+    emoji: "🧲",
+    name: "锌 + 镁（ZMA）",
+    tag: "恢复 · 睡眠质量",
+    timing: "睡前30分钟空腹服用",
+    dose: "锌 15~30mg，镁 200~400mg",
+    cycle: "每日可服，训练日更推荐",
+    note: "有助于睾酮水平和睡眠恢复。镁选甘氨酸镁吸收最好。避免与含钙食物同服（影响吸收）。"
+  },
+  {
+    emoji: "🍯",
+    name: "碳水补剂（麦芽糊精/糖原）",
+    tag: "耐力 · 长时间训练",
+    timing: "训练中或训练后立即",
+    dose: "训练超1.5小时按 30~60g/小时 补充",
+    cycle: "长时间耐力训练日使用",
+    note: "马拉松/长距离骑行必备。短时间力量训练不需要。训练后配合蛋白粉（碳水:蛋白 ≈ 3:1）有助恢复。"
+  }
+];
+
+function renderSuppsPage() {
+  var c = document.getElementById("suppsContent");
+  if (!c) return;
+  var html = "";
+  SUPPS_DATA.forEach(function(s) {
+    html += '<div class="supp-card">' +
+      '<div class="supp-head">' +
+        '<div class="supp-emoji">' + s.emoji + '</div>' +
+        '<div>' +
+          '<div class="supp-name">' + s.name + '</div>' +
+          '<div class="supp-tag">' + s.tag + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="supp-row"><div class="supp-label">⏰ 时间</div><div class="supp-val">' + s.timing + '</div></div>' +
+      '<div class="supp-row"><div class="supp-label">📊 剂量</div><div class="supp-val">' + s.dose + '</div></div>' +
+      '<div class="supp-row"><div class="supp-label">🔄 周期</div><div class="supp-val">' + s.cycle + '</div></div>' +
+      '<div class="supp-note">💡 ' + s.note + '</div>' +
+    '</div>';
+  });
+  html += '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px;line-height:1.6;">' +
+    '⚠️ 补剂不能替代均衡饮食和刻苦训练<br>如有疾病或服药，请咨询医生后再使用<br>购买补剂请选择正规品牌，注意第三方检测认证</div>';
+  c.innerHTML = html;
+}
+
+
 function exportData() {
   var data = {};
   var keys = [];

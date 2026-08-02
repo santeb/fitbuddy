@@ -346,7 +346,26 @@ input,select{font-family:inherit;}
 @keyframes fabPulse{0%,100%{box-shadow:0 4px 18px rgba(255,107,53,0.45)}50%{box-shadow:0 4px 28px rgba(255,107,53,0.7)}}
 @media(min-width:431px){.fab-timer{right:calc(50% - 215px + 16px);}}
 
-/* 1RM 计算器 */
+/* 补水提醒横幅 */
+.hydra-banner{display:none;position:fixed;bottom:160px;left:50%;transform:translateX(-50%);z-index:250;background:linear-gradient(135deg,#4FC3F7,#29B6F6);color:#fff;padding:12px 20px;border-radius:30px;box-shadow:0 4px 20px rgba(33,150,243,0.4);font-size:14px;font-weight:700;align-items:center;gap:8px;cursor:pointer;animation:hydraBounce 0.6s ease-out;white-space:nowrap;}
+.hydra-banner.show{display:flex;}
+.hydra-banner:active{transform:translateX(-50%) scale(0.92);}
+@keyframes hydraBounce{0%{transform:translateX(-50%) translateY(20px) scale(0.8);opacity:0;}100%{transform:translateX(-50%) translateY(0) scale(1);opacity:1;}}
+.hydra-banner .hydra-close{background:none;border:none;color:#fff;font-size:18px;padding:0 0 0 8px;opacity:0.8;cursor:pointer;}
+
+/* 补给指南页 */
+.supps-banner{text-align:center;padding:24px 16px 20px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:0 0 20px 20px;margin-bottom:16px;}
+.supps-banner .sb-title{font-size:22px;font-weight:800;}
+.supps-banner .sb-sub{font-size:13px;opacity:0.85;margin-top:6px;}
+.supp-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
+.supp-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+.supp-emoji{font-size:28px;flex-shrink:0;}
+.supp-name{font-size:16px;font-weight:800;}
+.supp-tag{font-size:11px;color:var(--text3);margin-top:2px;}
+.supp-row{display:flex;gap:8px;margin-bottom:6px;font-size:13px;line-height:1.6;}
+.supp-label{color:var(--text3);min-width:70px;flex-shrink:0;}
+.supp-val{color:var(--text1);flex:1;}
+.supp-note{font-size:12px;color:var(--text3);background:var(--bg);border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.5;}
 .rm-calc{padding:16px;background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);}
 .rm-calc .rm-title{font-size:15px;font-weight:700;margin-bottom:12px;}
 .rm-input-row{display:flex;gap:10px;align-items:end;margin-bottom:12px;}
@@ -517,7 +536,7 @@ input,select{font-family:inherit;}
 @media print{
   @page { margin: 12mm 10mm; size: A4 portrait; }
   /* 隐藏所有 UI 交互元素 */
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,#communityGuide,#leaderboardWrap,#achievementWrap,#collectionWrap,#dailyChallengeWrap,.reminder-banner,.injury-banner,#communityContent .cb-btns,#communityContent .cb-ai,#communityContent .cb-weekly,.community-card,.community-guide,.leaderboard-card,.achievement-badge,.collection-card,.daily-challenge-card,#proPlanModules,#proCalcContainer,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card{display:none!important;}
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,#communityGuide,#leaderboardWrap,#achievementWrap,#collectionWrap,#dailyChallengeWrap,.reminder-banner,.injury-banner,#communityContent .cb-btns,#communityContent .cb-ai,#communityContent .cb-weekly,.community-card,.community-guide,.leaderboard-card,.achievement-badge,.collection-card,.daily-challenge-card,#proPlanModules,#proCalcContainer,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
   .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
   body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* 强制白色背景+黑色文字 */
@@ -1151,6 +1170,15 @@ input,select{font-family:inherit;}
     </div>
   </div>
 
+  <!-- 补给指南页 -->
+  <div class="page" id="page-supps" role="tabpanel" aria-label="补给指南" tabindex="0">
+    <div class="supps-banner">
+      <div class="sb-title">💊 补给指南</div>
+      <div class="sb-sub">常见运动补剂的使用方法与注意事项</div>
+    </div>
+    <div id="suppsContent"></div>
+  </div>
+
   <!-- 社区大厅页 -->
   <div class="page" id="page-community" role="tabpanel" aria-label="社区" tabindex="0">
     <div class="community-banner">
@@ -1175,6 +1203,9 @@ input,select{font-family:inherit;}
     <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-community" tabindex="-1">
       <span class="icon" aria-hidden="true">🏟️</span><span>社区</span>
     </button>
+    <button class="tab-btn" data-tab="page-supps" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-supps" tabindex="-1">
+      <span class="icon" aria-hidden="true">💊</span><span>补给</span>
+    </button>
     <button class="tab-btn" data-tab="page-donate" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-donate" tabindex="-1">
       <span class="icon" aria-hidden="true">💝</span><span>发电</span>
     </button>
@@ -1187,6 +1218,12 @@ input,select{font-family:inherit;}
 
   <!-- FAB 浮动计时按钮 -->
   <button class="fab-timer" id="fabTimer" onclick="openTimerFab()" title="组间休息计时器">⏱</button>
+
+  <!-- 补水提醒横幅 -->
+  <div class="hydra-banner" id="hydraBanner" onclick="dismissHydraBanner()">
+    <span>💧 该喝水了！</span>
+    <button class="hydra-close" onclick="event.stopPropagation();dismissHydraBanner()">×</button>
+  </div>
 
   <!-- 休息计时器 -->
   <div class="timer-overlay" id="timerOverlay">
@@ -1215,15 +1252,15 @@ input,select{font-family:inherit;}
 </div>
 
 
-<script src="data-constants.js?v=20" defer></script>
+<script src="data-constants.js?v=21" defer></script>
 
-<script src="planner-core.js?v=23" defer></script>
+<script src="planner-core.js?v=24" defer></script>
 <script src="pro-tools.js?v=3" defer></script>
 <script src="pets.js" defer></script>
 <script src="community.js" defer></script>
 
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
-  <div>FitBuddy v2.0 · 周期化训练引擎 + Pro Tools</div>
+  <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
 </footer>
