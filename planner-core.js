@@ -857,7 +857,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     wkInfo = {note: cardioWeekCfg.note, deload: cardioWeekCfg.deload, weightAdjust: cardioWeekCfg.weightAdjust};
     // 覆盖 goalCfg 中的心肺参数为周特定值
     var baseDuration = parseInt(goalCfg.totalDuration) || 30;
-    var weekDuration = Math.max(10, baseDuration + cardioWeekCfg.durationAdjust);
+    var weekDuration = Math.max(10, Math.round(baseDuration * cardioWeekCfg.durationPct));
     goalCfg = Object.assign({}, goalCfg, {
       totalDuration: weekDuration + '分钟',
       hiitPerSet: cardioWeekCfg.hiitPerSet,

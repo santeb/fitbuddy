@@ -163,8 +163,8 @@ var CONFIGS = {
     sets: 3,
     muscle:   {reps:"12-15次", rest:"60秒", intensity:"50-65% 1RM", rpe:"RPE 5-7", note:"感受肌肉发力，以正确动作为首要目标"},
     strength: {reps:"8-10次",  rest:"90秒", intensity:"60-70% 1RM", rpe:"RPE 6-7", note:"注意动作规范，不追求大重量"},
-    cut:      {reps:"15-20次", rest:"45秒", intensity:"40-55% 1RM", rpe:"RPE 5-6", note:"保持高强度，缩短组间休息"},
-    cardio:   {reps:"—", totalDuration:"40分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"—", intensity:"心率 60-70%", rpe:"RPE 4-6", note:"中低强度有氧，能正常说话的配速"},
+    cut:      {reps:"15-20次", rest:"45秒", intensity:"40-55% 1RM", rpe:"RPE 5-6", note:"保持运动节奏，以轻重量高次数燃脂"},
+    cardio:   {reps:"—", totalDuration:"20分钟", hiitPerSet:"20秒工作 + 40秒休息", lissPerSet:"持续进行", rest:"60秒", intensity:"心率 55-65%", rpe:"RPE 4-5", note:"轻松有氧为主，能正常说话的配速"},
     marathon: {weeklyKms:"30-45", longRunMax:30, easyPace:"6:30-7:00", tempoPace:"5:30-6:00", intervalPace:"5:00-5:30", longRunPace:"6:30-7:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：安全完赛（4:30-5:30），享受比赛"}
   },
   intermediate: {
@@ -172,7 +172,7 @@ var CONFIGS = {
     muscle:   {reps:"8-12次",  rest:"75秒", intensity:"65-75% 1RM", rpe:"RPE 7-8", note:"力竭前留1-2个(RIR)，追求肌肉泵感"},
     strength: {reps:"5-8次",   rest:"2分钟",intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"每组接近力竭，记录每次重量"},
     cut:      {reps:"12-15次", rest:"30秒", intensity:"55-65% 1RM", rpe:"RPE 7-8", note:"可使用超级组提升燃脂效率"},
-    cardio:   {reps:"—", totalDuration:"30分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"30秒", intensity:"心率 65-80%", rpe:"LISS RPE5-6 / HIIT RPE8-9", note:"HIIT与LISS交替进行"},
+    cardio:   {reps:"—", totalDuration:"30分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"45秒", intensity:"心率 65-80%", rpe:"LISS RPE5-6 / HIIT RPE8-9", note:"HIIT与LISS交替进行"},
     marathon: {weeklyKms:"50-70", longRunMax:35, easyPace:"5:30-6:00", tempoPace:"4:45-5:15", intervalPace:"4:15-4:30", longRunPace:"6:00-6:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 4:00-4:30，有比赛经验"}
   },
   advanced: {
@@ -180,7 +180,7 @@ var CONFIGS = {
     muscle:   {reps:"6-10次",  rest:"90秒", intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"力竭前留1个RIR，考虑降重组"},
     strength: {reps:"3-6次",   rest:"3分钟",intensity:"85%+ 1RM",   rpe:"RPE 8-10", note:"加入RPE评估，追求渐进超负荷"},
     cut:      {reps:"10-12次", rest:"20秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"超级组+递减组，最大化热量消耗"},
-    cardio:   {reps:"—", totalDuration:"20分钟", hiitPerSet:"45秒工作 + 15秒休息", lissPerSet:"持续进行", rest:"15秒", intensity:"心率 70-85%", rpe:"HIIT RPE9-10", note:"高强度间歇，最大化燃脂效果"},
+    cardio:   {reps:"—", totalDuration:"40分钟", hiitPerSet:"45秒工作 + 15秒休息", lissPerSet:"持续进行", rest:"20秒", intensity:"心率 70-85%", rpe:"LISS RPE6-7 / HIIT RPE9-10", note:"高强度间歇为主，最大化燃脂效果"},
     marathon: {weeklyKms:"70-100", longRunMax:38, easyPace:"4:45-5:15", tempoPace:"4:15-4:30", intervalPace:"3:45-4:00", longRunPace:"5:15-5:45", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 3:30，冲击PB"}
   }
 };
@@ -236,20 +236,20 @@ var WEEK_INFO = [
 ];
 
 // 心肺目标4周周期化配置（覆盖 WEEK_INFO 和 goalCfg 中的心肺参数）
-// durationAdjust: 在基础 totalDuration(分钟数)上的增减
+// durationPct: 基础 totalDuration 的百分比（0.8 = 减20%）
 // hiitRoundsAdjust: 在基础 sets 上的增减（控制 HIIT 组数）
 // hiitPerSet: HIIT 每组的工作/休息比例
 // intensity: 心率区间
 // rpe: RPE 范围
 var CARDIO_WEEK_CONFIG = [
   {note:"基础适应周 — 建立有氧基础，保持轻松节奏，感受身体反应", deload:false, weightAdjust:"总量 -20%",
-   durationAdjust:-10, hiitRoundsAdjust:0, hiitPerSet:"30秒工作 + 30秒休息", intensity:"心率 55-65%", rpe:"RPE 4-5"},
-  {note:"渐进递增 — 延长LISS时长，HIIT增加1组，逐步提升心率", deload:false, weightAdjust:"总量 +15%",
-   durationAdjust:0, hiitRoundsAdjust:1, hiitPerSet:"30秒工作 + 30秒休息", intensity:"心率 60-75%", rpe:"RPE 5-7"},
-  {note:"挑战周 — 提升强度，HIIT工作时间延长，接近极限心率", deload:false, weightAdjust:"总量 +25%",
-   durationAdjust:+5, hiitRoundsAdjust:1, hiitPerSet:"40秒工作 + 20秒休息", intensity:"心率 70-85%", rpe:"RPE 7-9"},
+   durationPct:0.8, hiitRoundsAdjust:0, hiitPerSet:"20秒工作 + 40秒休息", intensity:"心率 55-65%", rpe:"RPE 4-5"},
+  {note:"渐进递增 — 延长LISS时长，HIIT增加1组，逐步提升心率", deload:false, weightAdjust:"总量 +10%",
+   durationPct:1.0, hiitRoundsAdjust:1, hiitPerSet:"30秒工作 + 30秒休息", intensity:"心率 60-75%", rpe:"RPE 5-7"},
+  {note:"挑战周 — 提升强度，HIIT工作时间延长，接近极限心率", deload:false, weightAdjust:"总量 +20%",
+   durationPct:1.1, hiitRoundsAdjust:1, hiitPerSet:"40秒工作 + 20秒休息", intensity:"心率 70-85%", rpe:"RPE 7-9"},
   {note:"恢复周 — 降低总时长30%，减少HIIT组数，让心肺充分适应", deload:true, weightAdjust:"总量 -30%",
-   durationAdjust:-15, hiitRoundsAdjust:-1, hiitPerSet:"30秒工作 + 45秒休息", intensity:"心率 55-70%", rpe:"RPE 4-5"}
+   durationPct:0.7, hiitRoundsAdjust:-1, hiitPerSet:"30秒工作 + 45秒休息", intensity:"心率 55-70%", rpe:"RPE 4-5"}
 ];
 
 // 马拉松16周训练周期
