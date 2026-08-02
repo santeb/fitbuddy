@@ -545,6 +545,10 @@ function updateInjuryUI() {
 // ============ 核心函数 ============
 function getExes(muscle, equip, level) {
   var diffRank = {"初级":1,"中级":2,"高级":3};
+  var eqRank = {};
+  if (equip === "gym") eqRank = {gym:0, dumbbell:1, bodyweight:2};
+  else if (equip === "dumbbell") eqRank = {dumbbell:0, bodyweight:1, gym:2};
+  else eqRank = {bodyweight:0, dumbbell:1, gym:2};
   var allowed = {beginner:["初级"], intermediate:["初级","中级"], advanced:["初级","中级","高级"]};
   var levelAllowed = allowed[level] || ["初级"];
   var filtered = EXES.filter(function(e) {
@@ -556,8 +560,12 @@ function getExes(muscle, equip, level) {
     return true;
   });
   filtered.sort(function(a,b){
-    if (level === "advanced") return diffRank[b.diff] - diffRank[a.diff];
-    return diffRank[a.diff] - diffRank[b.diff];
+    var da = diffRank[a.diff] || 0, db = diffRank[b.diff] || 0;
+    if (level === "advanced") { var t = da; da = db; db = t; }
+    if (da !== db) return da - db;
+    var ea = (eqRank[a.eq] !== undefined) ? eqRank[a.eq] : 9;
+    var eb = (eqRank[b.eq] !== undefined) ? eqRank[b.eq] : 9;
+    return ea - eb;
   });
   return filtered;
 }
