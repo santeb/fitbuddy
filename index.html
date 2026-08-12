@@ -487,11 +487,24 @@ input,select{font-family:inherit;}
 .sub-item.selected{background:var(--primary-light);border-color:var(--primary);}
 .sub-item-name{font-size:14px;font-weight:600;}
 .sub-item-meta{font-size:11px;color:var(--text3);}
+.sub-group-title{font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px;padding-top:8px;border-top:1px dashed var(--border);}
+.sub-group-toggle{font-size:12px;font-weight:700;color:var(--primary);margin:10px 0 6px;padding:8px 10px;border-radius:8px;background:var(--primary-light);text-align:center;cursor:pointer;transition:all .15s;}
+.sub-group-toggle:active{transform:scale(0.97);}
+.picker-diff-bar{padding:6px 0 2px;}
+.picker-diff-btn{width:100%;padding:8px 0;border:none;border-radius:8px;background:var(--primary-light);color:var(--primary);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;}
+.picker-diff-btn:active{transform:scale(0.97);}
+.picker-diff-btn.on{background:var(--primary);color:#fff;}
+.ex-diff-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;vertical-align:1px;}
 .sub-actions{display:flex;gap:8px;margin-top:16px;}
 .sub-actions button{flex:1;padding:10px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;}
 .sub-cancel{background:var(--bg);color:var(--text2);border:1px solid var(--border);}
 .sub-confirm{background:var(--primary);color:#fff;border:none;}
 .sub-confirm:active{transform:scale(0.96);}
+
+/* 每天计划:增加/减少动作按钮 */
+.day-edit-btn{flex:1;padding:9px 0;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;background:var(--bg);color:var(--text2);border:1.5px dashed var(--border);}
+.day-edit-btn:active{transform:scale(0.96);border-color:var(--primary);color:var(--primary);background:var(--primary-light);}
+[data-theme="dark"] .day-edit-btn{background:rgba(255,255,255,0.04);}
 
 /* ====== Pro Tools ====== */
 /* 减载周开关 */

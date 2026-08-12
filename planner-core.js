@@ -2326,8 +2326,178 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
     'onblur="saveNote(\''+noteId+'\',\''+goal+'\','+currentWeek+',\''+(day.name||"").replace(/'/g,"\\'")+'\')" '+
     'style="font-size:12px;padding:8px 10px;background:var(--bg);border:none;">'+
     '</div>';
+  // ➕ 增加动作 / ➖ 减少动作
+  html += '<div style="display:flex;gap:8px;padding:6px 0 12px;">'+
+    '<button class="day-edit-btn" onclick="event.stopPropagation();openAddExPicker('+dayIdx+')">➕ 增加动作</button>'+
+    '<button class="day-edit-btn" onclick="event.stopPropagation();openRemoveExPicker('+dayIdx+')">➖ 减少动作</button>'+
+    '</div>';
   html += '</div></div>';
   return html;
+}
+
+// ============ 增加/减少动作 ============
+var EQ_LABELS = {gym:"健身房", dumbbell:"哑铃", bodyweight:"自重", outdoor:"户外", treadmill:"跑步机"};
+
+// 增加动作弹窗状态(支持难度切换)
+var _pickerState = null;
+var DIFF_RANK2 = {"初级":1,"中级":2,"高级":3};
+var DIFF_COLOR = {"初级":"#22C55E","中级":"#F59E0B","高级":"#EF4444"};
+var LEVEL_LABEL = {"beginner":"初级","intermediate":"中级","advanced":"高级"};
+
+// 打开"增加动作"选择弹窗(当天肌群优先,再补充其他)
+function openAddExPicker(dayIdx) {
+  if (!lastPlan || !lastPlan.trainingDays || !lastPlan.trainingDays[dayIdx]) return;
+  _pickerState = {
+    dayIdx: dayIdx,
+    level: lastPlan.level || 'beginner',
+    equip: lastPlan.equip || 'gym',
+    goal: lastPlan.goal || 'muscle',
+    showAll: false
+  };
+  renderAddExPicker();
+}
+
+function renderAddExPicker() {
+  var st = _pickerState;
+  if (!st) return;
+  var day = lastPlan.trainingDays[st.dayIdx];
+  var isMarathon = st.goal === 'marathon';
+  var exes = day.exes || [];
+  var used = {};
+  exes.forEach(function(ex){ used[ex.n] = true; });
+
+  var dayPool = [];
+  var otherPool = [];
+  function pushTo(pool, arr) {
+    arr.forEach(function(e){ if (!used[e.n] && pool.indexOf(e) < 0) pool.push(e); });
+  }
+
+  // 难度过滤:显示全部难度时取所有动作
+  var filterLevel = st.showAll ? 'advanced' : st.level;
+
+  if (isMarathon) {
+    // 马拉松:只推荐有氧/跑步类动作
+    pushTo(dayPool, getExes("有氧", st.equip, "advanced"));
+    pushTo(dayPool, getExes("跑步", st.equip, "advanced"));
+  } else {
+    // 当天肌群优先
+    var muscles = [];
+    exes.forEach(function(ex){ if (muscles.indexOf(ex.m) < 0) muscles.push(ex.m); });
+    muscles.forEach(function(m){ pushTo(dayPool, getExes(m, st.equip, filterLevel)); });
+    // 补充其他肌群(折叠展示,便于需要时跨部位搭配)
+    MUSCLE_ORDER.forEach(function(m){
+      if (muscles.indexOf(m) >= 0) return;
+      pushTo(otherPool, getExes(m, st.equip, filterLevel));
+    });
+  }
+  if (!dayPool.length && !otherPool.length) { showToast('⚠️ 没有更多可添加的动作'); return; }
+
+  // 显示全部难度时按 初级→中级→高级 排序,避免高级动作排前面
+  if (st.showAll) {
+    dayPool.sort(function(a,b){ return (DIFF_RANK2[a.diff]||9)-(DIFF_RANK2[b.diff]||9); });
+    otherPool.sort(function(a,b){ return (DIFF_RANK2[a.diff]||9)-(DIFF_RANK2[b.diff]||9); });
+  }
+
+  var html = '<div class="sub-modal-title">➕ 增加动作</div>'+
+    '<div class="sub-modal-sub">优先推荐当天训练部位的动作</div>'+
+    '<div class="picker-diff-bar">'+
+      (st.showAll
+        ? '<button class="picker-diff-btn on" onclick="togglePickerAll(false)">✅ 显示全部难度</button>'
+        : '<button class="picker-diff-btn" onclick="togglePickerAll(true)">显示全部难度 · 当前仅「'+(LEVEL_LABEL[st.level]||st.level)+'」</button>')
+    +'</div>';
+  function itemHtml(e){
+    var bc = BADGE_COLORS[e.m] || ["#888","#F5F5F5"];
+    var bt = BADGE_TEXT[e.m] || (e.m ? e.m[0] : '?');
+    var dc = DIFF_COLOR[e.diff] || "#888";
+    return '<div class="sub-item" onclick="confirmAddEx('+st.dayIdx+',\''+e.n.replace(/'/g,"\\'")+'\')">'+
+      '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:28px;height:28px;border-radius:8px;font-size:11px;">'+bt+'</div>'+
+      '<div><div class="sub-item-name">'+e.n+'<span class="ex-diff-badge" style="background:'+dc+'22;color:'+dc+'">'+e.diff+'</span></div><div class="sub-item-meta">'+(MUSCLE_LABELS[e.m]||e.m)+' · '+(EQ_LABELS[e.eq]||e.eq||'')+'</div></div>'+
+      '<div style="color:var(--primary);font-size:18px;flex-shrink:0;">＋</div>'+
+    '</div>';
+  }
+  if (dayPool.length) {
+    html += '<div class="sub-group-title">🎯 当天部位（'+dayPool.length+'）</div>';
+    dayPool.slice(0, 40).forEach(function(e){ html += itemHtml(e); });
+  }
+  if (otherPool.length) {
+    html += '<div class="sub-group-toggle" onclick="toggleOtherPool(this)">🔽 其他部位动作（'+otherPool.length+'）</div>';
+    html += '<div class="sub-group-other" data-count="'+otherPool.length+'" style="display:none">';
+    otherPool.slice(0, 40).forEach(function(e){ html += itemHtml(e); });
+    html += '</div>';
+  }
+  html += '<div class="sub-actions"><button class="sub-cancel" onclick="closeSubModal()">取消</button></div>';
+  document.getElementById('subModalBody').innerHTML = html;
+  document.getElementById('subModal').classList.add('show');
+}
+
+// 切换"显示全部难度"
+function togglePickerAll(showAll) {
+  if (!_pickerState) return;
+  _pickerState.showAll = !!showAll;
+  renderAddExPicker();
+}
+
+// 展开/收起"其他部位动作"分组
+function toggleOtherPool(btn) {
+  var n = btn.nextElementSibling;
+  if (!n) return;
+  var hidden = n.style.display === 'none';
+  n.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? ('🔼 收起其他部位（' + (n.getAttribute('data-count') || '') + '）') : ('🔽 其他部位动作（' + (n.getAttribute('data-count') || '') + '）');
+}
+
+// 确认添加动作
+function confirmAddEx(dayIdx, exName) {
+  if (!lastPlan || !lastPlan.trainingDays || !lastPlan.trainingDays[dayIdx]) return;
+  var ex = EXES.find(function(e){ return e.n === exName; });
+  if (!ex) { showToast('⚠️ 动作不存在'); return; }
+  var day = lastPlan.trainingDays[dayIdx];
+  if (!day.exes) day.exes = [];
+  if (day.exes.find(function(e){ return e.n === exName; })) { showToast('⚠️ 该动作已在计划中'); return; }
+  day.exes.push(JSON.parse(JSON.stringify(ex)));
+  closeSubModal();
+  refreshPlanAfterEdit('✅ 已添加「' + exName + '」');
+}
+
+// 打开"减少动作"选择弹窗
+function openRemoveExPicker(dayIdx) {
+  if (!lastPlan || !lastPlan.trainingDays || !lastPlan.trainingDays[dayIdx]) return;
+  var exes = lastPlan.trainingDays[dayIdx].exes || [];
+  if (!exes.length) { showToast('⚠️ 当天没有动作可删'); return; }
+  var html = '<div class="sub-modal-title">➖ 减少动作</div>'+
+    '<div class="sub-modal-sub">点击要删除的动作(共 '+exes.length+' 个)</div>';
+  exes.forEach(function(ex, idx){
+    var bc = BADGE_COLORS[ex.m] || ["#888","#F5F5F5"];
+    var bt = BADGE_TEXT[ex.m] || (ex.m ? ex.m[0] : '?');
+    html += '<div class="sub-item" onclick="confirmRemoveEx('+dayIdx+','+idx+')">'+
+      '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:28px;height:28px;border-radius:8px;font-size:11px;">'+bt+'</div>'+
+      '<div><div class="sub-item-name">'+ex.n+'</div><div class="sub-item-meta">'+(MUSCLE_LABELS[ex.m]||ex.m)+' · '+(ex.diff||'')+'</div></div>'+
+      '<div style="color:#EF4444;font-size:18px;flex-shrink:0;">✕</div>'+
+    '</div>';
+  });
+  html += '<div class="sub-actions"><button class="sub-cancel" onclick="closeSubModal()">取消</button></div>';
+  document.getElementById('subModalBody').innerHTML = html;
+  document.getElementById('subModal').classList.add('show');
+}
+
+// 确认删除动作
+function confirmRemoveEx(dayIdx, exIdx) {
+  if (!lastPlan || !lastPlan.trainingDays || !lastPlan.trainingDays[dayIdx]) return;
+  var exes = lastPlan.trainingDays[dayIdx].exes || [];
+  if (exes.length <= 1) { showToast('⚠️ 每天至少保留 1 个动作'); closeSubModal(); return; }
+  var removed = exes[exIdx];
+  if (!removed) return;
+  lastPlan.trainingDays[dayIdx].exes.splice(exIdx, 1);
+  closeSubModal();
+  refreshPlanAfterEdit('🗑 已删除「' + removed.n + '」');
+}
+
+// 编辑动作后保存并重新渲染
+function refreshPlanAfterEdit(msg) {
+  localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
+  _skipRebuild = true;
+  doGenerate();
+  if (msg) showToast(msg);
 }
 
 // ============ 折叠/完成/计时器 ============
