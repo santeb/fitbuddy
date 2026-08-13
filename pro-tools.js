@@ -474,6 +474,31 @@ function renderProgressionCharts() {
   return html;
 }
 
+// ============ 5.5 🏆 个人纪录(PR)卡片 ============
+function renderPRCards() {
+  if (typeof buildPRsFromLog !== 'function') return '';
+  var prs = buildPRsFromLog();
+  var keys = Object.keys(prs).filter(function(k){ return prs[k] && prs[k].e1rm > 0; });
+  if (!keys.length) return '';
+  keys.sort(function(a, b){ return prs[b].e1rm - prs[a].e1rm; });
+  var html = '<div class="progress-card"><div class="card-title" style="justify-content:space-between;">' +
+    '<span>🏆 个人纪录 <span style="font-size:10px;color:var(--text3);font-weight:400;">按估算1RM(Epley)</span></span>' +
+    '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="generateShareImage()">📸 分享图</button></div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">在训练动作卡「渐进超负荷」中记录重量/次数，自动统计历史最佳</div>';
+  keys.slice(0, 8).forEach(function(exName) {
+    var p = prs[exName];
+    html += '<div class="pr-row">' +
+      '<div style="min-width:0;">' +
+        '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + exName + '</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + (p.weight || 0) + 'kg × ' + (p.reps || 0) + ' 次' + (p.date ? ' · ' + p.date : '') + '</div>' +
+      '</div>' +
+      '<span class="pr-badge">🏋️ ' + p.e1rm + 'kg</span>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
 // ============ 6. 周期化日历视图 ============
 
 function drawPeriodizationCalendar(canvasId, plan) {
@@ -481,7 +506,7 @@ function drawPeriodizationCalendar(canvasId, plan) {
   if (!canvas) return;
 
   var goal = plan ? plan.goal : 'muscle';
-  var totalWeeks = goal === 'marathon' ? 16 : 4;
+  var totalWeeks = goal === 'marathon' ? 16 : (typeof getCycleLength === 'function' ? getCycleLength() : 4);
   var isMarathon = goal === 'marathon';
 
   var ctx = canvas.getContext('2d');
@@ -514,9 +539,12 @@ function drawPeriodizationCalendar(canvasId, plan) {
       if (cycleWeek === 4) return base * 0.65; // 减载
       return Math.min(0.95, base);
     } else {
-      var cycleWeek2 = ((week - 1) % 4) + 1;
-      if (cycleWeek2 === 4) return 0.5; // 减载周
-      return 0.5 + cycleWeek2 * 0.13; // 0.63, 0.76, 0.89
+      // 自定义周期:第1周适应,中间逐周递增,最后一周减载
+      var cwLen = Math.max(totalWeeks, 2);
+      var cycleWeek2 = ((week - 1) % cwLen) + 1;
+      if (cycleWeek2 === cwLen) return 0.5; // 减载周
+      if (cycleWeek2 === 1) return 0.63;
+      return Math.min(0.95, 0.63 + (cycleWeek2 - 1) * 0.11);
     }
   }
 
@@ -965,6 +993,9 @@ window.initProToolsProgress = function() {
 
         // 追加Pro模块HTML
         var proHtml = '<div id="proToolsSection">';
+
+        // 🏆 个人纪录
+        proHtml += renderPRCards();
 
         // 周期化日历视图
         proHtml += renderPeriodizationCalendar();

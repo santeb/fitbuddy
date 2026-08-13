@@ -115,7 +115,15 @@ input,select{font-family:inherit;}
 
 /* Nutrition Card */
 .nutrition-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);border-left:4px solid var(--green);}
-.nutrition-title{font-size:14px;font-weight:700;margin-bottom:10px;color:var(--green);}
+.nutrition-title{font-size:14px;font-weight:700;margin-bottom:10px;color:var(--green);cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none;}
+.nutrition-title .nutri-arrow{font-size:12px;transition:transform 0.3s;color:var(--text3);}
+.nutrition-card.collapsed .nutri-arrow{transform:rotate(-90deg);}
+.nutrition-card.collapsed .nutrition-body{display:none;}
+.nutrition-body{}
+/* 通用可折叠卡片(快速模板/定制计划) */
+.collapsible-card .collapse-arrow{font-size:12px;color:var(--text3);transition:transform 0.3s;}
+.collapsible-card.collapsed .collapse-arrow{transform:rotate(-90deg);}
+.collapsible-card.collapsed .collapse-body{display:none;}
 .nutrition-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .nutrition-item{background:var(--bg);border-radius:10px;padding:10px 12px;}
 .nutrition-label{font-size:11px;color:var(--text3);margin-bottom:2px;}
@@ -340,6 +348,13 @@ input,select{font-family:inherit;}
 .timer-preset{padding:8px 16px;border-radius:10px;font-size:14px;font-weight:700;background:rgba(255,255,255,0.12);color:#fff;border:1.5px solid rgba(255,255,255,0.2);cursor:pointer;transition:all .2s;}
 .timer-preset:active,.timer-preset.active{background:rgba(255,255,255,0.25);border-color:#FF6B35;}
 
+/* 语音播报开关 */
+.timer-voice{display:flex;align-items:center;gap:8px;margin-top:20px;padding:8px 18px;border-radius:22px;background:rgba(255,255,255,0.1);border:1.5px solid rgba(255,255,255,0.18);cursor:pointer;user-select:none;transition:all .2s;}
+.timer-voice:active{transform:scale(0.95);}
+.timer-voice-btn{background:none;border:none;font-size:20px;cursor:pointer;line-height:1;padding:0;}
+.timer-voice-btn.off{opacity:0.45;filter:grayscale(1);}
+.timer-voice-label{font-size:13px;color:#fff;font-weight:600;}
+
 /* FAB 浮动计时按钮 */
 .fab-timer{position:fixed;bottom:90px;right:calc(50% - 195px);width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(255,107,53,0.45);z-index:200;cursor:pointer;border:none;transition:all .25s;animation:fabPulse 2.5s infinite;}
 .fab-timer:active{transform:scale(0.88);}
@@ -560,6 +575,8 @@ input,select{font-family:inherit;}
   /* 强制展开所有折叠内容 */
   .plan-day-body{display:block!important;}
   .plan-day.collapsed .plan-day-body{display:block!important;}
+  .nutrition-card.collapsed .nutrition-body{display:block!important;}
+  .collapsible-card.collapsed .collapse-body{display:block!important;}
   /* 完成状态清晰可见 */
   .ex-row.done{opacity:1!important;}
   .ex-check.done{background:#fff!important;border:2px solid #22C55E!important;color:#22C55E!important;font-weight:700!important;}
@@ -913,6 +930,40 @@ input,select{font-family:inherit;}
   transition: all 0.2s;
 }
 .collection-section-toggle:active { transform: scale(0.97); }
+/* ===== 快速模板 ===== */
+.tpl-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 6px; border-radius: 14px; cursor: pointer; text-align: center;
+  background: var(--card); border: 1.5px solid var(--border);
+  box-shadow: var(--shadow); transition: all 0.2s;
+}
+.tpl-card:hover { transform: translateY(-2px); border-color: var(--primary); }
+.tpl-card:active { transform: scale(0.96); }
+.tpl-card.active { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 4px 16px rgba(255,107,53,0.18); }
+/* ===== 训练热力图 ===== */
+.heat-stat {
+  flex: 1; min-width: 60px; text-align: center; padding: 8px 4px;
+  background: var(--bg); border-radius: 12px;
+}
+.heat-grid { display: grid; gap: 3px; }
+.heat-cell {
+  border-radius: 3px; aspect-ratio: 1 / 1; min-height: 10px;
+  background: var(--border); transition: transform 0.15s;
+}
+.heat-cell:hover { transform: scale(1.35); }
+.heat-cell.today { outline: 2px solid var(--primary); outline-offset: 1px; }
+.heat-day-label { font-size: 9px; color: var(--text3); line-height: 14px; text-align: center; }
+/* ===== 个人纪录 ===== */
+.pr-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.pr-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; color: #fff;
+  background: linear-gradient(90deg, #FF6B35, #F59E0B);
+  padding: 2px 8px; border-radius: 20px;
+}
 </style>
 </head>
 <body>
@@ -964,8 +1015,51 @@ input,select{font-family:inherit;}
       <button onclick="scrollToPlan()" style="margin-top:8px;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(255,255,255,0.25);color:#fff;border:none;cursor:pointer;">去训练 →</button>
     </div>
 
-    <div class="card">
-      <div class="card-title">🎯 定制你的计划</div>
+    <!-- ⚡ 快速模板 -->
+    <div class="card collapsible-card collapsed" style="margin-bottom:14px;">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
+        <span style="display:flex;align-items:baseline;gap:8px;min-width:0;">⚡ 快速模板
+          <span style="font-weight:400;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">点一下自动填好参数，可微调后生成</span>
+        </span>
+        <span class="collapse-arrow" style="flex-shrink:0;">▼</span>
+      </div>
+      <div class="collapse-body">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <button type="button" class="tpl-card" onclick="applyTemplate(0)" role="button" aria-label="新手6周模板">
+          <div style="font-size:22px;line-height:1;">🌱</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">新手 6 周</div>
+          <div style="font-size:10px;color:var(--text3);">入门打基础 · 3天/周 · 6周周期</div>
+        </button>
+        <button type="button" class="tpl-card" onclick="applyTemplate(1)" role="button" aria-label="增肌12周模板">
+          <div style="font-size:22px;line-height:1;">💪</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">增肌 12 周</div>
+          <div style="font-size:10px;color:var(--text3);">力量与围度 · 4天/周 · 12周周期</div>
+        </button>
+        <button type="button" class="tpl-card" onclick="applyTemplate(2)" role="button" aria-label="减脂塑形模板">
+          <div style="font-size:22px;line-height:1;">🔥</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">减脂塑形</div>
+          <div style="font-size:10px;color:var(--text3);">燃脂紧致 · 4天/周 · 6周周期</div>
+        </button>
+        <button type="button" class="tpl-card" onclick="applyTemplate(3)" role="button" aria-label="居家徒手模板">
+          <div style="font-size:22px;line-height:1;">🏠</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">居家徒手</div>
+          <div style="font-size:10px;color:var(--text3);">零器械 · 3天/周 · 4周周期</div>
+        </button>
+        <button type="button" class="tpl-card" onclick="applyTemplate(4)" role="button" aria-label="马拉松新手模板">
+          <div style="font-size:22px;line-height:1;">🏃</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">马拉松新手</div>
+          <div style="font-size:10px;color:var(--text3);">16周跑量计划</div>
+        </button>
+      </div>
+      </div>
+    </div>
+
+    <div class="card collapsible-card" id="planCard">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
+        <span>🎯 定制你的计划</span>
+        <span class="collapse-arrow">▼</span>
+      </div>
+      <div class="collapse-body">
 
       <div class="form-group">
         <label>健身目标</label>
@@ -997,6 +1091,18 @@ input,select{font-family:inherit;}
           <div class="chip active" data-days="4">4天</div>
           <div class="chip" data-days="5">5天</div>
           <div class="chip" data-days="6">6天</div>
+        </div>
+      </div>
+
+      <div class="form-group" id="cycleLengthGroup">
+        <label>周期长度 <span style="font-size:11px;color:var(--text3);font-weight:400;">（每个周期持续几周，自动循环进阶）</span></label>
+        <div class="chip-group" id="cycleLenChips">
+          <div class="chip" data-cycle="3">3周</div>
+          <div class="chip active" data-cycle="4">4周</div>
+          <div class="chip" data-cycle="6">6周</div>
+          <div class="chip" data-cycle="8">8周</div>
+          <div class="chip" data-cycle="10">10周</div>
+          <div class="chip" data-cycle="12">12周</div>
         </div>
       </div>
 
@@ -1076,6 +1182,7 @@ input,select{font-family:inherit;}
       </div>
 
       <button class="btn-generate" id="genBtn" onclick="doGenerate()">✨ 生成我的计划</button>
+      </div>
     </div>
 
     <div id="planResult" aria-live="polite" aria-label="训练计划输出区域"></div>
@@ -1255,6 +1362,10 @@ input,select{font-family:inherit;}
       <button class="timer-btn secondary" onclick="addTime(15)">+15秒</button>
       <button class="timer-btn secondary" onclick="pauseTimer()" id="timerPauseBtn">⏸ 暂停</button>
       <button class="timer-btn primary" onclick="stopTimer()">跳过</button>
+    </div>
+    <div class="timer-voice" onclick="toggleVoice()">
+      <button class="timer-voice-btn" id="voiceToggleBtn" onclick="event.stopPropagation();toggleVoice()">🔊</button>
+      <span class="timer-voice-label" id="voiceToggleLabel">语音播报</span>
     </div>
   </div>
 

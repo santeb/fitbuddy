@@ -171,6 +171,20 @@ var GIF_MAP = {"腿举（低重量）":"7zdxRTl.gif","箭步蹲":"t8iSghb.gif","
 var BODYWEIGHT_EX_NAMES = new Set();
 EXES.forEach(function(e){ if (e.eq === "bodyweight") BODYWEIGHT_EX_NAMES.add(e.n); });
 
+// ============ 自重变式族（周期化升档/降档）============
+// 每个族按难度从低到高排列，动作名必须与 EXES 中的 n 完全一致
+// 周期化生成计划时，仅自重设备按本周难度档位在族内自动切换变式：
+//   +10% → 升1档 / +15% → 升2档 / +20% → 升3档(封顶)
+//   -15% → 降1档 / -30% → 最低档(彻底恢复)
+var BW_PROGRESSIONS = [
+  {family:"俯卧撑（胸）", group:"胸", levels:["上斜俯卧撑","俯卧撑","宽距俯卧撑","下斜俯卧撑","钻石俯卧撑","单臂俯卧撑"]},
+  {family:"引体（背）", group:"背", levels:["反向划船","引体向上（门框/公园杠）","前水平拉背"]},
+  {family:"深蹲（腿）", group:"腿", levels:["徒手深蹲","箭步蹲","深蹲跳","保加利亚分腿蹲（徒手）","单腿深蹲（枪式）"]},
+  {family:"臀桥（腿）", group:"腿", levels:["臀桥","单腿臀桥"]},
+  {family:"倒立撑（肩）", group:"肩", levels:["派克俯卧撑","折刀俯卧撑","靠墙倒立撑","倒立撑（离墙）"]},
+  {family:"臂屈伸（三头）", group:"臂", levels:["凳上反屈伸（三头）","窄距俯卧撑（三头）","单臂反屈伸（椅子）"]}
+];
+
 // ============ 配置参数（含重量建议）============
 var CONFIGS = {
   beginner: {
@@ -235,9 +249,10 @@ function getWarmup(level, goal) {
   ]};
 }
 
-// 周期化：第1周偏移0，第2周偏移1，第3周偏移2，第4周(减载)与第3周一致
-function getWeekOffset(week) {
-  if (week === 4) return 2; // 减载周保持与第3周相同动作，只降重量
+// 周期化：第1周偏移0，第2周偏移1，…，最后一周(减载)与倒数第2周一致
+function getWeekOffset(week, totalWeeks) {
+  totalWeeks = totalWeeks || 4;
+  if (week >= totalWeeks) return Math.max(0, totalWeeks - 2); // 减载周保持与倒数第2周相同动作，只降重量
   return week - 1;
 }
 
@@ -265,6 +280,91 @@ var CARDIO_WEEK_CONFIG = [
   {note:"恢复周 — 降低总时长30%，减少HIIT组数，让心肺充分适应", deload:true, weightAdjust:"总量 -30%",
    durationPct:0.7, hiitRoundsAdjust:-1, hiitPerSet:"30秒工作 + 45秒休息", intensity:"心率 55-70%", rpe:"RPE 4-5"}
 ];
+
+// 按自定义周期长度生成力量类周信息（波浪周期化）
+// 结构: 第1周适应 → 每3周爬坡 + 1周半减载(-15%)循环 → 最后一周大减载(-30%)
+// 爬坡强度按块递增: 块1 +5/+10/+15 → 块2 +10/+15/+20 → 块3 +15/+20/+25 → 封顶 +30%
+// totalWeeks = 3 时: 适应 → 增负荷 → 减载; = 4 时与 WEEK_INFO 完全一致
+var _CYCLE_MID_NOTES = [
+  "渐进超负荷 — 尝试增加重量 2.5-5kg，保持次数",
+  "挑战周 — 继续增加重量或次数，接近力竭",
+  "冲击周 — 冲击更大重量，注意动作质量",
+  "巅峰周 — 逼近个人极限，务必做好保护"
+];
+// 半减载周（力量类）：-15%，每块第4周插入；3周周期也用它做轻减载收尾
+var _CYCLE_DELOAD_WEEK = {
+  note: "半减载周 — 重量降至85%，巩固动作技术，为下个循环蓄力",
+  deload: true,
+  weightAdjust: "-15%"
+};
+// 半恢复周（心肺类）：总量-15%，时长0.85x；3周周期也用它做轻恢复收尾
+var _CYCLE_CARDIO_RECOVERY = {
+  note: "恢复周 — 时长与强度回落，让心肺充分适应后继续进阶",
+  deload: true,
+  weightAdjust: "总量 -15%",
+  durationPct: 0.85,
+  hiitRoundsAdjust: -1,
+  hiitPerSet: "30秒工作 + 40秒休息",
+  intensity: "心率 55-70%",
+  rpe: "RPE 4-5"
+};
+function buildCycleWeekInfo(totalWeeks) {
+  totalWeeks = totalWeeks || 4;
+  if (totalWeeks === 3) return [WEEK_INFO[0], WEEK_INFO[1], Object.assign({}, _CYCLE_DELOAD_WEEK)]; // 适应 → 爬坡 → 轻减载
+  if (totalWeeks <= 4) return WEEK_INFO.slice(0, totalWeeks);
+  var list = [WEEK_INFO[0]]; // 第1周:适应
+  var block = 1, posInBlock = 0;
+  for (var k = 2; k <= totalWeeks - 1; k++) {
+    posInBlock++;
+    // 半减载:每块第4周插入;即使落在倒数第2周也插入,与最后一周大减载组成双减载taper
+    if (posInBlock === 4) {
+      list.push(Object.assign({}, _CYCLE_DELOAD_WEEK));
+      block++; posInBlock = 0;
+      continue;
+    }
+    var boost = Math.min(block * 5 + (posInBlock - 1) * 5, 30);
+    list.push({
+      note: _CYCLE_MID_NOTES[(posInBlock - 1) % _CYCLE_MID_NOTES.length] + "（周期第" + k + "周）",
+      deload: false,
+      weightAdjust: "+" + boost + "%"
+    });
+  }
+  list.push(WEEK_INFO[3]); // 最后一周:大减载
+  return list;
+}
+
+// 按自定义周期长度生成心肺类周期配置（波浪周期化，规则同上）
+// 每3周爬坡 + 1周恢复(-15%)循环, 最后一周大恢复(-30%)
+// 全部参数硬封顶: 心率 ≤85%、HIIT工作 ≤45s、组数调整 ≤+2、时长 ≤1.3x
+function buildCardioCycleConfig(totalWeeks) {
+  totalWeeks = totalWeeks || 4;
+  if (totalWeeks === 3) return [CARDIO_WEEK_CONFIG[0], CARDIO_WEEK_CONFIG[1], Object.assign({}, _CYCLE_CARDIO_RECOVERY)]; // 适应 → 递增 → 轻恢复
+  if (totalWeeks <= 4) return CARDIO_WEEK_CONFIG.slice(0, totalWeeks);
+  var list = [CARDIO_WEEK_CONFIG[0]]; // 第1周:基础适应
+  var block = 1, posInBlock = 0;
+  for (var k = 2; k <= totalWeeks - 1; k++) {
+    posInBlock++;
+    // 半恢复:每块第4周插入;即使落在倒数第2周也插入,与最后一周大恢复组成双减载taper
+    if (posInBlock === 4) {
+      list.push(Object.assign({}, _CYCLE_CARDIO_RECOVERY));
+      block++; posInBlock = 0;
+      continue;
+    }
+    var idx = (block - 1) * 3 + (posInBlock - 1); // 累计爬坡步数(0-based)
+    list.push({
+      note: (idx === 0 ? "渐进递增 — 延长LISS时长，HIIT增加1组" : "强度攀升 — 继续提升训练量，逼近峰值心率") + "（周期第" + k + "周）",
+      deload: false,
+      weightAdjust: "+" + Math.min(10 + idx * 5, 40) + "%",
+      durationPct: Math.round(Math.min(0.9 + idx * 0.05, 1.3) * 100) / 100,
+      hiitRoundsAdjust: Math.min(1 + Math.floor(idx / 2), 2),
+      hiitPerSet: Math.min(25 + idx * 5, 45) + "秒工作 + " + Math.max(20, 40 - idx * 2) + "秒休息",
+      intensity: "心率 " + Math.min(60 + idx * 3, 78) + "-" + Math.min(75 + idx * 3, 85) + "%",
+      rpe: "RPE " + Math.min(5 + idx, 8) + "-" + Math.min(7 + idx, 9)
+    });
+  }
+  list.push(CARDIO_WEEK_CONFIG[3]); // 最后一周:大恢复
+  return list;
+}
 
 // 马拉松16周训练周期
 var MARATHON_PHASES = [

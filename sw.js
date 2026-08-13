@@ -2,7 +2,7 @@
 // 生产环境禁用 console.log（控制台执行 self._DEBUG=1 可重新启用）
 (function(){ if (!self._DEBUG) { var _noOp=function(){}; try{console.log=_noOp;}catch(e){} } })();
 
-var CACHE_STATIC = 'fitbuddy-static-v5';
+var CACHE_STATIC = 'fitbuddy-static-v6';
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
 
@@ -223,6 +223,8 @@ async function checkReminderOnWake() {
     if (clients.length === 0) {
       // 没有窗口打开，尝试直接发送通知（通过 IndexedDB 读取提醒设置）
       checkAndShowNotification();
+      // 场景化推送：3天未打卡挽留 / 周日生成下周计划
+      checkSceneNotificationsSW();
     }
   } catch(e) {
     console.warn('[SW] checkReminderOnWake 失败：', e.message);
@@ -270,6 +272,62 @@ function checkAndShowNotification() {
             requireInteraction: true,
             vibrate: [200, 100, 200],
             data: { url: './' }
+          });
+        }
+      };
+    } catch(ex) {}
+  };
+}
+
+// 场景化推送：3天未打卡挽留 + 周日生成下周计划（SW 后台无窗口时）
+function checkSceneNotificationsSW() {
+  var dbReq = indexedDB.open('fitbuddy_reminder_db', 1);
+  dbReq.onerror = function() {};
+  dbReq.onupgradeneeded = function(e) {
+    try { e.target.result.createObjectStore('settings', { keyPath: 'key' }); } catch(ex) {}
+  };
+  dbReq.onsuccess = function(e) {
+    try {
+      var tx = e.target.result.transaction('settings', 'readonly');
+      var store = tx.objectStore('settings');
+      var getReq = store.get('scene');
+      getReq.onsuccess = function() {
+        var scene = getReq.result;
+        if (!scene) return; // 无场景数据（未生成过计划）
+        var now = new Date();
+        var pad = function(n){ return String(n).padStart(2, '0'); };
+        var today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+
+        // 场景1: 连续3天未打卡 → 挽留
+        if (scene.hasPlan && scene.lastCheckin) {
+          var gap = Math.floor((new Date(today) - new Date(scene.lastCheckin)) / 86400000);
+          if (gap >= 3) {
+            var tag1 = 'fitbuddy-scene-retention';
+            self.registration.getNotifications({ tag: tag1 }).then(function(list) {
+              if (!list.length) {
+                var msg = gap >= 7
+                  ? '已经 ' + gap + ' 天没训练了，你的肌肉在等你回来！'
+                  : '连续 ' + gap + ' 天没打卡啦，休息够了就回来撸铁吧 💪';
+                self.registration.showNotification('FitBuddy - 想你了！', {
+                  body: msg, icon: makeDataUri(), tag: tag1,
+                  requireInteraction: false, vibrate: [200, 100, 200], data: { url: './' }
+                });
+              }
+            });
+          }
+        }
+
+        // 场景2: 周日 → 提醒生成下周计划
+        if (scene.hasPlan && now.getDay() === 0) {
+          var tag2 = 'fitbuddy-scene-sunday';
+          self.registration.getNotifications({ tag: tag2 }).then(function(list) {
+            if (!list.length) {
+              self.registration.showNotification('FitBuddy - 新周计划', {
+                body: '新的一周开始啦！来 FitBuddy 规划下周训练 📅',
+                icon: makeDataUri(), tag: tag2,
+                requireInteraction: false, vibrate: [200, 100, 200], data: { url: './' }
+              });
+            }
           });
         }
       };

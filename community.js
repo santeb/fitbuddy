@@ -141,6 +141,14 @@ function renderCommunity() {
   }
   html += '</div></div>';
 
+  // === 晒计划(分享码) ===
+  html += '<div class="card" style="margin-top:12px;"><div class="card-title">📤 晒出我的计划</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">生成计划分享码发给好友，或输入好友的分享码直接导入训练计划</div>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<button onclick="showPlanShareModal()" style="flex:1;padding:10px;border-radius:12px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">📤 分享我的计划</button>';
+  html += '<button onclick="showPlanImportModal()" style="flex:1;padding:10px;border-radius:12px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;">📥 导入计划码</button>';
+  html += '</div></div>';
+
   // === 训练者动态 ===
   var feedTemplates = [
     function(tr) { return { emoji:'💪', text:tr.name+' 完成了今日训练！'+tr.days+'天打卡第'+((tr.days%7)+1)+'天，继续加油！', time:Math.floor(Math.random()*23)+'小时前' }; },

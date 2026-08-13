@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>复合动作大全封面</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1500px;
+    height: 2000px;
+    overflow: hidden;
+    background: #0a0a0f;
+  }
+  .cover {
+    width: 750px;
+    height: 1000px;
+    transform: scale(2);
+    transform-origin: 0 0;
+    background: linear-gradient(160deg, #070b14 0%, #0d1b2e 35%, #0f3460 65%, #155e75 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 60px 50px;
+  }
+  /* 顶部标签 */
+  .tag-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .tag-bar .badge {
+    background: #00e5a0;
+    color: #06251c;
+    font-size: 24px;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 6px;
+    letter-spacing: 2px;
+  }
+  .tag-bar .num {
+    color: rgba(255,255,255,0.5);
+    font-size: 22px;
+    font-weight: 600;
+  }
+  /* 中间标题区 */
+  .title-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 20px;
+  }
+  .main-title {
+    font-size: 88px;
+    font-weight: 900;
+    line-height: 1.18;
+    color: #fff;
+    letter-spacing: 2px;
+    text-shadow: 0 4px 30px rgba(0,229,160,0.35);
+  }
+  .main-title .hl {
+    color: #00e5a0;
+  }
+  .sub-title {
+    font-size: 42px;
+    font-weight: 700;
+    color: #ffd166;
+    letter-spacing: 1px;
+  }
+  .sub-title .emoji {
+    font-size: 46px;
+  }
+  /* 装饰线 */
+  .deco-line {
+    width: 80px;
+    height: 5px;
+    background: linear-gradient(90deg, #00e5a0, #ffd166);
+    border-radius: 3px;
+    margin-top: 10px;
+  }
+  /* 分类芯片 */
+  .step-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .step-chip {
+    font-size: 22px;
+    font-weight: 700;
+    color: #d8f5ec;
+    background: rgba(0,229,160,0.12);
+    border: 1.5px solid rgba(0,229,160,0.45);
+    border-radius: 8px;
+    padding: 5px 14px;
+    letter-spacing: 1px;
+  }
+  /* 底部 */
+  .bottom-area {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .bottom-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .keyword {
+    font-size: 26px;
+    color: rgba(255,255,255,0.6);
+    font-weight: 600;
+    letter-spacing: 3px;
+  }
+  .keyword span {
+    color: #00e5a0;
+  }
+  .bottom-right {
+    text-align: right;
+  }
+  .bottom-right .label {
+    font-size: 22px;
+    color: rgba(255,255,255,0.4);
+    font-weight: 600;
+  }
+  /* 装饰光点 */
+  .glow-dot {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.18;
+  }
+  .glow-dot:nth-child(1) {
+    width: 300px;
+    height: 300px;
+    background: #00e5a0;
+    top: -60px;
+    right: -60px;
+  }
+  .glow-dot:nth-child(2) {
+    width: 220px;
+    height: 220px;
+    background: #ffd166;
+    bottom: 90px;
+    left: -40px;
+  }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+
+    <div class="tag-bar">
+      <span class="badge">健身干货</span>
+      <span class="num">No.08</span>
+    </div>
+
+    <div class="title-area">
+      <div class="main-title">
+        复合动作<br>
+        <span class="hl">大全</span> 22个
+      </div>
+      <div class="deco-line"></div>
+      <div class="sub-title">练遍全身的经典动作都在这 <span class="emoji">🔥</span></div>
+      <div class="step-chips">
+        <span class="step-chip">蹲</span>
+        <span class="step-chip">铰链</span>
+        <span class="step-chip">推</span>
+        <span class="step-chip">拉</span>
+        <span class="step-chip">全身</span>
+      </div>
+    </div>
+
+    <div class="bottom-area">
+      <div class="bottom-left">
+        <div class="keyword"><span>深蹲</span> · <span>硬拉</span> · <span>卧推</span></div>
+        <div class="keyword"><span>引体</span> · <span>推举</span> · <span>臀推</span></div>
+      </div>
+      <div class="bottom-right">
+        <div class="label">收藏学起来</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
