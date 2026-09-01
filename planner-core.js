@@ -478,6 +478,8 @@ function checkAutoAdvanceWeek() {
   var advanceKey = currentCycle + "_" + currentWeek;
   if (_weekAdvancedKey === advanceKey) return; // 本周已经跳过
   _weekAdvancedKey = advanceKey;
+  // GA4: 自动跳周(核心留存事件)
+  if (typeof track === 'function') track('week_advance', { cycle: currentCycle, week: currentWeek, totalWeeks: totalWeeks });
 
   // 标记已跳转,防止 toggleDone 中的 resetAllCheckmarks 冲突
   _autoAdvanced = true;
@@ -609,12 +611,50 @@ function updateInjuryUI() {
 }
 
 // ============ 核心函数 ============
+// 固定器械/绳索类动作识别(用于健身房场景按水平细化排序)
+var MACHINE_KEYWORDS = ["器械","腿举","史密斯","哈克","推胸","下拉","绳索","牧师","蝴蝶","夹胸","弯举机","滑雪机","腿弯举","腿屈伸","腿外展","腿内收"];
+function isMachineEx(e) {
+  if (!e || e.eq !== "gym") return false;
+  var n = e.n || "";
+  for (var i = 0; i < MACHINE_KEYWORDS.length; i++) {
+    if (n.indexOf(MACHINE_KEYWORDS[i]) >= 0) return true;
+  }
+  return false;
+}
+
+// 设备排序权重(按训练水平细化):
+// 健身房新手: 固定器械 > 哑铃 > 自由重量 (轨迹固定安全,易找发力感)
+// 健身房中级: 哑铃/自由重量 > 固定器械 (向自由重量过渡,器械留做孤立)
+// 健身房高级: 自由重量 > 哑铃 > 固定器械 (复合动作优先大重量)
+function getEqRank(e, equip, level) {
+  if (equip === "dumbbell") {
+    if (e.eq === "dumbbell") return 0;
+    if (e.eq === "bodyweight") return 1;
+    return 9;
+  }
+  if (equip === "bodyweight") {
+    if (e.eq === "bodyweight") return 0;
+    if (e.eq === "dumbbell") return 1;
+    return 9;
+  }
+  var machine = isMachineEx(e);
+  var free = (e.eq === "gym" && !machine);
+  if (level === "beginner") {
+    if (machine) return 0;
+    if (e.eq === "dumbbell") return 1;
+    return 2;
+  }
+  if (level === "intermediate") {
+    if (e.eq === "dumbbell" || free) return 0;
+    return 1;
+  }
+  if (free) return 0;
+  if (e.eq === "dumbbell") return 1;
+  return 2;
+}
+
 function getExes(muscle, equip, level) {
   var diffRank = {"初级":1,"中级":2,"高级":3};
-  var eqRank = {};
-  if (equip === "gym") eqRank = {gym:0, dumbbell:1, bodyweight:2};
-  else if (equip === "dumbbell") eqRank = {dumbbell:0, bodyweight:1, gym:2};
-  else eqRank = {bodyweight:0, dumbbell:1, gym:2};
   var allowed = {beginner:["初级"], intermediate:["初级","中级"], advanced:["初级","中级","高级"]};
   var levelAllowed = allowed[level] || ["初级"];
   var filtered = EXES.filter(function(e) {
@@ -629,8 +669,8 @@ function getExes(muscle, equip, level) {
     var da = diffRank[a.diff] || 0, db = diffRank[b.diff] || 0;
     if (level === "advanced") { var t = da; da = db; db = t; }
     if (da !== db) return da - db;
-    var ea = (eqRank[a.eq] !== undefined) ? eqRank[a.eq] : 9;
-    var eb = (eqRank[b.eq] !== undefined) ? eqRank[b.eq] : 9;
+    var ea = getEqRank(a, equip, level);
+    var eb = getEqRank(b, equip, level);
     return ea - eb;
   });
   return filtered;
@@ -639,6 +679,15 @@ function getExes(muscle, equip, level) {
 function pickExes(arr, count, weekOffset) {
   if (!arr || !arr.length) return [];
   var off = weekOffset || 0;
+  // 器械优先分组旋转: 仅当数组按器械优先排序(新手gym)时生效
+  // 器械组/非器械组各自按周轮换, 保证器械永远优先取到, 同时保持每周动作多样性
+  if (arr.length > 1 && isMachineEx(arr[0])) {
+    var machines = arr.filter(isMachineEx);
+    var others = arr.filter(function(e){ return !isMachineEx(e); });
+    function rot(g){ return g.slice(off % g.length).concat(g.slice(0, off % g.length)); }
+    var combo = rot(machines).concat(rot(others));
+    return combo.slice(0, Math.min(count, combo.length));
+  }
   // 按周轮换:将数组旋转 off 位,让不同周选不同动作
   var rotated = arr.slice(off % arr.length).concat(arr.slice(0, off % arr.length));
   return rotated.slice(0, Math.min(count, rotated.length));
@@ -1382,6 +1431,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   }
 
 function doGenerate() {
+  _weekAdvancedKey = null; // 每次重新生成后允许新的跳周检测
   var btn = document.getElementById("genBtn");
   if (btn) {
     btn.classList.add("loading");
@@ -1418,6 +1468,8 @@ function doGenerate() {
       var equip = goal === "marathon"
         ? (document.querySelector('input[name="runEquip"]:checked') || {}).value || "outdoor"
         : (equipEl ? equipEl.value : "gym");
+      // GA4: 计划生成
+      if (typeof track === 'function') track('generate_plan', { goal: goal, level: level, days: days, equip: equip, week: currentWeek });
 
       var cfg = CONFIGS[level] || CONFIGS.beginner;
       var goalCfg = cfg[goal] || cfg.muscle;
@@ -1534,7 +1586,7 @@ function buildMusclePlan(level, days, equip, wOff) {
 
 function buildStrengthPlan(level, days, equip, wOff) {
   var sq = getExes("腿",equip,level).filter(function(e){return e.n.indexOf("深蹲")>=0||e.n.indexOf("腿举")>=0;});
-  var bp = getExes("胸",equip,level).filter(function(e){return e.n.indexOf("卧推")>=0||e.n.indexOf("俯卧撑")>=0;});
+  var bp = getExes("胸",equip,level).filter(function(e){return e.n.indexOf("卧推")>=0||e.n.indexOf("俯卧撑")>=0||e.n.indexOf("推胸")>=0;});
   var rw = getExes("背",equip,level).filter(function(e){return e.n.indexOf("划船")>=0||e.n.indexOf("引体")>=0||e.n.indexOf("下拉")>=0;});
   var pr = getExes("肩",equip,level).filter(function(e){return e.n.indexOf("肩推")>=0||e.n.indexOf("推举")>=0;});
   var dl = getExes("腿",equip,level).filter(function(e){return e.n.indexOf("硬拉")>=0;});
@@ -1866,19 +1918,30 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
 function renderWeekBar(goal) {
   var isMarathon = goal === "marathon";
   var totalWeeks = isMarathon ? 16 : getCycleLength();
+  // 逐周解锁: 当前周及之前可点(回顾), 未来周锁定防剧透
+  // 循环模式: currentWeek 持续累加, 超过总周数说明已走完一个完整周期 → 全解锁
+  var allUnlocked = !isMarathon && currentWeek > totalWeeks;
   var html = '<div class="week-bar">';
   if (isMarathon) {
     MARATHON_PHASES.forEach(function(phase){
       var pActive = phase.weeks.indexOf(currentWeek) >= 0;
       html += '<span style="flex-shrink:0;padding:8px 6px;font-size:11px;font-weight:600;color:'+phase.color+';border-left:2px solid '+(pActive?phase.color:'transparent')+';margin-right:2px;">'+phase.name+'</span>';
       phase.weeks.forEach(function(w){
-        html += '<div class="week-btn'+(w===currentWeek?' active':'')+'" style="padding:6px 9px;font-size:11px;min-width:32px;text-align:center;'+(w===currentWeek?'':'')+'" onclick="setWeek('+w+')">'+w+'</div>';
+        if (w > currentWeek) {
+          html += '<div class="week-btn locked" style="padding:6px 9px;font-size:11px;min-width:32px;text-align:center;" onclick="showToast(\'完成第'+(w-1)+'周后解锁\')" title="完成第'+(w-1)+'周后解锁">'+w+' 🔒</div>';
+        } else {
+          html += '<div class="week-btn'+(w===currentWeek?' active':'')+'" style="padding:6px 9px;font-size:11px;min-width:32px;text-align:center;'+(w===currentWeek?'':'')+'" onclick="setWeek('+w+')">'+w+'</div>';
+        }
       });
     });
   } else {
     var wrappedWeek = ((currentWeek - 1) % totalWeeks) + 1;
     for (var i=1; i<=totalWeeks; i++) {
-      html += '<div class="week-btn'+(i===wrappedWeek?' active':'')+'" onclick="setWeek('+i+')">第'+i+'周</div>';
+      if (!allUnlocked && i > currentWeek) {
+        html += '<div class="week-btn locked" onclick="showToast(\'完成第'+(i-1)+'周后解锁\')" title="完成第'+(i-1)+'周后解锁">第'+i+'周 🔒</div>';
+      } else {
+        html += '<div class="week-btn'+(i===wrappedWeek?' active':'')+'" onclick="setWeek('+i+')">第'+i+'周</div>';
+      }
     }
   }
   html += '</div>';
@@ -3492,7 +3555,21 @@ function stopTimer() {
 
 // ============ 周期切换 ============
 function setWeek(w) {
+  // 逐周解锁守卫: 未来周拦截(循环模式走完一个完整周期后全解锁)
+  if (w > currentWeek) {
+    var tl = (lastPlan && lastPlan.goal === 'marathon') ? 16 : getCycleLength();
+    if (currentWeek <= tl) {
+      showToast('完成第' + currentWeek + '周后解锁');
+      return;
+    }
+  }
   currentWeek = w;
+  _weekAdvancedKey = null; // 手动切周后允许重新跳周检测
+  if (lastPlan) {
+    lastPlan.week = w;
+    localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
+  }
+  savePrefs();
   doGenerate();
 }
 
@@ -4617,7 +4694,9 @@ function loadPrefs() {
     if (p.height) document.getElementById('bodyHeight').value = p.height;
     if (p.age) document.getElementById('bodyAge').value = p.age;
     if (p.cycle) currentCycle = p.cycle;
-    if (p.week) currentWeek = p.week;
+    // 周数以 lastPlan.week 为准(prefs.week 可能因手动切周而过期)
+    // loadPrefs 在 loadAllData 之后执行,这里只兜底无计划时的周数恢复
+    if (p.week && (!lastPlan || !lastPlan.week)) currentWeek = p.week;
     if (p.cycleLength) {
       document.querySelectorAll('#cycleLenChips .chip').forEach(function(c){ c.classList.remove("active"); });
       var cc = document.querySelector('#cycleLenChips .chip[data-cycle="'+p.cycleLength+'"]');
@@ -4639,6 +4718,8 @@ function switchTab(btn) {
   btn.setAttribute("tabindex", "0");
   var tab = btn.dataset.tab;
   document.getElementById(tab).classList.add("active");
+  // GA4: SPA 页面浏览
+  if (typeof track === 'function') track('page_view', { page_title: tab });
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
   if (tab === "page-community") { renderCommunity(); checkFirstVisitGuide(); }
@@ -5011,6 +5092,7 @@ function openTimerFab() {
 }
 
 function startRestTimerCustom(sec) {
+  if (typeof track === 'function') track('timer_start', { sec: sec });
   // 高亮当前预设
   var presets = document.querySelectorAll("#timerPresets .timer-preset");
   presets.forEach(function(p){ p.classList.remove("active"); });
@@ -5391,6 +5473,7 @@ function switchRMFormula(f, btn) {
 }
 
 function calc1RM() {
+  if (typeof track === 'function') track('calc_1rm');
   var w = parseFloat(document.getElementById("rmWeight").value);
   var r = parseInt(document.getElementById("rmReps").value);
   var res = document.getElementById("rmResult");

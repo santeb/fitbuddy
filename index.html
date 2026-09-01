@@ -135,6 +135,7 @@ input,select{font-family:inherit;}
 .week-bar::-webkit-scrollbar{height:0;}
 .week-btn{flex-shrink:0;padding:8px 16px;border:1.5px solid var(--border);border-radius:20px;font-size:13px;font-weight:600;background:var(--card);color:var(--text);cursor:pointer;transition:all .2s;}
 .week-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+.week-btn.locked{opacity:.45;border-style:dashed;background:transparent;color:var(--text3);cursor:not-allowed;}
 .week-info{background:var(--primary-light);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:var(--primary-dark);font-weight:500;}
 [data-theme="dark"] .week-info{color:var(--primary);}
 
@@ -1376,9 +1377,10 @@ input,select{font-family:inherit;}
 </div>
 
 
-<script src="data-constants.js?v=21" defer></script>
+<script src="analytics.js?v=1" defer></script>
+<script src="data-constants.js?v=22" defer></script>
 
-<script src="planner-core.js?v=24" defer></script>
+<script src="planner-core.js?v=27" defer></script>
 <script src="pro-tools.js?v=3" defer></script>
 <script src="pets.js" defer></script>
 <script src="community.js" defer></script>
