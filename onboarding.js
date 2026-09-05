@@ -146,8 +146,13 @@
     });
   };
 
-  // 首访且没有老计划才自动弹
+  // 首访且没有老计划才自动弹 (深链用户 deeplink.js 已标记 _deepLinked, 不弹)
   if (!seen() && !hasPlan()) {
-    setTimeout(function () { window.showOnboarding(true); }, 600);
+    setTimeout(function () {
+      // defer 脚本按文档顺序执行, deeplink.js 在 onboarding.js 之后跑,
+      // 600ms 后它早已设好 _deepLinked, 此处再确认一次
+      if (window._deepLinked) return;
+      window.showOnboarding(true);
+    }, 600);
   }
 })();
