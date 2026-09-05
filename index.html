@@ -286,6 +286,8 @@ input,select{font-family:inherit;}
 .data-mgmt-btn{flex:1;padding:10px;border-radius:12px;font-size:13px;font-weight:600;border:none;cursor:pointer;transition:all .2s;text-align:center;}
 .data-mgmt-btn.export{background:#EFF6FF;color:#3B82F6;}
 .data-mgmt-btn.import{background:#FEF3C7;color:#D97706;}
+.data-mgmt-btn.code{background:#ECFDF5;color:#059669;}
+.data-mgmt-btn.restore{background:#F5F3FF;color:#7C3AED;}
 .data-mgmt-btn.reset{background:#FEE2E2;color:#DC2626;margin-top:8px;width:100%;}
 .data-mgmt-btn:active{transform:scale(0.96);}
 /* 每周总结弹窗 */
@@ -1312,6 +1314,11 @@ input,select{font-family:inherit;}
         <button class="data-mgmt-btn export" onclick="exportData()">📤 导出数据</button>
         <button class="data-mgmt-btn import" onclick="document.getElementById('importFile').click()">📥 导入数据</button>
       </div>
+      <div class="data-mgmt-row" style="margin-top:8px">
+        <button class="data-mgmt-btn code" onclick="showBackupModal()">🧩 生成恢复码</button>
+        <button class="data-mgmt-btn restore" onclick="showRestoreModal()">📮 恢复码恢复</button>
+      </div>
+      <div id="fbBackupHint" style="font-size:11px;color:var(--text,#999);opacity:.55;margin-top:8px;text-align:center;"></div>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
       <button class="data-mgmt-btn reset" onclick="resetAllData()">🔄 重置所有数据</button>
     </div>
@@ -1413,6 +1420,7 @@ input,select{font-family:inherit;}
 <script src="community.js" defer></script>
 <script src="deeplink.js?v=1" defer></script>
 <script src="install-banner.js?v=1" defer></script>
+<script src="backup-code.js?v=1" defer></script>
 
 <footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
   <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
