@@ -15,7 +15,7 @@
  * 接口: track(event, params) —— 与旧 GA4 版完全兼容, 业务代码无需改动
  */
 (function () {
-  var LA_ID = '31594463R9hneDwffUVb'; // 51LA 站点ID (FitBuddy / santeb.github.io)
+  var LA_ID = '3R6heDwfTUvB37ND'; // 51LA 上报ID (官方代码里的 id/ck, 不是应用列表的"统计ID")
   try { LA_ID = LA_ID || localStorage.getItem('fitbuddy_laid') || ''; } catch (e) {}
 
   window._laReady = window._laReady || false;
