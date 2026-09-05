@@ -18,12 +18,15 @@
   var LA_ID = '31594463R9hneDwffUVb'; // 51LA 站点ID (FitBuddy / santeb.github.io)
   try { LA_ID = LA_ID || localStorage.getItem('fitbuddy_laid') || ''; } catch (e) {}
 
-  window._laReady = false;
-  window._laPending = [];
+  window._laReady = window._laReady || false;
+  window._laPending = window._laPending || [];
 
   if (!LA_ID) return; // 未配置: 零开销
 
-  // 动态加载 51LA SDK
+  // index.html 里已有静态 <script id="LA_COLLECT"> (51LA 后台靠它检测代码, 初始化也在那边)
+  if (document.getElementById('LA_COLLECT')) return;
+
+  // 兜底: 页面没有静态标签时才动态加载 (正常线上不会走到这里)
   var s = document.createElement('script');
   s.charset = 'UTF-8';
   s.id = 'LA_COLLECT';

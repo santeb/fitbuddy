@@ -3,6 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- 51LA v6 统计: 静态标签必须写在 HTML 里, 后台才能检测到代码 (动态注入爬虫看不见) -->
+<script id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js"></script>
+<script>
+  (function () {
+    var LA_ID = '31594463R9hneDwffUVb'; // 51LA 站点ID (FitBuddy / santeb.github.io)
+    function init51la() {
+      try {
+        LA.init({ id: LA_ID, ck: LA_ID, autoTrack: true, hashMode: false });
+        window._laReady = true;
+        while (window._laPending && window._laPending.length) {
+          var t = window._laPending.shift();
+          try { LA.track(t[0], t[1] || {}); } catch (e) {}
+        }
+      } catch (e) {}
+    }
+    window._laPending = window._laPending || [];
+    if (window.LA) { init51la(); }
+    else {
+      var t = 0;
+      (function wait() {
+        if (window.LA) init51la();
+        else if (++t < 100) setTimeout(wait, 100); // 最多等10秒
+      })();
+    }
+  })();
+</script>
 <title>FitBuddy 健身助手 - 免费周期化训练计划生成器</title>
 <meta name="description" content="FitBuddy 是一款免费的个人健身计划生成工具，支持增肌/力量/减脂/心肺/马拉松5大目标，内置周期化训练逻辑、100+动作库、营养计算器及进度追踪，无需注册，无广告。">
 <meta name="keywords" content="健身计划,训练计划生成器,周期化训练,增肌,减脂,马拉松训练,自重训练,健身助手">
@@ -1377,7 +1403,7 @@ input,select{font-family:inherit;}
 </div>
 
 
-<script src="analytics.js?v=3" defer></script>
+<script src="analytics.js?v=4" defer></script>
 <script src="data-constants.js?v=22" defer></script>
 
 <script src="planner-core.js?v=27" defer></script>
