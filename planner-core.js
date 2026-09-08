@@ -1047,6 +1047,12 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   }
   var warmup = getWarmup(level, goal);
   var tips = GOAL_TIPS[goal] || [];
+  // 运动消耗:用体重+目标+水平的正确算法(而非逐动作瞎估)
+  // 注意:必须在营养计算块之前算好,旧代码在此处之前引用 dayCalBurns 会 ReferenceError 导致营养面板静默失效
+  var userWeight = parseFloat(document.getElementById('bodyWeight').value) || 70;
+  var dayCalBurns = (trainingDays || []).map(function(day){
+    return estimateDayCalBurn(day, goal, userWeight, level);
+  });
   var nutrition = null;
   try {
     var weight = parseFloat(document.getElementById('bodyWeight').value) || 0;
@@ -1099,11 +1105,6 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   html += renderRecoveryCard();
   // 训练要点
   html += renderTipsBanner(tips);
-  // 运动消耗:用体重+目标+水平的正确算法(而非逐动作瞎估)
-  var userWeight = parseFloat(document.getElementById('bodyWeight').value) || 70;
-  var dayCalBurns = trainingDays.map(function(day){
-    return estimateDayCalBurn(day, goal, userWeight, level);
-  });
   // 营养建议面板(仅填了身体数据时显示)
   if (nutrition && nutrition.targetCal) {
     var avgTrainBurn = 0, maxTrainBurn = 0;
@@ -1145,10 +1146,14 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   document.getElementById("planResult").innerHTML = html;
   updateTodayBanner();
   } catch(renderErr) {
+    console.error('渲染计划出错:', renderErr);
+    var _stackLine = (renderErr.stack || '').split('\n')[1] || '';
     document.getElementById("planResult").innerHTML = '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;color:var(--text);">'
       + '<div style="font-size:32px;margin-bottom:8px;">\u26a0\ufe0f</div>'
       + '<div style="font-size:15px;font-weight:700;">\u751f\u6210\u8ba1\u5212\u51fa\u9519</div>'
       + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">' + (renderErr.message || String(renderErr)) + '</div>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:4px;word-break:break-all;">' + (renderErr.name || 'Error') + ' · ' + _stackLine.trim().slice(0, 120) + '</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">刷新页面即可恢复，数据不会丢失</div>'
       + '</div>';
   }
 }
@@ -1484,9 +1489,9 @@ function doGenerate() {
         trainingDays = buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset);
       }
       // 伤病过滤
-      trainingDays.forEach(function(day){ if (day.exes) day.exes.forEach(function(ex){ delete ex._injured; }); });
+      trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ delete ex._injured; }); });
       if (injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length) {
-        trainingDays.forEach(function(day){ if (day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
+        trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
       }
       // 保存到 lastPlan
       lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek };
@@ -1505,11 +1510,14 @@ function doGenerate() {
         btn.classList.remove("loading");
         btn.innerHTML = '生成计划';
       }
+      var _stackLine2 = (e.stack || '').split('\n')[1] || '';
       document.getElementById("planResult").innerHTML =
         '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;">'+
         '<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'+
         '<div style="font-size:15px;font-weight:700;">生成出错</div>'+
-        '<div style="font-size:13px;color:var(--text3);margin-top:4px;">'+e.message+'</div></div>';
+        '<div style="font-size:13px;color:var(--text3);margin-top:4px;">'+e.message+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px;word-break:break-all;">'+(e.name || 'Error')+' · ' + _stackLine2.trim().slice(0, 120) + '</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:8px;">刷新页面即可恢复，数据不会丢失</div></div>';
     }
     if (btn) {
       btn.classList.remove("loading");
@@ -2740,10 +2748,30 @@ function confirmRemoveEx(dayIdx, exIdx) {
 }
 
 // 编辑动作后保存并重新渲染
+// 注意:不走 doGenerate() 大链路(读表单/伤病过滤/场景同步等环节在部分手机浏览器上会抛错),
+// 改用与页面刷新恢复(restoreLastPlan)完全相同的直接渲染路径——该路径已被验证稳定。
 function refreshPlanAfterEdit(msg) {
   localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
-  _skipRebuild = true;
-  doGenerate();
+  try {
+    var _cfg = CONFIGS[lastPlan.level] || CONFIGS.beginner;
+    var _goalCfg = _cfg[lastPlan.goal] || _cfg.muscle;
+    doGenerateInternal(lastPlan.goal, lastPlan.level, lastPlan.days, lastPlan.equip,
+      lastPlan.trainingDays, lastPlan.schedule || getSchedule(lastPlan.days), _cfg, _goalCfg);
+  } catch(e) {
+    console.error('编辑后重渲染失败:', e);
+    try {
+      // 降级:再尝试完整生成路径
+      _skipRebuild = true;
+      doGenerate();
+    } catch(e2) {
+      console.error('降级生成也失败:', e2);
+      document.getElementById("planResult").innerHTML =
+        '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;">'+
+        '<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'+
+        '<div style="font-size:15px;font-weight:700;">显示出了点问题</div>'+
+        '<div style="font-size:13px;color:var(--text3);margin-top:4px;">刷新页面即可恢复,你的计划数据没有丢失</div></div>';
+    }
+  }
   if (msg) showToast(msg);
 }
 
