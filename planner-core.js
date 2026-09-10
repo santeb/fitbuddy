@@ -1152,14 +1152,12 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   updateTodayBanner();
   } catch(renderErr) {
     console.error('渲染计划出错:', renderErr);
-    var _stackLine = (renderErr.stack || '').split('\n')[1] || '';
-    document.getElementById("planResult").innerHTML = '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;color:var(--text);">'
-      + '<div style="font-size:32px;margin-bottom:8px;">\u26a0\ufe0f</div>'
-      + '<div style="font-size:15px;font-weight:700;">\u751f\u6210\u8ba1\u5212\u51fa\u9519</div>'
-      + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">' + (renderErr.message || String(renderErr)) + '</div>'
-      + '<div style="font-size:11px;color:var(--text3);margin-top:4px;word-break:break-all;">' + (renderErr.name || 'Error') + ' · ' + _stackLine.trim().slice(0, 120) + '</div>'
-      + '<div style="font-size:12px;color:var(--text3);margin-top:8px;">刷新页面即可恢复，数据不会丢失</div>'
-      + '</div>';
+    // 改用顶部错误条(保留已渲染内容 + 暴露完整堆栈 + 一键复制/重新渲染),原 innerHTML 替换会让用户觉得页面崩了
+    showPlanError(renderErr, '渲染计划出错');
+    // 兜底:把页头几个关键按钮/信息条也清掉,避免部分渲染残留
+    try {
+      var h = document.getElementById('cycleInfo'); if (h) h.innerHTML = '';
+    } catch(_) {}
   }
 }
 
@@ -1515,14 +1513,7 @@ function doGenerate() {
         btn.classList.remove("loading");
         btn.innerHTML = '生成计划';
       }
-      var _stackLine2 = (e.stack || '').split('\n')[1] || '';
-      document.getElementById("planResult").innerHTML =
-        '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;">'+
-        '<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'+
-        '<div style="font-size:15px;font-weight:700;">生成出错</div>'+
-        '<div style="font-size:13px;color:var(--text3);margin-top:4px;">'+e.message+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px;word-break:break-all;">'+(e.name || 'Error')+' · ' + _stackLine2.trim().slice(0, 120) + '</div>'+
-        '<div style="font-size:12px;color:var(--text3);margin-top:8px;">刷新页面即可恢复，数据不会丢失</div></div>';
+      showPlanError(e, '生成计划失败');
     }
     if (btn) {
       btn.classList.remove("loading");
@@ -2753,9 +2744,9 @@ function confirmRemoveEx(dayIdx, exIdx) {
 }
 
 // 编辑动作后保存并重新渲染
-// 注意:不走 doGenerate() 大链路(读表单/伤病过滤/场景同步等环节在部分手机浏览器上会抛错),
-// 改用与页面刷新恢复(restoreLastPlan)完全相同的直接渲染路径——该路径已被验证稳定。
+// 走的是与页面刷新恢复(restoreLastPlan)完全相同的直接渲染路径——该路径已被验证稳定。
 function refreshPlanAfterEdit(msg) {
+  if (!lastPlan) { if (msg) showToast(msg); return; }
   localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
   try {
     var _cfg = CONFIGS[lastPlan.level] || CONFIGS.beginner;
@@ -2763,21 +2754,97 @@ function refreshPlanAfterEdit(msg) {
     doGenerateInternal(lastPlan.goal, lastPlan.level, lastPlan.days, lastPlan.equip,
       lastPlan.trainingDays, lastPlan.schedule || getSchedule(lastPlan.days), _cfg, _goalCfg);
   } catch(e) {
-    console.error('编辑后重渲染失败:', e);
-    try {
-      // 降级:再尝试完整生成路径
-      _skipRebuild = true;
-      doGenerate();
-    } catch(e2) {
-      console.error('降级生成也失败:', e2);
-      document.getElementById("planResult").innerHTML =
-        '<div style="background:var(--card);border-radius:16px;padding:24px;text-align:center;">'+
-        '<div style="font-size:32px;margin-bottom:8px;">⚠️</div>'+
-        '<div style="font-size:15px;font-weight:700;">显示出了点问题</div>'+
-        '<div style="font-size:13px;color:var(--text3);margin-top:4px;">刷新页面即可恢复,你的计划数据没有丢失</div></div>';
-    }
+    console.error('编辑后渲染失败:', e);
+    // 不再降级调 doGenerate()(会清空 planResult 残留内容并可能再次抛错),
+    // 直接走顶部错误条 + 保留原内容,用户可点「重新渲染」走稳定路径
+    showPlanError(e, '编辑后渲染失败');
   }
   if (msg) showToast(msg);
+}
+
+// ============ 错误兜底: 顶部细条(不替换 planResult) ============
+// 原本 doGenerate / refreshPlanAfterEdit 在 catch 里把整个 planResult.innerHTML 替换成错误卡片,
+// 会让用户觉得"页面坏了",但其实 lastPlan 已经存到 localStorage,刷新就走 restoreLastPlan 恢复。
+// 现在只在 planResult 顶部插一条细窄的错误条 + 错误详情(可折叠) + 一键复制/重新渲染按钮,
+// 保留原内容,降低炸点视觉冲击,并把根因信息留给开发者。
+window.__lastPlanError = null;
+function showPlanError(e, ctx) {
+  try {
+    var msg = (e && e.message) || '未知错误';
+    var stack = (e && e.stack) || '';
+    var detail = stack.split('\n').slice(0, 4).join('\n');
+    var pr = document.getElementById("planResult");
+    var old = document.getElementById("__planErrorBar");
+    if (old) old.remove();
+    if (!pr) {
+      // 极端: planResult 都没了,只能 append 到 body 顶部
+      var fb = document.createElement('div');
+      fb.id = '__planErrorBar';
+      fb.style.cssText = 'background:rgba(220,38,38,.1);color:#7f1d1d;padding:12px 16px;font-size:13px;text-align:center;border-bottom:1px solid #fca5a5;';
+      fb.innerHTML = '⚠️ ' + (ctx || '显示出了问题') + ' · 数据已暂存,刷新即可恢复';
+      document.body.insertAdjacentElement('afterbegin', fb);
+      window.__lastPlanError = { ctx: ctx || 'plan error', message: msg, stack: stack };
+      return;
+    }
+    pr.insertAdjacentHTML('afterbegin',
+      '<div id="__planErrorBar" style="background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);'+
+      'border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#7f1d1d;">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'+
+          '<div><b>⚠️ ' + (ctx || '显示出了问题') + '</b>'+
+          '<span style="margin-left:6px;color:#991b1b;">已暂存,刷新或点「重新渲染」即可恢复</span></div>'+
+          '<div style="display:flex;gap:6px;flex-shrink:0;">'+
+            '<button onclick="__copyPlanErrorStack(this)" '+
+              'style="background:#fff;border:1px solid #fca5a5;border-radius:6px;padding:5px 10px;'+
+              'font-size:12px;color:#7f1d1d;cursor:pointer;">📋 复制报错</button>'+
+            '<button onclick="__reRenderPlan()" '+
+              'style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:5px 12px;'+
+              'font-size:12px;cursor:pointer;">🔁 重新渲染</button>'+
+          '</div>'+
+        '</div>'+
+        '<details style="margin-top:8px;">'+
+          '<summary style="cursor:pointer;font-size:11px;color:#475569;user-select:none;">'+
+            '查看详情 (' + msg.replace(/</g,'&lt;') + ')</summary>'+
+          '<pre style="background:#fff;padding:8px;border-radius:6px;font-size:11px;'+
+            'white-space:pre-wrap;word-break:break-all;margin:6px 0 0;max-height:140px;overflow:auto;'+
+            'color:#1f2937;border:1px solid #fee2e2;">' +
+            (detail || '').replace(/</g,'&lt;') +
+          '</pre>'+
+        '</details>'+
+      '</div>'
+    );
+    window.__lastPlanError = { ctx: ctx || 'plan error', message: msg, stack: stack };
+    if (typeof console !== 'undefined') console.error('[showPlanError]', ctx, e);
+  } catch(_) {
+    // 兜底也不能炸
+  }
+}
+
+function __copyPlanErrorStack(btn) {
+  var data = window.__lastPlanError || {};
+  var txt = '[FitBuddy] ' + (data.ctx || 'plan error') + '\n' +
+            (data.message || '') + '\n\n' + (data.stack || '');
+  function ok() {
+    if (btn) {
+      var old = btn.innerHTML;
+      btn.innerHTML = '✓ 已复制';
+      btn.disabled = true;
+      setTimeout(function(){ btn.innerHTML = old; btn.disabled = false; }, 1500);
+    }
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(ok, function(){ window.prompt('手动复制:', txt); });
+  } else {
+    window.prompt('手动复制:', txt);
+  }
+}
+
+function __reRenderPlan() {
+  // 走与页面刷新恢复完全相同的稳定路径
+  try {
+    if (typeof restoreLastPlan === 'function') { restoreLastPlan(); if (typeof showToast === 'function') showToast('✅ 已重新渲染'); return; }
+  } catch(e) { showPlanError(e, '重新渲染失败'); return; }
+  // 兜底: 调 location.reload 让用户回到稳定路径
+  if (confirm('重新渲染失败,是否刷新页面?\n(数据已暂存,刷新不会丢失)')) location.reload();
 }
 
 // ============ 折叠/完成/计时器 ============
