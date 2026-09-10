@@ -497,8 +497,10 @@ function checkAutoAdvanceWeek() {
 
   // 前进!
   currentWeek++;
+  maxWeek = Math.max(maxWeek, currentWeek);
   if (lastPlan) {
     lastPlan.week = currentWeek;
+    lastPlan.maxWeek = maxWeek;
     localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
   }
   savePrefs();
@@ -595,6 +597,8 @@ function loadAllData() {
       lastPlan = plan;
       if (plan.cycle) currentCycle = plan.cycle;
       if (plan.week) currentWeek = plan.week;
+      // 兼容旧数据:没 maxWeek 字段就 fallback 到 currentWeek(老用户升级后不会回退已解锁的周)
+      maxWeek = plan.maxWeek || currentWeek;
     }
   } catch(e) { console.warn('fitbuddy_lastplan 解析失败,数据已重置'); localStorage.removeItem('fitbuddy_lastplan'); }
   try {
@@ -877,6 +881,7 @@ function estimateDayCalBurn(day, goal, weight, level) {
 
 // ============ 周期/伤病/跑鞋/训练日志 状态 ============
 var currentWeek = 1;
+var maxWeek = 1;  // 已到达过的最远周(回看时不变,只增不减,用于周锁判断)
 var currentCycle = 1;
 var lastPlan = null;
 var _skipRebuild = false; // 动作替换后跳过buildPlan
@@ -1494,7 +1499,7 @@ function doGenerate() {
         trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
       }
       // 保存到 lastPlan
-      lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek };
+      lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄,用于心率 Zone 计算
       var ageVal = parseInt(document.getElementById('bodyAge').value) || 0;
@@ -1926,16 +1931,16 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
 function renderWeekBar(goal) {
   var isMarathon = goal === "marathon";
   var totalWeeks = isMarathon ? 16 : getCycleLength();
-  // 逐周解锁: 当前周及之前可点(回顾), 未来周锁定防剧透
+  // 逐周解锁: maxWeek 及之前可点(回顾), 未来周锁定防剧透
   // 循环模式: currentWeek 持续累加, 超过总周数说明已走完一个完整周期 → 全解锁
-  var allUnlocked = !isMarathon && currentWeek > totalWeeks;
+  var allUnlocked = !isMarathon && maxWeek > totalWeeks;
   var html = '<div class="week-bar">';
   if (isMarathon) {
     MARATHON_PHASES.forEach(function(phase){
       var pActive = phase.weeks.indexOf(currentWeek) >= 0;
       html += '<span style="flex-shrink:0;padding:8px 6px;font-size:11px;font-weight:600;color:'+phase.color+';border-left:2px solid '+(pActive?phase.color:'transparent')+';margin-right:2px;">'+phase.name+'</span>';
       phase.weeks.forEach(function(w){
-        if (w > currentWeek) {
+        if (w > maxWeek) {
           html += '<div class="week-btn locked" style="padding:6px 9px;font-size:11px;min-width:32px;text-align:center;" onclick="showToast(\'完成第'+(w-1)+'周后解锁\')" title="完成第'+(w-1)+'周后解锁">'+w+' 🔒</div>';
         } else {
           html += '<div class="week-btn'+(w===currentWeek?' active':'')+'" style="padding:6px 9px;font-size:11px;min-width:32px;text-align:center;'+(w===currentWeek?'':'')+'" onclick="setWeek('+w+')">'+w+'</div>';
@@ -1945,7 +1950,7 @@ function renderWeekBar(goal) {
   } else {
     var wrappedWeek = ((currentWeek - 1) % totalWeeks) + 1;
     for (var i=1; i<=totalWeeks; i++) {
-      if (!allUnlocked && i > currentWeek) {
+      if (!allUnlocked && i > maxWeek) {
         html += '<div class="week-btn locked" onclick="showToast(\'完成第'+(i-1)+'周后解锁\')" title="完成第'+(i-1)+'周后解锁">第'+i+'周 🔒</div>';
       } else {
         html += '<div class="week-btn'+(i===wrappedWeek?' active':'')+'" onclick="setWeek('+i+')">第'+i+'周</div>';
@@ -3583,11 +3588,11 @@ function stopTimer() {
 
 // ============ 周期切换 ============
 function setWeek(w) {
-  // 逐周解锁守卫: 未来周拦截(循环模式走完一个完整周期后全解锁)
-  if (w > currentWeek) {
+  // 守卫: 只能跳到已解锁过的周(maxWeek);走完一整圈后自动全解锁
+  if (w > maxWeek) {
     var tl = (lastPlan && lastPlan.goal === 'marathon') ? 16 : getCycleLength();
-    if (currentWeek <= tl) {
-      showToast('完成第' + currentWeek + '周后解锁');
+    if (maxWeek <= tl) {
+      showToast('完成第' + maxWeek + '周后解锁');
       return;
     }
   }
@@ -3595,6 +3600,7 @@ function setWeek(w) {
   _weekAdvancedKey = null; // 手动切周后允许重新跳周检测
   if (lastPlan) {
     lastPlan.week = w;
+    lastPlan.maxWeek = maxWeek;  // 持久化(兼容老数据,强制写入)
     localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
   }
   savePrefs();
@@ -5990,7 +5996,7 @@ function renderCycleCalendar() {
   for (var w = 1; w <= totalWeeks; w++) {
     var isCurrent = w === currentWeek;
     var isDeload = goal === 'marathon' ? (w % 4 === 0) : (w === totalWeeks);
-    var isCompleted = w < currentWeek;
+    var isCompleted = w < maxWeek;
     var intensityPct;
     if (goal === 'marathon') {
       // Marathon: progressive then taper
