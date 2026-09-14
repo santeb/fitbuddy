@@ -4908,21 +4908,6 @@ function renderProgress() {
     html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
   }
 
-  // 图表:训练量走势(从训练日志聚合每日总容量 weight×reps)
-  var volByDate = {};
-  Object.keys(trainingLog).forEach(function(exName){
-    trainingLog[exName].forEach(function(e){
-      if (e.weight && e.reps) {
-        volByDate[e.date] = (volByDate[e.date] || 0) + (e.weight * e.reps);
-      }
-    });
-  });
-  var volDates = Object.keys(volByDate).sort();
-  if (volDates.length >= 2) {
-    html += collapsibleCard('pc-vol-trend', '📊 训练量走势',
-      '<div class="chart-wrap"><canvas id="chartVolumeTrend" style="width:100%;height:200px;"></canvas></div>', false);
-  }
-
   // 跑鞋里程
   var activeShoes = shoeList.filter(function(s){ return !s.retired; });
   var retiredShoes = shoeList.filter(function(s){ return s.retired; });
@@ -5091,11 +5076,6 @@ function renderProgress() {
     // 渲染部位训练分布
     if (hasMuscleDist) {
       drawDonutChart('chartMuscle', muscleSegments);
-    }
-    // 渲染训练量走势
-    if (volDates.length >= 2) {
-      var volData = volDates.map(function(d){ return {l: d.slice(5), v: Math.round(volByDate[d]/100)*100}; });
-      drawChart('chartVolumeTrend', volData, {type:'bar', color:'#8B5CF6', yMax:0, title:''});
     }
     // 渲染身体数据图表
     renderBodyLogChart('chartWeight', 'weight', '#FF6B35', '体重');
