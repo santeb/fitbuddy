@@ -495,6 +495,11 @@ function checkAutoAdvanceWeek() {
     }
   }
 
+  // 立即清掉 DOM 勾选(不等 100ms 后的 doGenerate 重渲染)
+  // 防止 doGenerate 延迟/抛错时,用户看到"已跳到第2周但周一/周四还勾着"的残留状态
+  document.querySelectorAll('.ex-check.done').forEach(function(el){ el.classList.remove('done'); el.innerHTML = ''; });
+  document.querySelectorAll('.ex-row.done').forEach(function(el){ el.classList.remove('done'); });
+
   // 前进!
   currentWeek++;
   maxWeek = Math.max(maxWeek, currentWeek);
@@ -766,6 +771,83 @@ function applyBwProgression(ex, shift, level) {
   return ex;
 }
 
+// 🧠 AI 轻量调整: 基于上周完成率动态调整本周递进档位
+// shift 语义: -1(降1档) / 0(基准) / 1(升1档) / 2(升2档) / 3(升3档挑战周)
+// 阈值设计参考: 自然训练者最优容量是周完成率 75-90%,过高过低都不利于进步
+function getAdaptiveShift(originalShift, lastWeekRate) {
+  if (lastWeekRate === null || lastWeekRate === undefined) return originalShift;
+  // 高完成率(>= 85%):信任原计划(用户能承受这个强度)
+  if (lastWeekRate >= 0.85) return originalShift;
+  // 中完成率(60-84%):降低一档(避免过载)
+  if (lastWeekRate >= 0.60) return Math.max(-1, originalShift - 1);
+  // 低完成率(40-59%):回到基准档(0),不再加码
+  if (lastWeekRate >= 0.40) return Math.min(0, Math.max(-1, originalShift));
+  // 极低(< 40%):强制降一档,提示用户"该减量了"
+  return -1;
+}
+
+// 读取上周完成率(扫描 lastPlan 的 trainingDays 中所有动作的 doneKey)
+function getLastWeekCompletionRate() {
+  try {
+    if (!lastPlan || !lastPlan.trainingDays) return null;
+    var lastWk = (lastPlan.week || currentWeek) - 1;
+    if (lastWk < 1) return null; // 第 1 周没有"上周"
+    var pidPrefix = 'fitbuddy_done_' + lastPlan.goal + '_' + lastPlan.level + '_' + lastPlan.days + '_c' + (lastPlan.cycle || currentCycle || 1) + '_w' + lastWk;
+    var totalExes = 0, doneExes = 0;
+    lastPlan.trainingDays.forEach(function(day, di) {
+      if (!day || !day.exes || day.exes.length === 0) return;
+      day.exes.forEach(function(_, ei) {
+        totalExes++;
+        var key = pidPrefix + '_day_' + di + '_ex' + ei;
+        if (localStorage.getItem(key) === '1') doneExes++;
+      });
+    });
+    if (totalExes === 0) return null;
+    return doneExes / totalExes;
+  } catch(e) {
+    return null;
+  }
+}
+
+// 📊 当前 ISO 周(用于询问弹窗"本周不再提醒"标记)
+function getCurrentIsoWeek() {
+  var d = new Date();
+  // 简化版 ISO week:周一为周首
+  var target = new Date(d.valueOf());
+  var dayNr = (d.getDay() + 6) % 7; // 周一=0
+  target.setDate(target.getDate() - dayNr + 3);
+  var firstThursday = target.valueOf();
+  target.setMonth(0, 1);
+  if (target.getDay() !== 4) {
+    target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+  }
+  var weekNum = 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
+  return d.getFullYear() + '-W' + String(weekNum).padStart(2, '0');
+}
+
+// 🧠 AI 降阶询问: 文案常量(san 偏好 - 句尾用问号,不要陈述句)
+var DELOAD_PROMPT_COPY = {
+  title: '上周训练完成率偏低',
+  body: '我注意到你上周训练完成率偏低,是这周计划太难了吗?\n想让计划怎么走?',
+  ctaDown: '降一档,下周更轻松',
+  ctaKeep: '保持原计划(本周不再提醒)',
+  ctaSwitch: '换其他档位'
+};
+
+// 检查本周是否已经被用户确认过
+function isDeloadDismissedThisWeek() {
+  try {
+    return localStorage.getItem('fitbuddy_deload_dismissed_' + getCurrentIsoWeek()) === '1';
+  } catch(e) { return false; }
+}
+
+// 标记本周已确认(任何选择都调用)
+function markDeloadDismissed() {
+  try {
+    localStorage.setItem('fitbuddy_deload_dismissed_' + getCurrentIsoWeek(), '1');
+  } catch(e) {}
+}
+
 function dedup(arr) {
   var seen = {};
   return arr.filter(function(e){ if(!e||seen[e.n])return false; seen[e.n]=true; return true; });
@@ -842,6 +924,159 @@ function calcNutrition(weight, height, age, gender, goal, dayCalBurn) {
   };
 }
 
+// ============ MET 热量模型 ============
+// 公式:kcal = MET × 体重(kg) × 时长(h)
+// MET 基准参考 ACSM《体力活动概要》抗阻训练区间(轻 3.5 / 中 5.0 / 重 6.0),
+// 时长不再用固定常数,而是由 组数 × 次数 + 组间休息 + 换器械 推导出来。
+var FB_MET_MUSCLE = {
+  "腿": 5.5, "背": 5.0, "胸": 4.5, "肩": 4.0, "臂": 3.6,
+  "核心": 3.8, "全身": 5.0, "有氧": 7.5, "康复": 2.5
+};
+// 器械修正:自由重量/器械整体参与肌群更多
+var FB_MET_EQ_MOD = { bodyweight: 1.0, dumbbell: 1.06, gym: 1.14, outdoor: 1.0, treadmill: 1.0 };
+// 难度修正
+var FB_MET_DIFF_MOD = { "初级": 0.88, "中级": 1.0, "高级": 1.16 };
+var FB_SEC_PER_REP = 3;      // 单次 向心+离心 ≈ 3 秒
+var FB_SET_SETUP_SEC = 12;   // 每组之间调整站位/器械
+var FB_EX_SETUP_SEC = 20;    // 换动作间隙(拿器械/看示范)
+var FB_REST_FLOOR = 0.78;    // 休息占比过高时 MET 的下限系数
+var FB_DENSITY_FULL = 0.35;  // 工作占比 ≥35% 视为满强度
+var FB_WARMUP_MIN = 8;       // 计划页推荐的动态热身时长
+var FB_COOLDOWN_MIN = 5;     // 拉伸放松时长
+var FB_WARMUP_MET = 3.5;     // 热身/拉伸强度
+
+// "12-15次" / "8-10次" → 均值次数
+function fbParseReps(str) {
+  if (str === undefined || str === null) return 10;
+  var s = String(str);
+  if (s === "—" || s === "-" || s === "") return 10;
+  var m = s.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/);
+  if (m) return (parseFloat(m[1]) + parseFloat(m[2])) / 2;
+  m = s.match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 10;
+}
+
+// "60秒" / "2分钟" / "90秒" → 秒
+function fbParseRestSec(str) {
+  if (!str) return 60;
+  var s = String(str);
+  var m = s.match(/(\d+(?:\.\d+)?)\s*分钟/);
+  if (m) return parseFloat(m[1]) * 60;
+  m = s.match(/(\d+(?:\.\d+)?)\s*秒/);
+  if (m) return parseFloat(m[1]);
+  m = s.match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 60;
+}
+
+// UI 上的难度文本可能带后缀("中级 · 做不动可退回上一档"),统一归一化
+function fbNormalizeDiff(d) {
+  if (!d) return "初级";
+  var s = String(d);
+  if (s.indexOf("高级") >= 0) return "高级";
+  if (s.indexOf("中级") >= 0) return "中级";
+  if (s.indexOf("初级") >= 0) return "初级";
+  return "初级";
+}
+
+function fbMetOf(m, eq, diff) {
+  var base = FB_MET_MUSCLE[m] || 4.2;
+  var eqm = FB_MET_EQ_MOD[eq] || 1.0;
+  var dfm = FB_MET_DIFF_MOD[diff] || 1.0;
+  return base * eqm * dfm;
+}
+
+// 动作库按名称索引(懒加载,兼容运行中新增的自定义动作)
+var _fbExMetaCache = null;
+var _fbExMetaMissing = {};
+function fbExMeta(name) {
+  if (!name) return null;
+  if (_fbExMetaCache && _fbExMetaCache[name]) return _fbExMetaCache[name];
+  if (_fbExMetaMissing[name]) return null;
+  _fbExMetaCache = {};
+  if (typeof EXES !== "undefined" && EXES && EXES.length) {
+    for (var i = 0; i < EXES.length; i++) {
+      if (EXES[i] && EXES[i].n) _fbExMetaCache[EXES[i].n] = EXES[i];
+    }
+  }
+  var hit = _fbExMetaCache[name] || null;
+  if (!hit) _fbExMetaMissing[name] = 1;
+  return hit;
+}
+
+// 从 CONFIGS 推导当前水平/目标下的单动作处方(组数/次数/组间休息)
+function fbSessionContext(level, goal) {
+  var lv = (typeof CONFIGS !== "undefined" && CONFIGS && CONFIGS[level]) ? CONFIGS[level] : null;
+  if (!lv) return { sets: 3, reps: 10, restSec: 60 };
+  var g = lv[goal] || lv.muscle || {};
+  var repsStr = g.reps;
+  if (!repsStr || repsStr === "—" || repsStr === "-") repsStr = (lv.muscle || {}).reps;
+  return {
+    sets: lv.sets || 3,
+    reps: fbParseReps(repsStr),
+    restSec: fbParseRestSec(g.rest)
+  };
+}
+
+// 单个动作的消耗(kcal):MET × 体重 × 时长,再按 工作/休息 占比稀释
+function fbExerciseKcal(m, eq, diff, ctx, weight) {
+  var met = fbMetOf(m, eq, diff);
+  var sets = ctx.sets, reps = ctx.reps, restSec = ctx.restSec;
+  var workSec = sets * reps * FB_SEC_PER_REP;
+  var idleSec = (sets - 1) * restSec + sets * FB_SET_SETUP_SEC + FB_EX_SETUP_SEC;
+  var totalSec = workSec + idleSec;
+  if (totalSec <= 0) return 0;
+  var density = workSec / totalSec;
+  var densityMod = FB_REST_FLOOR + (1 - FB_REST_FLOOR) * Math.min(1, density / FB_DENSITY_FULL);
+  return Math.round(met * densityMod * weight * (totalSec / 3600));
+}
+
+// 热身 + 拉伸放松的消耗(kcal),按整个训练日计一次
+function fbWarmupKcal(weight) {
+  return FB_WARMUP_MET * weight * ((FB_WARMUP_MIN + FB_COOLDOWN_MIN) / 60);
+}
+
+// 计划中平均每天的动作用数(用于把热身消耗均摊到每个动作)
+function fbAvgExCount(plan) {
+  var exCount = 5;
+  if (plan && plan.trainingDays) {
+    var totalEx = 0, dayCount = 0;
+    plan.trainingDays.forEach(function(d) {
+      if (d.exes && d.exes.length > 0) { totalEx += d.exes.length; dayCount++; }
+    });
+    if (dayCount > 0) exCount = Math.max(1, Math.round(totalEx / dayCount));
+  }
+  return exCount;
+}
+
+// 从动作行的 DOM id(day_<日序号>_ex<动作序号>)数出"当天实际动作数"
+// 热身/拉伸要均摊到当天每个动作上,分母必须用当天真实动作数,
+// 否则动作数 != 计划平均值的日子,训练记录会和计划页日估算对不上
+function fbDayExCount(id) {
+  var m = /^day_(\d+)_ex\d+$/.exec(id || '');
+  if (!m) return 0;
+  try {
+    var rows = document.querySelectorAll('.ex-row[id^="day_' + m[1] + '_ex"]');
+    if (!rows || !rows.length) return 0;
+    var cnt = 0;
+    Array.prototype.forEach.call(rows, function(r) {
+      var c = r.querySelector('.ex-check');
+      if (c && c.classList.contains('injury-skipped')) return; // 伤病跳过的动作不算消耗
+      cnt++;
+    });
+    return cnt;
+  } catch(e) { return 0; }
+}
+
+// 读取用户体重(建档体重优先,缺失按 70kg)
+function fbUserWeight() {
+  var weight = 70;
+  try {
+    var prof = JSON.parse(localStorage.getItem("fitbuddy_profile") || "{}");
+    if (prof.weight && prof.weight > 30) weight = prof.weight;
+  } catch(e) {}
+  return weight;
+}
+
 // 估算单个训练日的运动消耗(kcal)
 function estimateDayCalBurn(day, goal, weight, level) {
   if (!day.exes || !weight) return 0;
@@ -871,12 +1106,21 @@ function estimateDayCalBurn(day, goal, weight, level) {
       }
     });
   } else {
-    // 力量训练:按水平和动作数估算
-    var baseBurn = {beginner:280, intermediate:380, advanced:500}[level] || 300;
-    var exCount = exes.length;
-    total = Math.round(baseBurn + exCount * 20); // 每个动作约20kcal额外
+    // 力量训练:MET × 体重 × 时长(时长由 组数×次数、组间休息、换器械推导)
+    var _fbCtx = fbSessionContext(level, goal);
+    // 热身+拉伸按"当天动作数"均摊到每个动作上,与训练记录(estimateCalories)口径完全一致,
+    // 保证"勾完一天全部动作"的记录总和 == 这里的日估算
+    var _warmPer = exes.length > 0 ? Math.round(fbWarmupKcal(weight) / exes.length) : 0;
+    exes.forEach(function(ex) {
+      var _meta = fbExMeta(ex.n);
+      var _m = (_meta && _meta.m) || ex.m || "全身";
+      if (_m === "有氧") return; // 有氧动作交给上面的心肺分支
+      var _eq = (_meta && _meta.eq) || ex.eq || "bodyweight";
+      var _df = (_meta && _meta.diff) || fbNormalizeDiff(ex.diff);
+      total += fbExerciseKcal(_m, _eq, _df, _fbCtx, weight) + _warmPer;
+    });
   }
-  return total;
+  return Math.round(total);
 }
 
 // ============ 周期/伤病/跑鞋/训练日志 状态 ============
@@ -1117,10 +1361,14 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
       avgTrainBurn = Math.round(dayCalBurns.reduce(function(a,b){return a+b;},0) / dayCalBurns.length);
       maxTrainBurn = Math.max.apply(null, dayCalBurns);
     }
+    // 每个训练日按各自消耗单独算营养(营养面板逐日切换要用,不能所有日共用"最大训练日"的值)
+    var dayNutris = dayCalBurns.map(function(b){
+      return b > 0 ? calcNutrition(weight, height, age, gender || 'male', goal, b) : null;
+    });
     // 存储营养上下文,供 chip 切换时重新渲染食谱
     _lastNutriCtx = { weight: weight, height: height, age: age, gender: gender || 'male', goal: goal,
                       nRest: nutrition, nTrain: nutritionTrain, nEasy: nutritionEasy, dayCalBurns: dayCalBurns };
-    html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain, nutritionEasy);
+    html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain, nutritionEasy, dayNutris);
   }
   var trainSchedule = schedule.filter(function(s){ return s.isTraining; });
   // 心肺目标:按周调整 HIIT 组数
@@ -1146,6 +1394,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     '🖨 打印/导出计划</button>'+
     '<button class="btn-generate" style="background:var(--card);color:var(--primary);border:1.5px solid var(--primary);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="showPlanShareModal()">'+
     '📤 分享计划码</button></div>';
+  // 🎣 蔡格尼克效应: 未完成感 banner
+  html += fbProgressBannerHtml();
   // 🐉 健身精灵宠物
   html += '<div id="petArea">' + (typeof renderPetCard === 'function' ? renderPetCard() : '') + '</div>';
   document.getElementById("planResult").innerHTML = html;
@@ -1536,6 +1786,9 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
     var wkNum = ((currentWeek - 1) % cycleLen) + 1;
     var wk = wkArr[wkNum - 1];
     var shift = getBwShift(wk ? wk.weightAdjust : "+0%");
+    // 🧠 AI 轻量调整: 根据上周完成率动态降阶(避免过载/自动减量)
+    var lastWkRate = getLastWeekCompletionRate();
+    shift = getAdaptiveShift(shift, lastWkRate);
     var bwMaxRank = {beginner:1, intermediate:2, advanced:3}[level] || 3;
     var bwDiffRank = {"初级":1, "中级":2, "高级":3};
     trainingDays.forEach(function(day){
@@ -2036,29 +2289,44 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
   return html;
 }
 
-function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nTrain, nEasy) {
+function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nTrain, nEasy, dayNutris) {
   var goalNote = goal === "muscle" ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
   var fg = FOOD_GUIDE[goal] || FOOD_GUIDE.muscle;
   var restCal = n.targetCal;
-  var trainCal = nTrain ? nTrain.targetCal : (restCal + avgTrainBurn);
   var trainProtein = nTrain ? nTrain.protein : n.protein;
   var trainCarb    = nTrain ? nTrain.carb    : n.carb;
 
-  // 构建日程列表(训练日×星期几+名称+消耗)
+  // 构建日程列表(训练日×星期几+名称+消耗+该日自己的热量目标)
+  // 注意:每个训练日的消耗不同,必须逐日算,不能共用"最大训练日"这一个值
   var nutriDays = [];
   if (schedule && trainingDays && dayCalBurns) {
     var ti = 0;
     schedule.forEach(function(s) {
       if (s.isTraining && ti < trainingDays.length) {
+        var burn = dayCalBurns[ti] || 0;
+        var tc = restCal;
+        if (burn > 0) {
+          var dn = (dayNutris && dayNutris[ti]) || null;
+          if (!dn && _lastNutriCtx) {
+            dn = calcNutrition(_lastNutriCtx.weight, _lastNutriCtx.height, _lastNutriCtx.age, _lastNutriCtx.gender, goal, burn);
+          }
+          tc = (dn && dn.targetCal) ? dn.targetCal : (restCal + burn);
+        }
         nutriDays.push({
           label: s.day,        // "周一"
           name: trainingDays[ti].name,
-          burn: dayCalBurns[ti]
+          burn: burn,
+          targetCal: tc        // 该日实际应摄入热量
         });
         ti++;
       }
     });
   }
+
+  // 默认展示值 = 各训练日的平均值(与默认选中的"📊 平均"chip 保持一致;此前误用最大训练日的值)
+  var trainCal = nutriDays.length
+    ? Math.round(nutriDays.reduce(function(a,d){ return a + d.targetCal; }, 0) / nutriDays.length)
+    : (nTrain ? nTrain.targetCal : (restCal + avgTrainBurn));
   var nutriPanelId = "nutri_" + Math.random().toString(36).substr(2,6);
 
   var html = '<div class="nutrition-card" id="'+nutriPanelId+'">'+
@@ -2085,7 +2353,7 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
     // 默认:平均
     html += '<span class="nutri-chip active" data-ni="-1" data-rest="'+restCal+'" data-train="'+trainCal+'" onclick="selectNutriDay(\''+nutriPanelId+'\',-1,'+restCal+','+trainCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;background:var(--primary);color:#fff;font-weight:600;">📊 平均</span>';
     nutriDays.forEach(function(nd, i) {
-      var ndTrainCal = nTrain ? nTrain.targetCal : (restCal + nd.burn);
+      var ndTrainCal = nd.targetCal; // 该日自己的热量(含该日训练消耗)
       html += '<span class="nutri-chip" data-ni="'+i+'" data-burn="'+nd.burn+'" data-name="'+nd.label+' '+nd.name+'" data-rest="'+restCal+'" data-train="'+ndTrainCal+'" onclick="selectNutriDay(\''+nutriPanelId+'\','+i+','+restCal+','+ndTrainCal+')" style="font-size:11px;padding:5px 8px;border-radius:14px;cursor:pointer;border:1px solid var(--border);color:var(--text2);">'+
         nd.label+' <span style="font-size:10px;opacity:0.8;">'+nd.name+'</span> 🔥'+nd.burn+'</span>';
     });
@@ -2095,12 +2363,12 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
     html += '<div style="display:flex;gap:8px;">'+
       '<div class="nutri-train-val" style="flex:1;text-align:center;padding:8px 4px;background:var(--card);border-radius:8px;transition:all 0.2s;">'+
         '<div style="font-size:22px;font-weight:800;color:'+(goal==='cut'?'#22C55E':'#3B82F6')+';" id="'+nutriPanelId+'_trainCal">'+trainCal+'</div>'+
-        '<div style="font-size:10px;color:var(--text3);" id="'+nutriPanelId+'_trainLabel">训练日 kcal</div></div>'+
+        '<div style="font-size:10px;color:var(--text3);" id="'+nutriPanelId+'_trainLabel">平均训练日 kcal</div></div>'+
       '<div style="display:flex;align-items:center;font-size:18px;color:var(--border);">→</div>'+
       '<div style="flex:1;text-align:center;padding:8px 4px;background:var(--card);border-radius:8px;">'+
         '<div style="font-size:22px;font-weight:800;color:var(--text2);" id="'+nutriPanelId+'_restCal">'+restCal+'</div>'+
         '<div style="font-size:10px;color:var(--text3);">休息日 kcal</div></div></div>'+
-      (maxTrainBurn > avgTrainBurn ? '<div style="font-size:10px;color:var(--text3);margin-top:6px;">💡 训练日额外消耗已计入热量,LSD日多补碳水</div>' : '')+
+      (maxTrainBurn > 0 ? '<div style="font-size:10px;color:var(--text3);margin-top:6px;">💡 训练日额外消耗已计入热量,LSD日多补碳水</div>' : '')+
       '</div>';
   }
 
@@ -2206,6 +2474,8 @@ function selectNutriDay(panelId, idx, restCal, trainCal) {
     // 平均:统计所有日程的 data-train / data-rest
     var sumTrain = 0, sumRest = 0, cnt = 0;
     chips.forEach(function(c){
+      // 排除"📊 平均"chip 自身,否则它自己的值会混进均值里把平均数拉高
+      if (parseInt(c.getAttribute('data-ni')) === -1) return;
       var t = parseInt(c.getAttribute('data-train')) || 0;
       var r = parseInt(c.getAttribute('data-rest'))  || 0;
       if (t) { sumTrain += t; cnt++; }
@@ -3540,6 +3810,8 @@ function toggleDone(id) {
     }
   }
   var dist = parseFloat(el.getAttribute("data-dist")) || 0;
+  // 该动作所在训练日的实际动作数(用于热量里的热身均摊,保证与计划页日估算一致)
+  var dayExCnt = fbDayExCount(id);
   // [DEBUG] console.log('toggleDone:', isDone ? '取消勾选' : '勾选', 'exName='+exName, 'exDiff='+exDiff, 'dist='+dist);
 
   if (isDone) {
@@ -3561,7 +3833,7 @@ function toggleDone(id) {
       }
       // 减去热量
       if (exDiff) {
-        var cal = estimateCalories(exDiff, exM, dist);
+        var cal = estimateCalories(exDiff, exM, dist, exName, dayExCnt);
         found.calories = Math.max(0, (found.calories||0) - cal);
       }
       // 如果计数归零且没有跑步距离,删除当天记录
@@ -3577,14 +3849,22 @@ function toggleDone(id) {
     // [DEBUG] console.log('toggleDone: 更新完成动作统计', _stats.done);
     // 同步更新进度页的完成动作数
     if (document.getElementById('page-prog').classList.contains('active')) renderProgress();
+    // 🎣 取消勾选后同步刷新未完成感 banner
+    updateProgressBanner();
   } else {
     check.classList.add("done"); check.innerHTML = "✓";
     el.classList.add("done");
     localStorage.setItem(doneKey(id), "1");
+    // 📊 断签埋点:记录最后打卡日(只在日期变化时更新)
+    updateLastCheckin();
     // 🔊 语音播报:动作完成(不打断已有语音时排队)
     if (exName) speakText(exName + "，完成", true);
     // 记录训练历史(动作信息已在上方获取)
-    recordHistory(dist, exName, exDiff, exM);
+    recordHistory(dist, exName, exDiff, exM, dayExCnt);
+    // ⚡ 即时反馈: 勾选时 +N kcal 飘字
+    if (exName && exDiff) fbFloatKcal(el, estimateCalories(exDiff, exM, dist, exName, dayExCnt));
+    // 🎣 未完成感 banner 刷新
+    updateProgressBanner();
     // 马拉松/跑步:自动提示记录跑鞋里程
     if (dist > 0 && shoeList.length > 0) {
       var activeShoes = shoeList.filter(function(s){ return !s.retired; });
@@ -3612,6 +3892,149 @@ function toggleDone(id) {
       setTimeout(resetAllCheckmarks, 1200);
     }
   }
+}
+
+// ============ 断签埋点 & 检测 ============
+// 记录用户最后打卡日(只在日期首次变化时写,避免一天内重复覆盖时间戳)
+function updateLastCheckin() {
+  try {
+    var today = new Date().toISOString().slice(0, 10);
+    var last = localStorage.getItem('fitbuddy_last_checkin');
+    if (last !== today) {
+      localStorage.setItem('fitbuddy_last_checkin', new Date().toISOString());
+      // 兼容旧 key:fitbuddy_lastcheck(用于 SW 后台场景化推送)
+      localStorage.setItem('fitbuddy_lastcheck', today);
+    }
+  } catch(e) {}
+}
+
+// 计算距上次打卡多少天(返回 null=从未训练过,0=今天练过,1=昨天练过...)
+// 用日历日比较,避免时区/小时数差导致误判
+function getDaysSinceLastCheckin() {
+  try {
+    var last = localStorage.getItem('fitbuddy_last_checkin');
+    if (!last) return null;
+    var lastDate = new Date(last);
+    var now = new Date();
+    var lastDay = Date.UTC(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+    var today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.floor((today - lastDay) / 86400000);
+  } catch(e) {
+    return null;
+  }
+}
+
+// ============ 🎣 蔡格尼克效应: 未完成感 banner ============
+// 今天是周几对应的训练日索引(schedule 是周一=0 的数组);-1 = 休息日
+function fbGetTodayDayIdx() {
+  if (!lastPlan || !lastPlan.trainingDays) return -1;
+  var sched = lastPlan.schedule || getSchedule(lastPlan.days);
+  var wd = (new Date().getDay() + 6) % 7;
+  return sched.indexOf(wd);
+}
+
+// 某训练日勾选进度 {done, total}
+function fbCountDayProgress(dayIdx) {
+  var day = (lastPlan && lastPlan.trainingDays) ? lastPlan.trainingDays[dayIdx] : null;
+  if (!day || !day.exes || !day.exes.length) return { done: 0, total: 0 };
+  var done = 0;
+  day.exes.forEach(function(_, ei) {
+    if (localStorage.getItem(doneKey('day_' + dayIdx + '_ex' + ei)) === '1') done++;
+  });
+  return { done: done, total: day.exes.length };
+}
+
+// 某训练日是否全部完成
+function checkDayComplete(dayIdx) {
+  var p = fbCountDayProgress(dayIdx);
+  return p.total > 0 && p.done >= p.total;
+}
+
+// 本周训练日完成数 {done, total}
+function fbCountWeekProgress() {
+  var total = 0, done = 0;
+  if (lastPlan && lastPlan.trainingDays) {
+    lastPlan.trainingDays.forEach(function(day, di) {
+      if (!day.exes || !day.exes.length) return;
+      total++;
+      if (checkDayComplete(di)) done++;
+    });
+  }
+  return { done: done, total: total };
+}
+
+// 未完成感 banner HTML(今日剩余动作 + 本周进度条 + 完成态海报入口)
+function fbProgressBannerHtml() {
+  if (!lastPlan || !lastPlan.trainingDays) return '';
+  var hasContent = false;
+  var html = '<div id="fbProgressBanner" class="card" style="padding:14px 16px;margin-bottom:14px;">';
+  var ti = fbGetTodayDayIdx();
+  if (ti >= 0) {
+    var p = fbCountDayProgress(ti);
+    if (p.total > 0) {
+      hasContent = true;
+      if (p.done >= p.total) {
+        // 完成态:正向反馈 + 当场生成海报(社交货币)
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+          + '<div style="font-size:14px;font-weight:700;color:var(--green);">✅ 今日训练全部完成！</div>'
+          + '<button onclick="generateShareImage()" style="padding:7px 14px;border-radius:14px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">📸 生成分享图</button>'
+          + '</div>';
+      } else if (p.done > 0) {
+        // 蔡格尼克: 已开始未闭合 → "还剩 X 个"
+        html += '<div style="font-size:14px;font-weight:700;color:var(--text);">🔥 今天还剩 <span style="color:var(--primary);font-size:19px;">' + (p.total - p.done) + '</span> 个动作</div>'
+          + '<div style="height:6px;background:var(--border);border-radius:3px;margin:8px 0 4px;overflow:hidden;">'
+          + '<div style="height:100%;width:' + Math.round(p.done / p.total * 100) + '%;background:linear-gradient(90deg,#FF6B35,#FF3E7F);border-radius:3px;transition:width .3s;"></div></div>'
+          + '<div style="font-size:11px;color:var(--text3);">已完成 ' + p.done + '/' + p.total + ' · 闭合今天这一环</div>';
+      } else {
+        html += '<div style="font-size:13px;font-weight:600;color:var(--text2);">📋 今天有 ' + p.total + ' 个动作等你 · 开练就赢了一半</div>';
+      }
+    }
+  }
+  var wp = fbCountWeekProgress();
+  if (wp.total > 0) {
+    hasContent = true;
+    html += '<div style="display:flex;align-items:center;gap:8px;' + (ti >= 0 ? 'margin-top:9px;' : '') + 'font-size:12px;color:var(--text2);">'
+      + '<span>📅 本周训练日</span><b style="color:var(--text);">' + wp.done + '/' + wp.total + '</b>'
+      + '<div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;">'
+      + '<div style="height:100%;width:' + Math.round(wp.done / wp.total * 100) + '%;background:var(--blue);border-radius:3px;transition:width .3s;"></div></div>'
+      + (wp.done < wp.total ? '<span style="font-size:11px;color:var(--text3);">还差 ' + (wp.total - wp.done) + ' 天</span>' : '<span style="font-size:11px;color:var(--green);font-weight:700;">满勤！</span>')
+      + '</div>';
+  }
+  html += '</div>';
+  return hasContent ? html : '';
+}
+
+// 勾选/取消勾选后刷新 banner(元素不存在则跳过)
+function updateProgressBanner() {
+  var el = document.getElementById('fbProgressBanner');
+  if (!el) return;
+  var html = fbProgressBannerHtml();
+  if (!html) { el.remove(); return; }
+  el.outerHTML = html;
+}
+
+// ============ ⚡ 即时反馈: 勾选时 +N kcal 飘字 ============
+function fbInjectFloatStyle() {
+  if (document.getElementById('fbFloatStyle')) return;
+  var s = document.createElement('style');
+  s.id = 'fbFloatStyle';
+  s.textContent = '@keyframes fbFloatUp{0%{opacity:0;transform:translateY(6px) scale(.9)}15%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-46px) scale(1)}}';
+  document.head.appendChild(s);
+}
+
+function fbFloatKcal(el, cal) {
+  if (!el || !cal) return;
+  try {
+    fbInjectFloatStyle();
+    var f = document.createElement('div');
+    f.textContent = '🔥 +' + cal + ' kcal';
+    f.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;font-size:15px;font-weight:800;color:#FF6B35;text-shadow:0 1px 4px rgba(0,0,0,0.15);animation:fbFloatUp 1.4s ease-out forwards;';
+    var r = el.getBoundingClientRect();
+    f.style.left = Math.max(10, r.left + r.width * 0.5 - 30) + 'px';
+    f.style.top = (r.top - 6) + 'px';
+    document.body.appendChild(f);
+    setTimeout(function(){ f.remove(); }, 1500);
+  } catch(e) {}
 }
 
 var timerInterval = null;
@@ -3912,42 +4335,41 @@ function closeModal() {
 
 // ============ 进度页 ============
 // 估算单动作消耗热量(与 estimateDayCalBurn 口径对齐)
-function estimateCalories(diff, m, dist) {
-  // 获取体重(所有公式共用)
-  var weight = 70;
-  try {
-    var prof = JSON.parse(localStorage.getItem("fitbuddy_profile") || "{}");
-    if (prof.weight && prof.weight > 30) weight = prof.weight;
-  } catch(e) {}
+// diff: 难度文本(可能带"· 做不动可退回上一档"等后缀,内部会归一化)
+// m: 肌群;dist: 跑步/有氧距离;name: 动作名(可选,用于精确取器械与真实难度)
+// dayExCnt: 该动作所在训练日的"实际动作数"(由 toggleDone 从 DOM 传进来)
+// 不传时退回计划平均动作数(仅作兜底)
+function estimateCalories(diff, m, dist, name, dayExCnt) {
+  var weight = fbUserWeight();
 
   // 跑步/有氧带距离:体重×距离(马拉松/心肺目标)
   if (dist && dist > 0) {
     return Math.round(weight * dist);
   }
 
-  // 获取当前目标与水平,用于后续分支
   var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
   var level = (plan && plan.level) || 'beginner';
 
+  // 优先用动作名反查真实肌群/器械/难度,查不到再退回调用方传入的值
+  var meta = fbExMeta(name);
+  var effM = (meta && meta.m) || m || "";
+
   // 有氧动作(无显式距离):按水平估算,对齐 estimateDayCalBurn 心肺分支
-  if (m === '有氧') {
+  if (effM === '有氧' || m === '有氧') {
     return {beginner:350, intermediate:450, advanced:600}[level] || 350;
   }
 
-  // 力量训练:对齐 estimateDayCalBurn 的 baseBurn + exCount*20 公式
-  // 按动作数均摊,使单日总和与计划页预估一致
-  var goal = (plan && plan.goal) || '';
-  var baseBurn = {beginner:280, intermediate:380, advanced:500}[level] || 300;
-  var exCount = 5; // 默认
-  if (plan && plan.trainingDays) {
-    var totalEx = 0, dayCount = 0;
-    plan.trainingDays.forEach(function(d) {
-      if (d.exes && d.exes.length > 0) { totalEx += d.exes.length; dayCount++; }
-    });
-    if (dayCount > 0) exCount = Math.round(totalEx / dayCount);
-  }
-  var dayTotal = Math.round(baseBurn + exCount * 20);
-  return Math.round(dayTotal / exCount);
+  // 力量训练:与 estimateDayCalBurn 共用同一套 MET 模型
+  var goal = (plan && plan.goal) || 'muscle';
+  var effEq = (meta && meta.eq) || 'bodyweight';
+  var effDiff = (meta && meta.diff) || fbNormalizeDiff(diff);
+  var ctx = fbSessionContext(level, goal);
+  var perCal = fbExerciseKcal(effM || "全身", effEq, effDiff, ctx, weight);
+  // 把热身/拉伸的消耗均摊进来:分母优先用"当天实际动作数",
+  // 这样勾完一天所有动作后,记录总和恰好 == 计划页/营养面板的日估算
+  var warmDiv = (dayExCnt && dayExCnt > 0) ? dayExCnt : fbAvgExCount(plan);
+  perCal += Math.round(fbWarmupKcal(weight) / warmDiv);
+  return perCal;
 }
 
 function pad2(n){ return (n < 10 ? "0" : "") + n; }
@@ -4201,13 +4623,13 @@ function applyPlanParams(goal, level, days, equip) {
   setTimeout(function(){ doGenerate(); }, 300);
 }
 
-function recordHistory(dist, exName, exDiff, exM) {
+function recordHistory(dist, exName, exDiff, exM, dayExCnt) {
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   var today = new Date().toISOString().slice(0,10);
   var found = hist.find(function(h){ return h.date === today; });
 
   // 计算本次动作热量(跑步用距离,力量用MET)
-  var thisCal = (exName && exDiff) ? estimateCalories(exDiff, exM, dist) : 0;
+  var thisCal = (exName && exDiff) ? estimateCalories(exDiff, exM, dist, exName, dayExCnt) : 0;
 
   if (found) {
     found.count = (found.count||0)+1;
