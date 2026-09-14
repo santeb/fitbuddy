@@ -4773,7 +4773,21 @@ window.toggleProgressCard = function (id) {
   icon.textContent = opened ? '▼' : '▶';
   m[id] = opened;
   _fbSetCollapseMap(m);
+  // 展开时重绘卡片内图表：canvas 折叠期间 display:none，尺寸为 0，首次绘制是空的
+  if (opened) _fbRedrawCardCharts(body);
 };
+// 重绘某个卡片 body 内所有已注册的 canvas 图表
+function _fbRedrawCardCharts(body) {
+  var configs = window._chartConfigs || {};
+  var canvases = body.querySelectorAll('canvas');
+  for (var i = 0; i < canvases.length; i++) {
+    var canvasId = canvases[i].id;
+    var cfg = configs[canvasId];
+    if (!cfg) continue;
+    if (cfg.type === 'chart') drawChart(canvasId, cfg.data, cfg.opts);
+    else if (cfg.type === 'donut') drawDonutChart(canvasId, cfg.segments);
+  }
+}
 function _fbIsCardOpen(id, defOpen) {
   var m = _fbGetCollapseMap();
   return m[id] === undefined ? !!defOpen : !!m[id];
