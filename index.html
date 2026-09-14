@@ -437,6 +437,14 @@ input,select{font-family:inherit;}
 .history-empty{text-align:center;padding:40px 20px;color:var(--text3);font-size:14px;}
 .clear-btn{width:100%;padding:12px;border-radius:12px;font-size:14px;font-weight:600;background:var(--card);color:#EF4444;border:1.5px solid var(--border);cursor:pointer;margin-top:10px;transition:all .2s;}
 .clear-btn:active{transform:scale(0.97);}
+/* Collapsible progress cards (▼/▶ 三角形) */
+.collapsible-title{cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;}
+.collapsible-title:hover .collapse-icon{color:var(--primary);}
+.collapsible-title:active{opacity:0.85;}
+.collapse-icon{font-size:11px;color:var(--text3);transition:transform .2s;flex-shrink:0;margin-left:auto;padding-left:8px;}
+.collapsible-title.collapsible-title-right{padding:6px 10px;border-radius:8px;background:var(--bg);}
+.collapsible-body{animation:collapsibleFadeIn .25s ease-out;}
+@keyframes collapsibleFadeIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
 
 /* Nutrition Day Chips */
 .nutri-chip{cursor:pointer;transition:all 0.15s;border:1px solid var(--border);}

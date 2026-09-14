@@ -4392,12 +4392,11 @@ function renderHeatmap(hist) {
     if (c > 0) { cur++; totalDays++; totalCount += c; } else { cur = 0; }
     if (cur > maxStreak) maxStreak = cur;
   });
-  var html = '<div class="progress-card"><div class="card-title">🔥 训练热力图 · 最近90天</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
-      '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:var(--primary);">'+totalDays+'</div><div style="font-size:11px;color:var(--text3);">训练天数</div></div>' +
-      '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#F59E0B;">'+streak+'</div><div style="font-size:11px;color:var(--text3);">当前连续</div></div>' +
-      '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#22C55E;">'+maxStreak+'</div><div style="font-size:11px;color:var(--text3);">最长连续</div></div>' +
-      '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#3B82F6;">'+totalCount+'</div><div style="font-size:11px;color:var(--text3);">总动作数</div></div>' +
+  var html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+    '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:var(--primary);">'+totalDays+'</div><div style="font-size:11px;color:var(--text3);">训练天数</div></div>' +
+    '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#F59E0B;">'+streak+'</div><div style="font-size:11px;color:var(--text3);">当前连续</div></div>' +
+    '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#22C55E;">'+maxStreak+'</div><div style="font-size:11px;color:var(--text3);">最长连续</div></div>' +
+    '<div class="heat-stat"><div style="font-size:18px;font-weight:800;color:#3B82F6;">'+totalCount+'</div><div style="font-size:11px;color:var(--text3);">总动作数</div></div>' +
     '</div>' +
     '<div style="display:flex;gap:6px;">' +
       '<div style="display:grid;grid-template-rows:repeat(7,14px);gap:3px;">' +
@@ -4422,7 +4421,7 @@ function renderHeatmap(hist) {
       '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#FFD0B3;"></span>' +
       '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#FFA26B;"></span>' +
       '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#FF6B35;"></span>多' +
-    '</div></div>';
+    '</div>';
   return html;
 }
 
@@ -4756,6 +4755,44 @@ function checkSceneNotifications() {
   }
 }
 
+// === 进度页卡片折叠助手（2026-09-14）===
+var FB_COLLAPSE_KEY = 'fitbuddy_progress_collapse';
+function _fbGetCollapseMap() {
+  try { return JSON.parse(localStorage.getItem(FB_COLLAPSE_KEY) || '{}'); } catch (e) { return {}; }
+}
+function _fbSetCollapseMap(m) {
+  try { localStorage.setItem(FB_COLLAPSE_KEY, JSON.stringify(m)); } catch (e) {}
+}
+window.toggleProgressCard = function (id) {
+  var m = _fbGetCollapseMap();
+  var body = document.getElementById(id + '-body');
+  var icon = document.getElementById(id + '-icon');
+  if (!body || !icon) return;
+  var opened = body.style.display === 'none';
+  body.style.display = opened ? 'block' : 'none';
+  icon.textContent = opened ? '▼' : '▶';
+  m[id] = opened;
+  _fbSetCollapseMap(m);
+};
+function _fbIsCardOpen(id, defOpen) {
+  var m = _fbGetCollapseMap();
+  return m[id] === undefined ? !!defOpen : !!m[id];
+}
+// 包装单个进度页卡片：title 可点击切换 body；状态写 localStorage
+// titleInnerHtml 不含外层 .card-title 标签；bodyInnerHtml 是卡片主体内容
+function collapsibleCard(id, titleInnerHtml, bodyInnerHtml, defaultOpen) {
+  var open = _fbIsCardOpen(id, defaultOpen);
+  return '<div class="progress-card" data-pc-id="' + id + '">' +
+    '<div class="card-title collapsible-title" onclick="toggleProgressCard(\'' + id + '\')">' +
+      titleInnerHtml +
+      '<span id="' + id + '-icon" class="collapse-icon">' + (open ? '▼' : '▶') + '</span>' +
+    '</div>' +
+    '<div id="' + id + '-body" class="collapsible-body" style="display:' + (open ? 'block' : 'none') + '">' +
+      bodyInnerHtml +
+    '</div>' +
+  '</div>';
+}
+
 function renderProgress() {
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
@@ -4764,8 +4801,8 @@ function renderProgress() {
     '<button onclick="showWeeklySummary()" style="flex:1;padding:10px;border-radius:12px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;">📊 本周总结</button>'+
     '<button onclick="exportCSV()" style="flex:1;padding:10px;border-radius:12px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:14px;font-weight:600;cursor:pointer;">📋 导出CSV</button></div>';
 
-  // 🔥 训练热力图
-  html += renderHeatmap(hist);
+  // 🔥 训练热力图（最近90天）
+  html += collapsibleCard('pc-heatmap-90', '🔥 训练热力图 · 最近90天', renderHeatmap(hist), true);
 
   // 本周统计(周一为一周开始)
   var today = new Date();
@@ -4787,15 +4824,15 @@ function renderProgress() {
   if (isRunning) {
     var wkTarget = plan && plan.goal === "marathon" ? 4 : 3;
     var pct = wkTarget > 0 ? Math.min(100, Math.round(weekCount / wkTarget * 100)) : 0;
-    html += '<div class="progress-card">'+
-      '<div class="card-title">📊 本周跑步进度</div>'+
+    var wkBody =
       '<div class="progress-stat"><span class="progress-stat-label">完成训练次数</span><span class="progress-stat-value">'+weekCount+' / '+wkTarget+' 次</span></div>'+
       '<div class="progress-stat"><span class="progress-stat-label">周跑量</span><span class="progress-stat-value">'+Math.round(weekDist)+' km</span></div>'+
       '<div class="progress-stat"><span class="progress-stat-label">估算消耗热量</span><span class="progress-stat-value">'+Math.round(weekCal)+' kcal</span></div>'+
       '<div style="margin-top:10px;"><div style="font-size:12px;color:var(--text3);margin-bottom:4px;">频次完成度</div>'+
       '<div class="progress-bar"><div class="progress-bar-fill" style="width:'+pct+'%;"></div></div>'+
       '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div>'+
-      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '') + '</div>';
+      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '');
+    html += collapsibleCard('pc-week-progress', '📊 本周跑步进度', wkBody, true);
   } else {
     var totalExPerWeek = 0;
     if (plan && plan.trainingDays) {
@@ -4805,27 +4842,27 @@ function renderProgress() {
     }
     var targetSets = totalExPerWeek > 0 ? totalExPerWeek * (plan && plan.level === 'advanced' ? 5 : plan && plan.level === 'intermediate' ? 4 : 3) : daysThisWeek * 15;
     var pct = targetSets > 0 ? Math.min(100, Math.round(weekCount / targetSets * 100)) : 0;
-    html += '<div class="progress-card">'+
-      '<div class="card-title">📊 本周进度</div>'+
+    var wkBody2 =
       '<div class="progress-stat"><span class="progress-stat-label">已完成动作组数</span><span class="progress-stat-value">'+weekCount+'</span></div>'+
       '<div class="progress-stat"><span class="progress-stat-label">估算消耗热量</span><span class="progress-stat-value">'+Math.round(weekCal)+' kcal</span></div>'+
       '<div style="margin-top:10px;"><div style="font-size:12px;color:var(--text3);margin-bottom:4px;">完成度</div>'+
       '<div class="progress-bar"><div class="progress-bar-fill" style="width:'+pct+'%;"></div></div>'+
       '<div style="font-size:12px;color:var(--text3);margin-top:4px;">'+pct+'%</div></div>'+
-      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '') + '</div>';
+      (Math.round(weekCal) > 0 ? renderFoodEquivalent(Math.round(weekCal)) : '');
+    html += collapsibleCard('pc-week-progress', '📊 本周进度', wkBody2, true);
   }
 
   // 图表:跑量趋势(跑步目标)或训练频次(举铁目标)
   if (hist.length >= 2) {
-    html += '<div class="progress-card"><div class="card-title">📈 '+(isRunning?'跑量趋势':'训练频次趋势')+'</div>'+
-      '<div class="chart-wrap"><canvas id="chartVolume" style="width:100%;height:200px;"></canvas></div></div>';
+    html += collapsibleCard('pc-volume-trend', '📈 '+(isRunning?'跑量趋势':'训练频次趋势'),
+      '<div class="chart-wrap"><canvas id="chartVolume" style="width:100%;height:200px;"></canvas></div>', false);
   }
 
   // 图表:热量消耗趋势
   var hasCalories = hist.some(function(h){ return h.calories && h.calories > 0; });
   if (hist.length >= 2 && hasCalories) {
-    html += '<div class="progress-card"><div class="card-title">🔥 热量消耗趋势</div>'+
-      '<div class="chart-wrap"><canvas id="chartCalories" style="width:100%;height:200px;"></canvas></div></div>';
+    html += collapsibleCard('pc-cal-trend', '🔥 热量消耗趋势',
+      '<div class="chart-wrap"><canvas id="chartCalories" style="width:100%;height:200px;"></canvas></div>', false);
   }
 
   // 图表:部位训练分布(环形图)
@@ -4846,15 +4883,15 @@ function renderProgress() {
   });
   var hasMuscleDist = muscleSegments.length >= 2;
   if (hasMuscleDist) {
-    html += '<div class="progress-card"><div class="card-title">🎯 部位训练分布</div>'+
-      '<div class="chart-wrap"><canvas id="chartMuscle" style="width:100%;height:230px;"></canvas></div>'+
+    var muscleBody = '<div class="chart-wrap"><canvas id="chartMuscle" style="width:100%;height:230px;"></canvas></div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;justify-content:center;">'+
       muscleSegments.map(function(seg){
         return '<span style="font-size:11px;color:var(--text2);">'+
           '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+seg.color+';margin-right:4px;"></span>'+
           seg.label+' '+seg.value+'次</span>';
       }).join('')+
-      '</div></div>';
+      '</div>';
+    html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
   }
 
   // 图表:力量进步曲线(有训练日志时)
@@ -4869,8 +4906,8 @@ function renderProgress() {
   if (chartExNames.length > 0) {
     var topEx = chartExNames.slice(0, 3);
     topEx.forEach(function(exName, chi){
-      html += '<div class="progress-card"><div class="card-title">💪 '+exName+' 重量趋势</div>'+
-        '<div class="chart-wrap"><canvas id="chartEx'+chi+'" style="width:100%;height:200px;"></canvas></div></div>';
+      html += collapsibleCard('pc-weight-trend-'+chi, '💪 '+exName+' 重量趋势',
+        '<div class="chart-wrap"><canvas id="chartEx'+chi+'" style="width:100%;height:200px;"></canvas></div>', false);
     });
   }
 
@@ -4885,25 +4922,25 @@ function renderProgress() {
   });
   var volDates = Object.keys(volByDate).sort();
   if (volDates.length >= 2) {
-    html += '<div class="progress-card"><div class="card-title">📊 训练量走势</div>'+
-      '<div class="chart-wrap"><canvas id="chartVolumeTrend" style="width:100%;height:200px;"></canvas></div></div>';
+    html += collapsibleCard('pc-vol-trend', '📊 训练量走势',
+      '<div class="chart-wrap"><canvas id="chartVolumeTrend" style="width:100%;height:200px;"></canvas></div>', false);
   }
 
   // 跑鞋里程
   var activeShoes = shoeList.filter(function(s){ return !s.retired; });
   var retiredShoes = shoeList.filter(function(s){ return s.retired; });
-  html += '<div class="progress-card"><div class="card-title" style="justify-content:space-between;">'+
-    '<span>👟 跑鞋追踪</span>'+
-    '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="addShoe()">+ 添加跑鞋</button></div>';
+  var shoesTitle = '<span>👟 跑鞋追踪</span>'+
+    '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="event.stopPropagation();addShoe()">+ 添加跑鞋</button>';
+  var shoesBody = '';
   if (shoeList.length === 0) {
-    html += '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px;">还没有跑鞋记录,点击上方按钮添加</div>';
+    shoesBody += '<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px;">还没有跑鞋记录,点击上方按钮添加</div>';
   }
   activeShoes.forEach(function(shoe, i){
     var realIdx = shoeList.indexOf(shoe);
     var pctKm = Math.min(100, Math.round(shoe.totalKm / 800 * 100));
     var barClass = shoe.totalKm > 700 ? 'danger' : shoe.totalKm > 500 ? 'warn' : 'good';
     var status = shoe.totalKm > 700 ? '⚠ 接近寿命上限' : shoe.totalKm > 500 ? '⚡ 已过半程' : '✅ 状态良好';
-    html += '<div class="shoe-card">'+
+    shoesBody += '<div class="shoe-card">'+
       '<div class="shoe-info">'+
         '<div class="shoe-name">'+shoe.name+' <span style="font-size:10px;font-weight:400;color:var(--text3);">'+shoe.startDate+' 起用</span></div>'+
         '<div class="shoe-km">'+Math.round(shoe.totalKm)+' km / 600-800km 建议更换 · '+status+'</div>'+
@@ -4916,19 +4953,19 @@ function renderProgress() {
       '</div></div>';
   });
   if (retiredShoes.length) {
-    html += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-top:10px;">已退役</div>';
+    shoesBody += '<div style="font-size:12px;font-weight:600;color:var(--text3);margin-top:10px;">已退役</div>';
     retiredShoes.forEach(function(shoe, i){
-      html += '<div class="shoe-card" style="opacity:0.5;border-left-color:#999;">'+
+      shoesBody += '<div class="shoe-card" style="opacity:0.5;border-left-color:#999;">'+
         '<div class="shoe-info"><div class="shoe-name">👟 '+shoe.name+'</div>'+
         '<div class="shoe-km">累计 '+Math.round(shoe.totalKm)+' km</div></div></div>';
     });
   }
-  html += '</div>';
+  html += collapsibleCard('pc-shoes', shoesTitle, shoesBody, true);
 
   // 历史记录
-  html += '<div class="progress-card"><div class="card-title">📅 训练记录</div>';
+  var histBody = '';
   if (hist.length === 0) {
-    html += '<div class="history-empty">还没有训练记录<br>完成动作后会自动记录 📝</div>';
+    histBody += '<div class="history-empty">还没有训练记录<br>完成动作后会自动记录 📝</div>';
   } else {
     hist.slice(-14).reverse().forEach(function(h){
       var exercises = h.exercises || [];
@@ -4943,7 +4980,7 @@ function renderProgress() {
         if (exercises.length > 3) showEx += '...';
         exList = '<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.5;">'+showEx+'</div>';
       }
-      html += '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'+
+      histBody += '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;">'+
           '<span class="progress-stat-label" style="margin-bottom:0;">'+h.date+'</span>'+
           '<span class="progress-stat-value" style="font-size:12px;">'+valText+'</span>'+
@@ -4953,20 +4990,19 @@ function renderProgress() {
     });
   }
   if (hist.length > 0) {
-    html += '<button class="clear-btn" onclick="clearHistory()">🗑 清除所有记录</button>';
+    histBody += '<button class="clear-btn" onclick="clearHistory()">🗑 清除所有记录</button>';
   }
-  html += '</div>';
+  html += collapsibleCard('pc-history', '📅 训练记录', histBody, true);
 
   // 统计面板
   var st = JSON.parse(localStorage.getItem('fitbuddy_stats') || '{}');
-  html += '<div class="progress-card"><div class="card-title">📈 使用统计</div>'+
-    '<div class="progress-stat"><span class="progress-stat-label">🏠 总访问</span><span class="progress-stat-value">'+(st.pv||0)+' 次</span></div>'+
+  var statsBody = '<div class="progress-stat"><span class="progress-stat-label">🏠 总访问</span><span class="progress-stat-value">'+(st.pv||0)+' 次</span></div>'+
     '<div class="progress-stat"><span class="progress-stat-label">✨ 生成计划</span><span class="progress-stat-value">'+(st.gens||0)+' 次</span></div>'+
     '<div class="progress-stat"><span class="progress-stat-label">✅ 完成动作</span><span class="progress-stat-value">'+(st.done||0)+' 次</span></div>'+
     '<div class="progress-stat"><span class="progress-stat-label">📚 动作库浏览</span><span class="progress-stat-value">'+(st.libs||0)+' 次</span></div>'+
     '<div class="progress-stat"><span class="progress-stat-label">🖨 导出次数</span><span class="progress-stat-value">'+(st.shares||0)+' 次</span></div>'+
-    '<div class="progress-stat"><span class="progress-stat-label">📅 首次使用</span><span class="progress-stat-value">'+(st.firstVisit||'今天')+'</span></div>'+
-    '</div>';
+    '<div class="progress-stat"><span class="progress-stat-label">📅 首次使用</span><span class="progress-stat-value">'+(st.firstVisit||'今天')+'</span></div>';
+  html += collapsibleCard('pc-stats', '📈 使用统计', statsBody, false);
 
   // CSV 导出 + 训练日记 + 分享图
   html += '<div style="text-align:center;margin:16px 0;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">'+
@@ -4977,9 +5013,9 @@ function renderProgress() {
   // 📏 身体数据记录
   var bodyLog = getBodyLog();
   var latestBody = bodyLog.length > 0 ? bodyLog[bodyLog.length - 1] : {};
-  html += '<div class="progress-card"><div class="card-title" style="justify-content:space-between;">'+
-    '<span>📏 身体数据记录</span>'+
-    '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="document.getElementById(\'bodyLogForm\').style.display=document.getElementById(\'bodyLogForm\').style.display===\'none\'?\'block\':\'none\';">+ 记录今日</button></div>'+
+  var bodyTitle = '<span>📏 身体数据记录</span>'+
+    '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="event.stopPropagation();document.getElementById(\'bodyLogForm\').style.display=document.getElementById(\'bodyLogForm\').style.display===\'none\'?\'block\':\'none\';">+ 记录今日</button>';
+  var bodyHtml =
     '<div id="bodyLogForm" style="display:none;margin:10px 0;padding:12px;background:var(--bg);border-radius:12px;">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">'+
         '<div><label style="font-size:11px;color:var(--text3);">日期</label><input type="date" id="bodyLogDate" value="'+new Date().toISOString().slice(0,10)+'" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--card);color:var(--text);"></div>'+
@@ -4995,42 +5031,55 @@ function renderProgress() {
     '</div>';
   // 最新数据展示
   if (latestBody.weight || latestBody.bodyFat) {
-    html += '<div style="display:flex;gap:12px;margin:10px 0;flex-wrap:wrap;">';
-    if (latestBody.weight) html += '<div style="padding:8px 14px;background:var(--primary-light);border-radius:10px;font-size:13px;"><b>体重</b> <span style="font-weight:700;color:var(--primary);">'+latestBody.weight+'kg</span> <span style="font-size:11px;color:var(--text3);">'+latestBody.date+'</span></div>';
-    if (latestBody.bodyFat) html += '<div style="padding:8px 14px;background:#F0FDF4;border-radius:10px;font-size:13px;"><b>体脂</b> <span style="font-weight:700;color:#22C55E;">'+latestBody.bodyFat+'%</span></div>';
-    if (latestBody.waist) html += '<div style="padding:8px 14px;background:#EFF6FF;border-radius:10px;font-size:13px;"><b>腰围</b> <span style="font-weight:700;color:#3B82F6;">'+latestBody.waist+'cm</span></div>';
-    html += '</div>';
+    bodyHtml += '<div style="display:flex;gap:12px;margin:10px 0;flex-wrap:wrap;">';
+    if (latestBody.weight) bodyHtml += '<div style="padding:8px 14px;background:var(--primary-light);border-radius:10px;font-size:13px;"><b>体重</b> <span style="font-weight:700;color:var(--primary);">'+latestBody.weight+'kg</span> <span style="font-size:11px;color:var(--text3);">'+latestBody.date+'</span></div>';
+    if (latestBody.bodyFat) bodyHtml += '<div style="padding:8px 14px;background:#F0FDF4;border-radius:10px;font-size:13px;"><b>体脂</b> <span style="font-weight:700;color:#22C55E;">'+latestBody.bodyFat+'%</span></div>';
+    if (latestBody.waist) bodyHtml += '<div style="padding:8px 14px;background:#EFF6FF;border-radius:10px;font-size:13px;"><b>腰围</b> <span style="font-weight:700;color:#3B82F6;">'+latestBody.waist+'cm</span></div>';
+    bodyHtml += '</div>';
   }
   // 体重曲线图
   if (bodyLog.filter(function(e){return e.weight;}).length >= 2) {
-    html += '<div class="chart-wrap"><canvas id="chartWeight" style="width:100%;height:200px;"></canvas></div>';
+    bodyHtml += '<div class="chart-wrap"><canvas id="chartWeight" style="width:100%;height:200px;"></canvas></div>';
   }
   // 体脂曲线图
   if (bodyLog.filter(function(e){return e.bodyFat;}).length >= 2) {
-    html += '<div class="chart-wrap"><canvas id="chartBodyFat" style="width:100%;height:200px;"></canvas></div>';
+    bodyHtml += '<div class="chart-wrap"><canvas id="chartBodyFat" style="width:100%;height:200px;"></canvas></div>';
   }
   // 历史记录(最近8条)
   if (bodyLog.length > 0) {
-    html += '<div style="margin-top:10px;max-height:200px;overflow-y:auto;">';
+    bodyHtml += '<div style="margin-top:10px;max-height:200px;overflow-y:auto;">';
     bodyLog.slice(-8).reverse().forEach(function(e) {
       var parts = [];
       if (e.weight) parts.push(e.weight + 'kg');
       if (e.bodyFat) parts.push(e.bodyFat + '%');
       if (e.waist) parts.push('腰' + e.waist + 'cm');
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">'+
+      bodyHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;">'+
         '<span style="color:var(--text2);">'+e.date+'</span>'+
         '<span>'+parts.join(' / ')+'</span>'+
         '<button onclick="deleteBodyLogEntry(\''+e.date+'\')" style="background:none;border:none;color:#EF4444;font-size:12px;cursor:pointer;">删除</button></div>';
     });
-    html += '</div>';
+    bodyHtml += '</div>';
   }
-  html += '</div>';
+  html += collapsibleCard('pc-body', bodyTitle, bodyHtml, true);
 
-  // 🔥 训练热力图
-  html += renderHeatmapHTML(hist);
+  // 🔥 训练热力图（12周版，来自 pets.js）
+  html += collapsibleCard('pc-heatmap-12w', '📅 训练热力图（近12周）', renderHeatmapHTML(hist), true);
 
-  // 🏅 成就系统 + 等级
-  html += renderGamificationHTML(hist);
+  // 🏅 成就系统 + 等级（拆成两个折叠 card：等级条 + 成就墙）
+  var achFullHtml = renderGamificationHTML(hist);
+  // 拆分点：等级条结束位置（最后一个 </div> 之后、第一个分类标题之前）
+  var splitIdx = achFullHtml.indexOf('<div style="font-size:11px;font-weight:700;color:var(--text3);margin:8px 0 4px;">');
+  var lvBody, achBody;
+  if (splitIdx > 0) {
+    lvBody = achFullHtml.substring(0, splitIdx);
+    achBody = achFullHtml.substring(splitIdx);
+  } else {
+    // fallback：没找到分割点，整体塞到等级 card
+    lvBody = achFullHtml;
+    achBody = '<div style="font-size:12px;color:var(--text3);">成就数据为空</div>';
+  }
+  html += collapsibleCard('pc-level', '🏅 训练等级', lvBody, true);
+  html += collapsibleCard('pc-achievement', '🏆 成就徽章', achBody, true);
 
   document.getElementById("progContent").innerHTML = html;
 

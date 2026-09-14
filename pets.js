@@ -1020,15 +1020,14 @@ function renderHeatmapHTML(hist) {
     if (dates[d3.toISOString().slice(0,10)] > 0) curStreak2++; else break;
   }
 
-  return '<div class="progress-card"><div class="card-title">📅 训练热力图（近12周）</div>'+
-    '<div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;flex-wrap:wrap;">'+
-      '<span style="color:var(--primary);font-weight:600;">总训练 '+totalDays+' 天</span>'+
-      '<span style="color:#22C55E;font-weight:600;">最长连续 '+maxStreak+' 天</span>'+
-      '<span style="color:#3B82F6;font-weight:600;">当前连续 '+curStreak2+' 天</span>'+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:28px repeat(7,15px);grid-template-rows:repeat(12,15px);gap:3px;width:max-content;">'+cells.join('')+'</div>'+
-    '<div class="heatmap-legend" style="margin-top:10px;">少<span style="background:var(--border);display:inline-block;width:15px;height:15px;border-radius:3px;vertical-align:middle;"></span>'+
-    '<span class="heatmap-cell l1" style="display:inline-block;"></span><span class="heatmap-cell l2" style="display:inline-block;"></span><span class="heatmap-cell l3" style="display:inline-block;"></span><span class="heatmap-cell l4" style="display:inline-block;"></span>多</div></div>';
+  return '<div style="display:flex;gap:16px;margin-bottom:10px;font-size:12px;flex-wrap:wrap;">'+
+    '<span style="color:var(--primary);font-weight:600;">总训练 '+totalDays+' 天</span>'+
+    '<span style="color:#22C55E;font-weight:600;">最长连续 '+maxStreak+' 天</span>'+
+    '<span style="color:#3B82F6;font-weight:600;">当前连续 '+curStreak2+' 天</span>'+
+  '</div>'+
+  '<div style="display:grid;grid-template-columns:28px repeat(7,15px);grid-template-rows:repeat(12,15px);gap:3px;width:max-content;">'+cells.join('')+'</div>'+
+  '<div class="heatmap-legend" style="margin-top:10px;">少<span style="background:var(--border);display:inline-block;width:15px;height:15px;border-radius:3px;vertical-align:middle;"></span>'+
+  '<span class="heatmap-cell l1" style="display:inline-block;"></span><span class="heatmap-cell l2" style="display:inline-block;"></span><span class="heatmap-cell l3" style="display:inline-block;"></span><span class="heatmap-cell l4" style="display:inline-block;"></span>多</div>';
 }
 
 // --- 成就+等级渲染 ---
@@ -1038,16 +1037,14 @@ function renderGamificationHTML(hist) {
   var lp = getLevelProgress();
   var html = '';
 
-  // 等级条
-  html += '<div class="progress-card"><div class="card-title">🏅 训练等级</div>'+
-    '<div class="level-bar"><span class="level-icon">'+lp.cur.icon+'</span>'+
+  // 等级条（不带 progress-card 外壳，由调用方用 collapsibleCard 包）
+  html += '<div class="level-bar"><span class="level-icon">'+lp.cur.icon+'</span>'+
     '<div class="level-info"><div class="level-name">'+lp.cur.name+'</div>'+
     '<div class="level-progress-bar"><div class="level-progress-fill" style="width:'+lp.progress+'%"></div></div>'+
     '<div class="level-progress-text">训练 '+lp.total+' 天 · 距离下一级 '+(lp.nxt.need-lp.total)+(lp.nxt.need>lp.total?' 天':'')+'</div>'+
-    '</div></div></div>';
+    '</div>';
 
-  // 成就墙
-  html += '<div class="progress-card"><div class="card-title">🏆 成就徽章</div>';
+  // 成就墙（不带 progress-card 外壳）
   var cats = {};
   ACHIEVEMENTS.forEach(function(a){ if (!cats[a.cat]) cats[a.cat]=[]; cats[a.cat].push(a); });
   Object.keys(cats).forEach(function(cat){
@@ -1062,7 +1059,6 @@ function renderGamificationHTML(hist) {
     });
     html += '</div>';
   });
-  html += '</div>';
   return html;
 }
 
