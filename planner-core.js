@@ -5062,9 +5062,6 @@ function renderProgress() {
   }
   html += collapsibleCard('pc-body', bodyTitle, bodyHtml, true);
 
-  // 🔥 训练热力图（12周版，来自 pets.js）
-  html += collapsibleCard('pc-heatmap-12w', '📅 训练热力图（近12周）', renderHeatmapHTML(hist), true);
-
   // 🏅 成就系统 + 等级（拆成两个折叠 card：等级条 + 成就墙）
   var achFullHtml = renderGamificationHTML(hist);
   // 拆分点：等级条结束位置（最后一个 </div> 之后、第一个分类标题之前）
