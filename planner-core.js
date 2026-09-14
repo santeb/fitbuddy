@@ -4894,23 +4894,6 @@ function renderProgress() {
     html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
   }
 
-  // 图表:力量进步曲线(有训练日志时)
-  // 自重动作不画重量趋势(如俯卧撑、引体向上等),无意义
-  var chartExNames = Object.keys(trainingLog).filter(function(k){
-    if (BODYWEIGHT_EX_NAMES.has(k)) return false;
-    if (trainingLog[k].length < 2) return false;
-    var maxW = 0;
-    trainingLog[k].forEach(function(e){ maxW = Math.max(maxW, e.weight||0); });
-    return maxW > 0;
-  });
-  if (chartExNames.length > 0) {
-    var topEx = chartExNames.slice(0, 3);
-    topEx.forEach(function(exName, chi){
-      html += collapsibleCard('pc-weight-trend-'+chi, '💪 '+exName+' 重量趋势',
-        '<div class="chart-wrap"><canvas id="chartEx'+chi+'" style="width:100%;height:200px;"></canvas></div>', false);
-    });
-  }
-
   // 图表:训练量走势(从训练日志聚合每日总容量 weight×reps)
   var volByDate = {};
   Object.keys(trainingLog).forEach(function(exName){
@@ -5086,20 +5069,6 @@ function renderProgress() {
       var chartData = hist.map(function(h){ return {l:h.date.slice(5), v: isRunning ? Math.round(h.distance||0) : h.count}; });
       drawChart('chartVolume', chartData, {type:isRunning?'bar':'bar', color:isRunning?'#3B82F6':'#FF6B35', yMax:0, title:''});
     }
-    var chartExNames2 = Object.keys(trainingLog).filter(function(k){
-      if (BODYWEIGHT_EX_NAMES.has(k)) return false;
-      if (trainingLog[k].length < 2) return false;
-      var maxW = 0;
-      trainingLog[k].forEach(function(e){ maxW = Math.max(maxW, e.weight||0); });
-      return maxW > 0;
-    });
-    chartExNames2.slice(0, 3).forEach(function(exName, chi){
-      var log = trainingLog[exName];
-      if (!log || log.length < 2) return;
-      var cd = log.map(function(e){ return {l:e.date.slice(5), v:e.weight||0}; });
-      var colors = ['#FF6B35','#3B82F6','#22C55E'];
-      drawChart('chartEx'+chi, cd, {type:'line', color:colors[chi]||'#8B5CF6', yMax:0, title:''});
-    });
     // 渲染热量消耗趋势
     if (hist.length >= 2 && hasCalories) {
       var calData = hist.map(function(h){ return {l:h.date.slice(5), v: Math.round(h.calories||0)}; });
