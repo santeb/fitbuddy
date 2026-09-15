@@ -2,6 +2,13 @@
 // 包含 PET_SPECIES 数据 / SVG渲染 / 野外遭遇 / 战斗系统
 // 依赖 planner-core.js
 
+// 🔧 精灵 UI 总开关（2026-09-15 起为 false）
+// false = 摘除所有「用户可见」的精灵入口：计划页卡片、稀有/隐藏款解锁庆祝弹窗。
+// 数据层不受影响 —— petAddDay()、checkHiddenUnlock()、checkRarityUnlock() 照常写 localStorage，
+// 用户练一天精灵就长一天，随时把这里改回 true 即可完整恢复展示（数据不丢）。
+var PET_UI_VISIBLE = false;
+
+
 // ============ 🐉 健身精灵宠物系统（5物种 + 1隐藏） ============
 var PET_MOODS = ['😊 元气满满','🙂 状态不错','😐 有点无聊','😢 好想训练','😭 快要饿死了…'];
 
@@ -614,13 +621,6 @@ function renderPetCard() {
     html += '</div>';
     html += '</div>';
   }
-  // ⚔️ 切磋按钮（已孵化才显示，即 stage≥1）
-  if (p.stage >= 1) {
-    html += '<div style="text-align:center;margin-top:10px;"><button onclick="petShowBattleModal(event)" style="padding:8px 20px;border-radius:20px;background:linear-gradient(90deg,#F97316,#DC2626);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;">⚔️ 精灵切磋</button></div>';
-  }
-  // 🏟️ 去社区
-  html += '<div style="text-align:center;margin-top:8px;"><button onclick="switchTab(document.querySelector(\'[data-tab=page-community]\'))" style="padding:6px 18px;border-radius:16px;background:transparent;color:var(--primary);border:1.5px solid var(--primary);font-size:12px;font-weight:600;cursor:pointer;">🏟️ 去社区大厅</button></div>';
-
   return html;
 }
 
@@ -678,292 +678,6 @@ var TYPE_CHART = {
   dark:    { strong:'nature',  weak:'fire',     emoji:'🦇', color:'#7C3AED', label:'暗' }
 };
 
-// 计算精灵战斗力
-function petCalcPower(speciesId) {
-  var days = petGetDays(speciesId);
-  var sp = PET_SPECIES[speciesId];
-  var stage = 0;
-  for (var i = sp.stages.length-1; i >= 0; i--) { if (days >= sp.stages[i].need) { stage = i; break; } }
-  var stageMul = [0.4, 1.0, 1.8, 3.0, 5.0][stage];
-  var atk = Math.round((8 + days * 4) * stageMul);
-  var hp = Math.round((25 + days * 6) * (1 + stage * 0.5));
-  return { atk:atk, hp:hp, stage:stage, days:days, element:sp.element, emoji:sp.stages[stage].emoji, name:sp.name, speciesId:speciesId };
-}
-
-// 渲染对战选择弹窗（两种模式：同伴切磋 / 野怪挑战）
-function petShowBattleModal(e) {
-  if (e) e.stopPropagation();
-  var info = petGetSpecies();
-  var currentId = info.speciesId;
-  var myPower = petCalcPower(currentId);
-
-  // 蛋不能出战（入口已过滤，二次保险）
-  if (myPower.stage < 1) return;
-
-  var mySp = PET_SPECIES[currentId];
-
-  // 已孵化的其他精灵（stage≥1）
-  var hatchedAllies = info.unlocked.filter(function(id){ return id !== currentId && petGetDays(id) >= 3; });
-
-  // 移除旧弹窗
-  var old = document.getElementById('petBattleOverlay');
-  if (old) old.remove();
-
-  var overlay = document.createElement('div');
-  overlay.id = 'petBattleOverlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);z-index:9998;display:flex;align-items:center;justify-content:center;';
-  overlay.addEventListener('click', function(ev){ if(ev.target===overlay) overlay.remove(); });
-
-  var html = '<div style="background:var(--card);border-radius:20px;padding:24px;max-width:360px;width:90%;text-align:center;max-height:85vh;overflow-y:auto;animation:petEvo 0.3s ease-out;">';
-  html += '<div style="font-size:22px;font-weight:900;color:var(--text);margin-bottom:2px;">⚔️ 精灵切磋</div>';
-  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">对手由电脑自动操控</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">火🔥→草🌿→雷⚡→冰❄️→火🔥</div>';
-  html += '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;">你的出战：<b>'+mySp.stages[myPower.stage].emoji+' '+mySp.name+'</b> ATK:'+myPower.atk+' HP:'+myPower.hp+'</div>';
-
-  // === 模式1：同伴切磋 ===
-  if (hatchedAllies.length > 0) {
-    html += '<div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:6px;">🏠 与同伴切磋</div>';
-    html += '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">（你的其他精灵，电脑操控）</div>';
-    for (var i = 0; i < hatchedAllies.length; i++) {
-      var eid = hatchedAllies[i];
-      var ep = petCalcPower(eid);
-      var esp = PET_SPECIES[eid];
-      var adv = getTypeAdvantage(currentId, eid);
-      var advLabel = adv > 1 ? '✅克制' : adv < 1 ? '⚠️被克' : '➖持平';
-      var advColor = adv > 1 ? '#22C55E' : adv < 1 ? '#EF4444' : '#A8A29E';
-      html += '<div onclick="petStartBattle(\''+currentId+'\',\''+eid+'\')" style="cursor:pointer;background:var(--bg);border-radius:14px;padding:10px;margin-bottom:6px;display:flex;align-items:center;gap:10px;transition:all 0.2s;border:2px solid transparent;" onmouseover="this.style.borderColor=\'var(--primary)\'" onmouseout="this.style.borderColor=\'transparent\'">';
-      html += '<span style="font-size:32px;">'+esp.stages[ep.stage].emoji+'</span>';
-      html += '<div style="flex:1;text-align:left;">';
-      html += '<div style="font-weight:700;color:var(--text);font-size:13px;">'+esp.name+'</div>';
-      html += '<div style="font-size:10px;color:var(--text3);">Lv.'+(ep.stage+1)+' · '+ep.days+'天 · ATK:'+ep.atk+' HP:'+ep.hp+'</div>';
-      html += '</div>';
-      html += '<span style="font-size:11px;font-weight:600;color:'+advColor+';white-space:nowrap;">'+advLabel+'</span>';
-      html += '</div>';
-    }
-  } else {
-    html += '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">暂无已孵化的同伴可切磋（需要训练3天以上）</div>';
-  }
-
-  // === 模式2：野怪挑战 ===
-  html += '<div style="margin:10px 0 6px;border-top:1px solid var(--bg2);padding-top:12px;"></div>';
-  html += '<div style="font-size:14px;font-weight:700;color:var(--text2);margin-bottom:6px;">⚡ 野怪挑战</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">（随机生成电脑对手，强度与你相当）</div>';
-  html += '<button onclick="petStartWildBattle(\''+currentId+'\')" style="width:100%;padding:12px;border-radius:14px;background:linear-gradient(90deg,#7C3AED,#A855F7);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">🎲 随机挑战</button>';
-
-  html += '<button onclick="document.getElementById(\'petBattleOverlay\').remove()" style="margin-top:10px;padding:8px 24px;border-radius:14px;background:var(--bg2);color:var(--text2);border:none;font-size:13px;cursor:pointer;">取消</button>';
-  html += '</div>';
-
-  overlay.innerHTML = html;
-  document.body.appendChild(overlay);
-}
-
-// 生成随机野怪对手
-var WILD_NAMES = ['疾风狼','铁甲犀','烈焰狮','暗影豹','冰晶蛇','雷鸣鹰','巨石像','森林鹿','电光鼠','毒蝎王','钢翼鸟','深渊鱼'];
-var WILD_ELEMENTS = ['fire','ice','thunder','nature'];
-function petGenerateWild(myPower) {
-  var el = WILD_ELEMENTS[Math.floor(Math.random() * WILD_ELEMENTS.length)];
-  var name = WILD_NAMES[Math.floor(Math.random() * WILD_NAMES.length)];
-  var atk = Math.round(myPower.atk * (0.7 + Math.random() * 0.6));
-  var hp = Math.round(myPower.hp * (0.7 + Math.random() * 0.6));
-  var stageEmojis = {fire:'🦁', ice:'🐍', thunder:'🦅', nature:'🐗'};
-  var emoji = stageEmojis[el] || '👾';
-  return { name:name, element:el, atk:atk, hp:hp, emoji:emoji, isWild:true };
-}
-
-// 野怪挑战（重载 getTypeAdvantage 支持 element 字符串）
-function petStartWildBattle(myId) {
-  var myPower = petCalcPower(myId);
-  var enemy = petGenerateWild(myPower);
-  var mySp = PET_SPECIES[myId];
-  var myEl = mySp.element;
-  var enEl = enemy.element;
-
-  // 元素克制（纯 element vs element）
-  var adv = 1.0;
-  if (myEl !== 'light' && enEl !== 'light') {
-    var mt = TYPE_CHART[myEl];
-    if (mt.strong === enEl) adv = 1.4;
-    else if (mt.weak === enEl) adv = 0.6;
-  }
-  var advNote = adv > 1 ? '(克制对方！)' : adv < 1 ? '(被对方克制…)' : '';
-
-  // 3 回合战斗
-  var log = [];
-  var myHP = myPower.hp;
-  var enHP = enemy.hp;
-  function rand() { return 0.85 + Math.random() * 0.3; }
-  function dmg(atk, defMul) { return Math.round(atk * rand() * adv / defMul); }
-  for (var r = 1; r <= 3; r++) {
-    var myDmg = dmg(myPower.atk, 1 + (enemy.atk/myPower.atk > 1.2 ? 0.15 : 0));
-    var enDmg = dmg(enemy.atk, 1 + (myPower.stage * 0.12));
-    myHP = Math.max(0, myHP - enDmg);
-    enHP = Math.max(0, enHP - myDmg);
-    log.push({ round:r, myDmg:myDmg, enDmg:enDmg, myHP:myHP, enHP:enHP });
-  }
-
-  var myWin = myHP > enHP;
-  var draw = myHP === enHP;
-
-  // 保存战绩
-  var records = JSON.parse(localStorage.getItem('fitbuddy_battle_records') || '[]');
-  records.push({ date:new Date().toISOString().slice(0,10), myId:myId, enemyId:'wild', enemyName:enemy.name, myHP:myHP, enHP:enHP, winner:draw?'draw':(myWin?myId:'wild') });
-  if (records.length > 20) records = records.slice(-20);
-  localStorage.setItem('fitbuddy_battle_records', JSON.stringify(records));
-
-  // 渲染战斗（复用好友战斗动画，适配野怪）
-  renderWildBattleAnimation(myId, myPower, enemy, log, myWin, draw, advNote);
-}
-
-// 野怪战斗动画
-function renderWildBattleAnimation(myId, myP, enemy, log, myWin, draw, advNote) {
-  var overlay = document.getElementById('petBattleOverlay');
-  if (!overlay) return;
-  var mySp = PET_SPECIES[myId];
-  var myEl = TYPE_CHART[myP.element];
-  var enEl = TYPE_CHART[enemy.element];
-
-  var html = '<div style="background:var(--card);border-radius:20px;padding:20px 16px;max-width:380px;width:95%;text-align:center;">';
-  html += '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:2px;">⚡ '+mySp.name+' VS '+enemy.name+'</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">'+advNote+'</div>';
-  html += '<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">（野怪 · 电脑操控）</div>';
-
-  html += renderBattleArena(myP.emoji, mySp.name, myEl.color, myP.atk, myP.hp, myP.hp,
-                             enemy.emoji, enemy.name, enEl.color, enemy.atk, enemy.hp, enemy.hp);
-
-  html += '<div id="battleLog" style="background:var(--bg);border-radius:12px;padding:10px;margin:8px 0;min-height:36px;font-size:12px;color:var(--text2);text-align:center;line-height:1.6;"></div>';
-  html += '<div id="battleResult" style="display:none;font-size:18px;font-weight:900;margin:8px 0;"></div>';
-  html += '<button id="battleCloseBtn" style="display:none;margin-top:6px;padding:10px 28px;border-radius:16px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;" onclick="document.getElementById(\'petBattleOverlay\').remove()">👌 知道了</button>';
-  html += '</div>';
-  overlay.innerHTML = html;
-
-  playBattleRounds(myP.hp, enemy.hp, log, myWin, draw, mySp);
-  ensureBattleShakeStyle();
-}
-
-// 提取战斗 arena HTML
-function renderBattleArena(myEmoji, myName, myColor, myAtk, myHP, myMaxHP, enEmoji, enName, enColor, enAtk, enHP, enMaxHP) {
-  var h = '';
-  h += '<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;">';
-  h += '<div style="text-align:center;flex:1;">';
-  h += '<div id="battleMyEmoji" style="font-size:52px;transition:transform 0.3s;">'+myEmoji+'</div>';
-  h += '<div style="font-size:11px;font-weight:700;color:'+myColor+';">'+myName+'</div>';
-  h += '<div style="font-size:10px;color:var(--text3);">ATK:'+myAtk+'</div>';
-  h += '<div style="margin-top:4px;background:var(--bg2);border-radius:8px;height:8px;overflow:hidden;"><div id="battleMyHP" style="height:100%;background:linear-gradient(90deg,#22C55E,#16A34A);width:100%;border-radius:8px;transition:width 0.6s;"></div></div>';
-  h += '<div id="battleMyHPLabel" style="font-size:10px;color:var(--text3);">HP:'+myHP+'/'+myMaxHP+'</div>';
-  h += '</div>';
-  h += '<div style="font-size:24px;font-weight:900;color:var(--text2);">VS</div>';
-  h += '<div style="text-align:center;flex:1;">';
-  h += '<div id="battleEnEmoji" style="font-size:52px;transition:transform 0.3s;">'+enEmoji+'</div>';
-  h += '<div style="font-size:11px;font-weight:700;color:'+enColor+';">'+enName+'</div>';
-  h += '<div style="font-size:10px;color:var(--text3);">ATK:'+enAtk+'</div>';
-  h += '<div style="margin-top:4px;background:var(--bg2);border-radius:8px;height:8px;overflow:hidden;"><div id="battleEnHP" style="height:100%;background:linear-gradient(90deg,#EF4444,#DC2626);width:100%;border-radius:8px;transition:width 0.6s;"></div></div>';
-  h += '<div id="battleEnHPLabel" style="font-size:10px;color:var(--text3);">HP:'+enHP+'/'+enMaxHP+'</div>';
-  h += '</div>';
-  h += '</div>';
-  return h;
-}
-
-// 播放回合动画
-function playBattleRounds(myMaxHP, enMaxHP, log, myWin, draw, mySp) {
-  var delay = 0;
-  function shake(id) { var el=document.getElementById(id); if(!el)return; el.style.transform='translateX(-8px)'; setTimeout(function(){el.style.transform='translateX(8px)'},80); setTimeout(function(){el.style.transform='translateX(0)'},160); }
-  function showLog(text) { var el=document.getElementById('battleLog'); if(el)el.textContent=text; }
-  function updateBars(rd) {
-    var mb=document.getElementById('battleMyHP'), eb=document.getElementById('battleEnHP');
-    var ml=document.getElementById('battleMyHPLabel'), el=document.getElementById('battleEnHPLabel');
-    if(mb)mb.style.width=Math.max(2,(rd.myHP/myMaxHP*100))+'%';
-    if(eb)eb.style.width=Math.max(2,(rd.enHP/enMaxHP*100))+'%';
-    if(ml)ml.textContent='HP:'+rd.myHP+'/'+myMaxHP;
-    if(el)el.textContent='HP:'+rd.enHP+'/'+enMaxHP;
-  }
-  for (var ri=0; ri<log.length; ri++) {(function(rd,idx){
-    delay+=1200; setTimeout(function(){
-      shake('battleMyEmoji'); shake('battleEnEmoji');
-      showLog('⚡ 第'+(idx+1)+'回合 — 你造成 '+rd.myDmg+' 伤害 | 对方造成 '+rd.enDmg+' 伤害');
-      updateBars(rd);
-    }, delay);
-  })(log[ri], ri);}
-  delay+=1400; setTimeout(function(){
-    var r=document.getElementById('battleResult'), b=document.getElementById('battleCloseBtn');
-    var mb=document.getElementById('battleMyHP'), eb=document.getElementById('battleEnHP');
-    if(draw){ if(r){r.style.display='block';r.textContent='🤝 平局！不相上下…';r.style.color='#A8A29E';}}
-    else if(myWin){ if(r){r.style.display='block';r.textContent='🎉 胜利！'+(mySp.name||'我方宠物')+' 赢了！';r.style.color='#22C55E';} if(mb)mb.style.background='linear-gradient(90deg,#22C55E,#FACC15)';}
-    else { if(r){r.style.display='block';r.textContent='💔 败北…对手战胜了你';r.style.color='#EF4444';} if(eb)eb.style.background='linear-gradient(90deg,#EF4444,#FACC15)';}
-    if(b)b.style.display='inline-block';
-  }, delay);
-}
-
-function ensureBattleShakeStyle() {
-  if (!document.getElementById('battleShakeStyle')) {
-    var style = document.createElement('style');
-    style.id = 'battleShakeStyle';
-    style.textContent = '#battleMyEmoji.shake,#battleEnEmoji.shake{animation:battleShake 0.25s ease-in-out;}@keyframes battleShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-10px)}50%{transform:translateX(10px)}75%{transform:translateX(-6px)}}';
-    document.head.appendChild(style);
-  }
-}
-
-// 元素克制计算（>1为自己有利）
-function getTypeAdvantage(myId, enemyId) {
-  var myEl = PET_SPECIES[myId].element;
-  var enEl = PET_SPECIES[enemyId].element;
-  if (myEl === 'light' || enEl === 'light') return 1.0;
-  var myType = TYPE_CHART[myEl];
-  var enType = TYPE_CHART[enEl];
-  if (myType.strong === enEl) return 1.4;
-  if (myType.weak === enEl) return 0.6;
-  return 1.0;
-}
-
-// 开始战斗（同伴切磋）
-function petStartBattle(myId, enemyId) {
-  var mySp = PET_SPECIES[myId];
-  var enSp = PET_SPECIES[enemyId];
-  var myP = petCalcPower(myId);
-  var enP = petCalcPower(enemyId);
-  var adv = getTypeAdvantage(myId, enemyId);
-  var advNote = adv > 1 ? '(克制对方！)' : adv < 1 ? '(被对方克制…)' : '';
-
-  var log = [];
-  var myHP = myP.hp;
-  var enHP = enP.hp;
-  function rand() { return 0.85 + Math.random() * 0.3; }
-  function dmg(atk, defStage) { return Math.round(atk * rand() / (1 + defStage * 0.15) * (adv > 0 ? (adv > 1 ? 1.4 : 0.6) : 1)); }
-  for (var r = 1; r <= 3; r++) {
-    var myDmg = dmg(myP.atk, enP.stage);
-    var enDmg = dmg(enP.atk, myP.stage);
-    myHP = Math.max(0, myHP - enDmg);
-    enHP = Math.max(0, enHP - myDmg);
-    log.push({ round:r, myDmg:myDmg, enDmg:enDmg, myHP:myHP, enHP:enHP });
-  }
-
-  var myWin = myHP > enHP;
-  var draw = myHP === enHP;
-
-  var records = JSON.parse(localStorage.getItem('fitbuddy_battle_records') || '[]');
-  records.push({ date:new Date().toISOString().slice(0,10), myId:myId, enemyId:enemyId, myHP:myHP, enHP:enHP, winner:draw?'draw':(myWin?myId:enemyId) });
-  if (records.length > 20) records = records.slice(-20);
-  localStorage.setItem('fitbuddy_battle_records', JSON.stringify(records));
-
-  // 渲染战斗
-  var overlay = document.getElementById('petBattleOverlay');
-  if (!overlay) return;
-  var myEl = TYPE_CHART[myP.element];
-  var enEl = TYPE_CHART[enP.element];
-
-  var html = '<div style="background:var(--card);border-radius:20px;padding:20px 16px;max-width:380px;width:95%;text-align:center;">';
-  html += '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:2px;">⚔️ '+mySp.name+' VS '+enSp.name+'</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">'+advNote+'</div>';
-  html += '<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">（电脑操控对方精灵）</div>';
-  html += renderBattleArena(myP.emoji, mySp.name, myEl.color, myP.atk, myP.hp, myP.hp, enP.emoji, enSp.name, enEl.color, enP.atk, enP.hp, enP.hp);
-  html += '<div id="battleLog" style="background:var(--bg);border-radius:12px;padding:10px;margin:8px 0;min-height:36px;font-size:12px;color:var(--text2);text-align:center;line-height:1.6;"></div>';
-  html += '<div id="battleResult" style="display:none;font-size:18px;font-weight:900;margin:8px 0;"></div>';
-  html += '<button id="battleCloseBtn" style="display:none;margin-top:6px;padding:10px 28px;border-radius:16px;background:var(--primary);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer;" onclick="document.getElementById(\'petBattleOverlay\').remove()">👌 知道了</button>';
-  html += '</div>';
-  overlay.innerHTML = html;
-
-  playBattleRounds(myP.hp, enP.hp, log, myWin, draw, mySp);
-  ensureBattleShakeStyle();
-}
 
 // 训练完成后刷新宠物
 function refreshPet() {
@@ -1067,10 +781,10 @@ function afterTrainingDone() {
   updateStreak();
   checkAchievements();
   updateHeaderStreak();
-  petAddDay();          // 🐉 只给当前精灵+1天
+  petAddDay();          // 🐉 只给当前精灵+1天（数据层，始终执行）
   refreshPet();
-  // 🌈 隐藏款随机触发检测
-  if (checkHiddenUnlock()) {
+  // 🌈 隐藏款随机触发检测（检测/写数据照常，只在 UI 开启时才弹庆祝窗）
+  if (checkHiddenUnlock() && PET_UI_VISIBLE) {
     setTimeout(function(){
       showHiddenUnlockCelebration();
     }, 600);
@@ -1119,6 +833,8 @@ function checkRarityUnlock() {
 
   if (newlyUnlocked.length > 0) {
     localStorage.setItem('fitbuddy_pet_unlocked', JSON.stringify(unlocked));
+    // 摘展示期间：解锁记录照常写入，但不弹庆祝窗（PET_UI_VISIBLE 改回 true 即恢复）
+    if (!PET_UI_VISIBLE) return newlyUnlocked;
     // 如果一次解锁多个（比如从7天跳到14天），显示最后一个
     for (var n = 0; n < newlyUnlocked.length; n++) {
       var delay = n * 2000;
@@ -1160,115 +876,3 @@ function showRarityUnlockCelebration(speciesId) {
   document.body.appendChild(overlay);
 }
 
-// ============ 🏟️ 社区大厅系统 ============
-
-// AI 训练者名字池 + 个性+口头禅+训练建议
-var TRAINER_NAMES = [
-  '阿杰举铁 🏋️','林小跑 🏃','大志增肌 💪','陈自律 📅','杨铁人 ⚡',
-  '张瑶瑜伽 🧘','王教练 🏅','李肌肉 💨','周跑者 🏃','健身小陈 🏃‍♀️',
-  '马大力 🔥','杨小燕 🌸','郑硬拉 🦵','健身小美 💃','老王撸铁 🏋️‍♀️',
-  '程跑步 🏃‍♂️','小张拉伸 🧘‍♀️','阿东肌肉 💪','小红健身 🤸‍♀️','健身老赵 🏃'
-];
-
-// 训练者个性配置
-var TRAINER_PERSONALITIES = {
-  '阿杰举铁 🏋️': { style:'稳重硬汉', catchphrase:'日积月累，力大无穷！', tips:['深蹲蹲到底才有效果，半蹲等于白练','三大项是增肌的王道动作','蛋白质不够，肌肉就长不出来'], specialty:'力量举' },
-  '林小跑 🏃': { style:'阳光活力', catchphrase:'跑起来，每一步都是进步！', tips:['跑前热身5分钟，跑后拉伸5分钟','步频180步/分钟最省力高效','跑姿比跑量更重要，宁慢勿错'], specialty:'有氧跑步' },
-  '大志增肌 💪': { style:'热血追梦', catchphrase:'肌肉是对努力最好的回报！', tips:['渐进超负荷是增肌核心原理','复合动作优先，孤立动作锦上添花','睡眠是增肌的第三大支柱'], specialty:'健美增肌' },
-  '陈自律 📅': { style:'极简高效', catchphrase:'规律训练才是最快的捷径', tips:['固定时间训练，坚持比强度重要','每次训练不超过60分钟','记录每一次重量和感受'], specialty:'生活化健身' },
-  '杨铁人 ⚡': { style:'永不言败', catchphrase:'挑战极限，超越昨天的自己！', tips:['HIIT每次20分钟足够，不要贪多','运动后补充碳水和蛋白质','休息不好就降低训练强度'], specialty:'综合体能' },
-  '张瑶瑜伽 🧘': { style:'身心平衡', catchphrase:'在呼吸中遇见更好的自己', tips:['早晨瑜伽比咖啡更能唤醒身体','核心稳定是所有动作的基石','阴瑜伽对改善睡眠特别有效'], specialty:'瑜伽/柔韧' },
-  '王教练 🏅': { style:'专业严谨', catchphrase:'科学健身不走弯路', tips:['训练前热身激活目标肌群','动作质量永远比重量重要','每周至少安排1-2天完全休息'], specialty:'综合训练' },
-  '李肌肉 💨': { style:'爆发型', catchphrase:'力量决定一切！💪', tips:['大重量低次数主攻力量','握力是最容易被忽视的短板','协同肌群也要均衡发展'], specialty:'力量训练' },
-  '周跑者 🏃': { style:'耐力型', catchphrase:'终点在前方，一步一步来', tips:['LSD训练是马拉松的必经之路','跑鞋800公里必须更换','跑步后补充电解质很重要'], specialty:'长跑/耐力' },
-  '健身小陈 🏃‍♀️': { style:'健康生活', catchphrase:'健身是一种生活方式', tips:['体态比体重更重要','核心训练是一切运动的基础','训练多样性防止平台期'], specialty:'体态改善' },
-  '马大力 🔥': { style:'燃脂狂人', catchphrase:'汗水不会骗人！', tips:['空腹有氧减脂效果好但要适度','波比跳是燃脂效率最高的动作','高强度训练每周2-3次足矣'], specialty:'减脂训练' },
-  '杨小燕 🌸': { style:'柔美健康', catchphrase:'运动让我更爱自己', tips:['女性要多关注臀部和小腿','跑步+力量才是完美组合','经期适当降低运动强度'], specialty:'女性健身' },
-  '郑硬拉 🦵': { style:'下盘稳健', catchphrase:'腿是力量的根基！', tips:['硬拉时保持背部平直','臀推是练臀最有效的动作','单腿训练能发现两侧不平衡'], specialty:'下肢/硬拉' },
-  '健身小美 💃': { style:'自信活力', catchphrase:'自律让我更自由！', tips:['练前热身，练后拉伸，缺一不可','小重量多组数塑造线条','饮食控制比运动本身更重要'], specialty:'塑形/体态' },
-  '老王撸铁 🏋️‍♀️': { style:'老练沉稳', catchphrase:'坚持就是胜利！', tips:['新手先学动作，再加重量','肌肉在休息时生长，不在训练时','记录数据是突破平台期的关键'], specialty:'综合力量' },
-  '程跑步 🏃‍♂️': { style:'坚韧不拔', catchphrase:'每一步都算数', tips:['跑步最重要的是坚持而不是速度','跑姿矫正能预防大部分伤痛','交叉训练能提升跑步表现'], specialty:'户外跑步' },
-  '小张拉伸 🧘‍♀️': { style:'疗愈放松', catchphrase:'让身体好好休息也是一种训练', tips:['每天10分钟拉伸改善体态','久坐人群要重点拉伸髋屈肌','睡前拉伸有助于改善睡眠'], specialty:'拉伸/康复' },
-  '阿东肌肉 💪': { style:'肌肉派', catchphrase:'肌肉是男人的勋章', tips:['每组6-12次是增肌最佳区间','训练后30分钟补充蛋白质','肌肉群要轮流刺激，不要天天练同一部位'], specialty:'增肌训练' },
-  '小红健身 🤸‍♀️': { style:'活泼开朗', catchphrase:'动起来就会变好！', tips:['空腹有氧适合减脂人群','力量训练女性不会练成肌肉女','功能性训练让日常生活更轻松'], specialty:'功能性健身' },
-  '健身老赵 🏃': { style:'经验老道', catchphrase:'健身是一辈子的事', tips:['年纪大了更要注重关节保护','柔韧性训练比年轻时更重要','规律比强度更能坚持']  , specialty:'综合健身' }
-};
-
-// 生成确定性哈希（同一 session 中训练者不变）
-function communityHash(str) {
-  var h = 0;
-  for (var i = 0; i < str.length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; }
-  return Math.abs(h);
-}
-
-// 获取/生成 AI 训练者列表（存储在 localStorage，每次刷新页面时重新随机）
-function getTrainers() {
-  var cached = localStorage.getItem('fitbuddy_trainers');
-  if (cached) {
-    try { return JSON.parse(cached); } catch(e) {}
-  }
-  return generateTrainers();
-}
-
-function generateTrainers() {
-  var normalIds = [];
-  for (var k in PET_SPECIES) { if (PET_SPECIES[k].rarityWeight > 0) normalIds.push(k); }
-
-  var trainers = [];
-  var namesPool = TRAINER_NAMES.slice();
-
-  // 打乱名字池
-  for (var i = namesPool.length - 1; i > 0; i--) {
-    var j = Math.floor(Math.random() * (i + 1));
-    var tmp = namesPool[i]; namesPool[i] = namesPool[j]; namesPool[j] = tmp;
-  }
-
-  for (var t = 0; t < 12; t++) {
-    var name = namesPool[t];
-    var personality = TRAINER_PERSONALITIES[name] || { catchphrase:'坚持就是胜利！', tips:['科学训练+合理饮食+充足睡眠','坚持比强度更重要','记录你的每一次进步'], specialty:'综合健身' };
-    var speciesId = normalIds[Math.floor(Math.random() * normalIds.length)];
-    var sp = PET_SPECIES[speciesId];
-    // 训练天数：正态分布20-80天
-    var days = Math.floor(20 + Math.random() * 60);
-    // 决定阶段
-    var stage = days >= 50 ? 4 : days >= 25 ? 3 : days >= 10 ? 2 : days >= 3 ? 1 : 0;
-    var stageData = sp.stages[stage];
-    // 战绩
-    var wins = Math.floor(Math.random() * days * 0.3);
-    var losses = Math.floor(Math.random() * days * 0.15);
-    // 战斗力
-    var stageMult = [0.4, 1.0, 1.8, 3.0, 5.0][stage];
-    var atk = Math.floor((8 + days * 4) * stageMult);
-    var hp = Math.floor((25 + days * 6) * (1 + stage * 0.5));
-    // 随机挑一条训练建议
-    var randomTip = personality.tips[Math.floor(Math.random() * personality.tips.length)];
-
-    trainers.push({
-      id: 'trainer_' + t,
-      name: name,
-      speciesId: speciesId,
-      speciesName: sp.name,
-      element: sp.element,
-      days: days,
-      stage: stage,
-      stageEmoji: stageData.emoji,
-      stageName: stageData.name,
-      wins: wins,
-      losses: losses,
-      power: atk,
-      hp: hp,
-      // 个性数据
-      style: personality.style,
-      catchphrase: personality.catchphrase,
-      tip: randomTip,
-      tips: personality.tips,
-      specialty: personality.specialty
-    });
-  }
-
-  // 按战斗力降序排列
-  trainers.sort(function(a, b) { return b.power - a.power; });
-
-  localStorage.setItem('fitbuddy_trainers', JSON.stringify(trainers));
-  return trainers;
-}

@@ -972,12 +972,13 @@ window.checkMissedDays = checkMissedDays;
 window.renderFatigueWarning = renderFatigueWarning;
 window.checkMuscleFatigue = checkMuscleFatigue;
 
-// 渲染热身组+杠铃片计算器到动作库页面
+// 渲染热身组+杠铃片计算器到动作库页顶部的「训练计算器」区块
+// 幂等:已渲染过的面板不重复覆盖,避免用户已输入的数值被清空
 window.renderProCalculators = function() {
-  var container = document.getElementById('proCalcContainer');
-  if (container) {
-    container.innerHTML = renderWarmupCalculator() + renderPlateCalculator();
-  }
+  var w = document.getElementById('calcPanelWarmup');
+  if (w && !w.dataset.rendered) { w.innerHTML = renderWarmupCalculator(); w.dataset.rendered = '1'; }
+  var p = document.getElementById('calcPanelPlate');
+  if (p && !p.dataset.rendered) { p.innerHTML = renderPlateCalculator(); p.dataset.rendered = '1'; }
 };
 
 // 进度页增强:在原有内容后追加Pro模块

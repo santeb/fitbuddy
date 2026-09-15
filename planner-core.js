@@ -1393,11 +1393,15 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     '<button class="btn-generate" style="background:var(--card);color:var(--text);border:1.5px solid var(--border);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="exportPlan()">'+
     '🖨 打印/导出计划</button>'+
     '<button class="btn-generate" style="background:var(--card);color:var(--primary);border:1.5px solid var(--primary);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="showPlanShareModal()">'+
-    '📤 分享计划码</button></div>';
+    '📤 分享计划码</button>'+
+    '<button class="btn-generate" style="background:var(--card);color:var(--text);border:1.5px solid var(--border);box-shadow:none;font-size:13px;padding:10px 24px;width:auto;display:inline-flex;" onclick="showPlanImportModal()">'+
+    '📥 导入计划码</button></div>';
   // 🎣 蔡格尼克效应: 未完成感 banner
   html += fbProgressBannerHtml();
-  // 🐉 健身精灵宠物
-  html += '<div id="petArea">' + (typeof renderPetCard === 'function' ? renderPetCard() : '') + '</div>';
+  // 🐉 健身精灵宠物 —— 展示已摘除（2026-09-15）
+  // pets.js 仍在后台累积精灵数据（petAddDay 等照常执行），只是不再渲染到计划页。
+  // 恢复方式：取消下面一行注释，并把 pets.js 顶部 PET_UI_VISIBLE 改回 true。
+  // html += '<div id="petArea">' + (typeof renderPetCard === 'function' ? renderPetCard() : '') + '</div>';
   document.getElementById("planResult").innerHTML = html;
   updateTodayBanner();
   } catch(renderErr) {
@@ -5254,7 +5258,6 @@ function switchTab(btn) {
   if (typeof track === 'function') track('page_view', { page_title: tab });
   if (tab === "page-lib") { renderLib(); _trackStat('libs'); }
   if (tab === "page-prog") renderProgress();
-  if (tab === "page-community") { renderCommunity(); checkFirstVisitGuide(); }
   if (tab === "page-supps") renderSuppsPage();
   if (tab === "page-donate") { _trackStat('donate'); }
   if (tab === "page-plan") {
@@ -5375,7 +5378,7 @@ window.addEventListener('load', function() {
   syncVoiceBtn();
   var planResult = document.getElementById("planResult");
   if (planResult && !planResult.innerHTML.trim()) {
-    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">选择目标、水平和天数,点击「生成我的计划」开始训练,顺便领养你的健身精灵!</div></div>';
+    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">选择目标、水平和天数,点击「生成我的计划」开始训练!</div></div>';
   }
   updateHeaderStreak();
   // 初始化补给页面
@@ -5427,10 +5430,13 @@ var ACHIEVEMENTS = [
   { id: 'train_50',   cat: '💪 训练次数', icon: '💪', name: '五十战记', desc: '累计完成50次训练' },
   { id: 'train_100',  cat: '💪 训练次数', icon: '💪', name: '百战之躯', desc: '累计完成100次训练' },
   { id: 'ex_10',      cat: '🔍 探索发现', icon: '🔍', name: '动作达人', desc: '解锁10个不同动作' },
-  { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' },
-  { id: 'pet_evolve3',cat: '🐉 精灵伙伴', icon: '🐉', name: '精灵进化', desc: '精灵达到第3阶段' },
-  { id: 'pet_max',    cat: '🐉 精灵伙伴', icon: '🐉', name: '终极形态', desc: '精灵达到最终形态' },
-  { id: 'hidden_pet', cat: '🐉 精灵伙伴', icon: '🦄', name: '幻光降临', desc: '解锁隐藏款精灵' }
+  { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' }
+  // 🐉 精灵伙伴成就随精灵展示一并摘除（2026-09-15）。
+  // 这 3 条在 checkAchievements() 里本来就没有解锁逻辑，属纯展示死项，摘掉不影响任何判定。
+  // 恢复精灵系统时把这 3 条加回数组即可：
+  // { id: 'pet_evolve3',cat: '🐉 精灵伙伴', icon: '🐉', name: '精灵进化', desc: '精灵达到第3阶段' },
+  // { id: 'pet_max',    cat: '🐉 精灵伙伴', icon: '🐉', name: '终极形态', desc: '精灵达到最终形态' },
+  // { id: 'hidden_pet', cat: '🐉 精灵伙伴', icon: '🦄', name: '幻光降临', desc: '解锁隐藏款精灵' }
 ];
 
 function getAchievements() {
@@ -5994,11 +6000,33 @@ function showToast(msg) {
   setTimeout(function(){ t.remove(); }, 3000);
 }
 
+// ============ 训练计算器：tab 切换(1RM / 热身组 / 杠铃片) ============
+// 三个计算器合并在动作库页顶部 #calcHub 内,面板常驻(仅 display 切换),切回时输入值不丢
+var _calcTabMap = { rm: "calcPanelRm", warmup: "calcPanelWarmup", plate: "calcPanelPlate" };
+function switchCalcTab(kind) {
+  var hub = document.getElementById("calcHub");
+  if (!hub || !_calcTabMap[kind]) return;
+  var tabs = hub.querySelectorAll(".calc-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    var on = tabs[i].getAttribute("data-calc") === kind;
+    tabs[i].classList[on ? "add" : "remove"]("active");
+    tabs[i].setAttribute("aria-selected", on ? "true" : "false");
+  }
+  Object.keys(_calcTabMap).forEach(function(k){
+    var el = document.getElementById(_calcTabMap[k]);
+    if (el) el.classList[k === kind ? "add" : "remove"]("active");
+  });
+  // 热身组/杠铃片面板由 pro-tools.js 动态生成,切到时按需渲染(幂等)
+  if (kind !== "rm" && typeof window.renderProCalculators === "function") {
+    window.renderProCalculators();
+  }
+}
+
 // ============ 1RM 极限重量计算器 ============
 var rmFormula = "epley";
 function switchRMFormula(f, btn) {
   rmFormula = f;
-  var btns = document.querySelectorAll("#rmCalc .rm-actions button");
+  var btns = document.querySelectorAll("#calcPanelRm .rm-actions button");
   btns.forEach(function(b){ b.classList.remove("active"); });
   btn.classList.add("active");
   calc1RM();

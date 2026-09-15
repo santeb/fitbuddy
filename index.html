@@ -425,6 +425,18 @@ input,select{font-family:inherit;}
 .rm-actions{display:flex;gap:8px;margin-top:10px;}
 .rm-actions button{flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text2);transition:all .2s;}
 .rm-actions button.active{background:var(--primary);color:#fff;}
+/* 🧮 训练计算器（动作库顶部合并区） */
+.calc-hub{padding:14px 16px;background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);}
+.calc-hub-title{font-size:14px;font-weight:700;margin-bottom:10px;}
+.calc-hub-tabs{display:flex;gap:6px;background:var(--bg);padding:4px;border-radius:10px;margin-bottom:14px;}
+.calc-tab{flex:1;padding:8px 4px;border:none;border-radius:8px;background:transparent;color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;}
+.calc-tab.active{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.25);}
+.calc-panel{display:none;}
+.calc-panel.active{display:block;}
+/* 面板内复用原有计算器结构,但去掉重复的卡片外观与标题(tab 已承担标题) */
+.calc-panel .rm-calc{padding:0;background:none;box-shadow:none;margin-bottom:0;border-radius:0;}
+.calc-panel .rm-calc .rm-title{display:none;}
+.calc-panel .rm-actions{margin:0 0 12px;}
 
 /* Progress Page */
 .progress-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
@@ -584,8 +596,6 @@ input,select{font-family:inherit;}
 /* 趋势图卡片 */
 .prog-chart-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
 /* Pro计算器容器 */
-#proCalcContainer{margin-top:14px;}
-
 /* Pace Calculator */
 .pace-calc{background:var(--card);border-radius:var(--radius);margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden;}
 .pace-calc-header{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;cursor:pointer;user-select:none;font-size:14px;font-weight:700;color:var(--text);}
@@ -601,7 +611,7 @@ input,select{font-family:inherit;}
 @media print{
   @page { margin: 12mm 10mm; size: A4 portrait; }
   /* 隐藏所有 UI 交互元素 */
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,#communityGuide,#leaderboardWrap,#achievementWrap,#collectionWrap,#dailyChallengeWrap,.reminder-banner,.injury-banner,#communityContent .cb-btns,#communityContent .cb-ai,#communityContent .cb-weekly,.community-card,.community-guide,.leaderboard-card,.achievement-badge,.collection-card,.daily-challenge-card,#proPlanModules,#proCalcContainer,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
   .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
   body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* 强制白色背景+黑色文字 */
@@ -768,205 +778,6 @@ input,select{font-family:inherit;}
   margin-top: -2px;
 }
 
-/* ====== 🏟️ 社区大厅 ====== */
-.community-banner {
-  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 50%, #EC4899 100%);
-  color: #fff; border-radius: var(--radius); padding: 20px 16px;
-  margin-bottom: 14px; text-align: center; position: relative; overflow: hidden;
-  box-shadow: 0 4px 18px rgba(124,58,237,0.3);
-}
-.community-banner::after {
-  content: '🏟️'; position: absolute; right: 12px; bottom: -4px;
-  font-size: 56px; opacity: 0.16;
-}
-.community-banner .cb-title { font-size: 20px; font-weight: 900; }
-.community-banner .cb-sub { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-
-/* 排行榜 */
-.rank-list { display: flex; flex-direction: column; gap: 6px; }
-.rank-row {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-  background: var(--card); border-radius: 12px; box-shadow: var(--shadow);
-  transition: all 0.2s;
-}
-.rank-row.is-me { border: 2px solid var(--primary); background: var(--primary-light); }
-[data-theme="dark"] .rank-row.is-me { background: rgba(255,107,53,0.1); }
-.rank-num { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; font-size: 13px; font-weight: 900; flex-shrink: 0;
-  background: var(--bg); color: var(--text3);
-}
-.rank-row:nth-child(1) .rank-num { background: #FFD700; color: #fff; font-size: 16px; }
-.rank-row:nth-child(2) .rank-num { background: #C0C0C0; color: #fff; }
-.rank-row:nth-child(3) .rank-num { background: #CD7F32; color: #fff; }
-.rank-pet { font-size: 30px; flex-shrink: 0; line-height: 1; }
-.rank-info { flex: 1; min-width: 0; }
-.rank-name { font-size: 14px; font-weight: 700; color: var(--text); }
-.rank-detail { font-size: 11px; color: var(--text3); }
-.rank-score { text-align: right; flex-shrink: 0; }
-.rank-score .rs-val { font-size: 16px; font-weight: 900; color: var(--primary); }
-.rank-score .rs-unit { font-size: 10px; color: var(--text3); }
-
-/* 训练者卡片 */
-.trainer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-.trainer-card {
-  background: var(--card); border-radius: 16px; padding: 14px 12px;
-  text-align: center; box-shadow: var(--shadow); cursor: pointer;
-  transition: all 0.25s; position: relative; overflow: hidden;
-}
-.trainer-card:active { transform: scale(0.96); }
-.trainer-card .tc-pet { font-size: 44px; display: block; margin-bottom: 4px; transition: transform 0.3s; }
-.trainer-card:hover .tc-pet { transform: scale(1.1); }
-.trainer-card .tc-name { font-size: 13px; font-weight: 700; color: var(--text); }
-.trainer-card .tc-info { font-size: 10px; color: var(--text3); margin-top: 2px; }
-.trainer-card .tc-challenge {
-  display: inline-block; margin-top: 8px; padding: 5px 14px;
-  border-radius: 14px; background: linear-gradient(90deg, #7C3AED, #A855F7);
-  color: #fff; font-size: 11px; font-weight: 700;
-}
-.trainer-card .tc-badge {
-  position: absolute; top: 6px; right: 6px;
-  background: #FF6B35; color: #fff; font-size: 9px; padding: 2px 7px;
-  border-radius: 8px; font-weight: 700;
-}
-/* 训练者动态 */
-.feed-item{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
-.feed-item:last-child{border-bottom:none;}
-.feed-emoji{font-size:22px;flex-shrink:0;width:36px;height:36px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;}
-.feed-body{flex:1;}
-.feed-text{font-size:13px;color:var(--text);line-height:1.5;}
-.feed-time{font-size:10px;color:var(--text3);margin-top:3px;}
-
-/* 每日挑战 */
-.daily-challenge {
-  background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #312E81 100%);
-  color: #fff; border-radius: var(--radius); padding: 18px 16px;
-  margin-bottom: 14px; position: relative; overflow: hidden;
-  box-shadow: 0 4px 20px rgba(79,70,229,0.3);
-}
-.daily-challenge::after {
-  content: '⚔️'; position: absolute; right: 14px; top: 12px;
-  font-size: 42px; opacity: 0.2;
-}
-.daily-challenge .dc-header { font-size: 11px; opacity: 0.7; letter-spacing: 1px; text-transform: uppercase; }
-.daily-challenge .dc-name { font-size: 20px; font-weight: 900; margin: 4px 0; }
-.daily-challenge .dc-pet { font-size: 48px; }
-.daily-challenge .dc-info { font-size: 12px; opacity: 0.8; margin-bottom: 10px; }
-.daily-challenge .dc-btn {
-  display: inline-block; padding: 10px 28px; border-radius: 20px;
-  background: linear-gradient(90deg, #F59E0B, #F97316);
-  color: #fff; font-size: 15px; font-weight: 800; border: none; cursor: pointer;
-  box-shadow: 0 3px 12px rgba(245,158,11,0.4); transition: all 0.2s;
-}
-.daily-challenge .dc-btn:active { transform: scale(0.95); }
-.daily-challenge .dc-done {
-  font-size: 13px; color: #A5B4FC; margin-top: 6px;
-}
-
-/* 加入训练群 */
-.join-group-card {
-  display: flex; align-items: center; gap: 14px;
-  background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(255,62,127,0.08));
-  border: 1px solid rgba(255,107,53,0.15);
-  border-radius: var(--radius); padding: 16px 18px;
-  margin-top: 14px; cursor: pointer; transition: all 0.25s;
-}
-.join-group-card:active { transform: scale(0.98); }
-.join-group-card .jgc-icon { font-size: 36px; flex-shrink: 0; }
-.join-group-card .jgc-body { flex: 1; }
-.join-group-card .jgc-title { font-size: 16px; font-weight: 800; color: var(--text); }
-.join-group-card .jgc-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
-.join-group-card .jgc-arrow { font-size: 24px; color: var(--primary); flex-shrink: 0; font-weight: 300; }
-
-/* 野外探索 */
-.wild-explore {
-  background: linear-gradient(135deg, #064E3B 0%, #047857 50%, #059669 100%);
-  color: #fff; border-radius: var(--radius); padding: 18px 16px;
-  margin-bottom: 14px; position: relative; overflow: hidden;
-  box-shadow: 0 4px 20px rgba(5,150,105,0.3); cursor: pointer; transition: all 0.25s;
-}
-.wild-explore:active { transform: scale(0.97); }
-.wild-explore::after {
-  content: '🌿'; position: absolute; right: 12px; top: 8px;
-  font-size: 52px; opacity: 0.18;
-}
-.wild-explore .we-title { font-size: 18px; font-weight: 900; }
-.wild-explore .we-sub { font-size: 12px; opacity: 0.85; margin-top: 4px; }
-.wild-explore .we-cooldown { font-size: 12px; color: #6EE7B7; margin-top: 8px; }
-
-/* 探索动画 */
-@keyframes wildExploreShake {
-  0%,100%{transform:translateX(0)}
-  20%{transform:translateX(-6px) rotate(-2deg)}
-  40%{transform:translateX(6px) rotate(2deg)}
-  60%{transform:translateX(-4px)}
-  80%{transform:translateX(4px)}
-}
-.wild-exploring { animation: wildExploreShake 0.6s ease-in-out; }
-
-/* 野生精灵遭遇弹窗 */
-.wild-encounter-card {
-  background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #0F3460 100%);
-  border: 3px solid #6EE7B7; border-radius: 24px; padding: 24px 20px;
-  text-align: center; color: #fff; animation: petEvo 0.4s ease-out;
-}
-.wild-encounter-card .wec-rarity {
-  display: inline-block; padding: 3px 12px; border-radius: 12px;
-  font-size: 11px; font-weight: 700; margin-bottom: 10px;
-}
-.wild-encounter-card .wec-emoji { font-size: 72px; display: block; margin: 6px 0; animation: wildFloat 1.5s ease-in-out infinite; }
-@keyframes wildFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-.wild-encounter-card .wec-name { font-size: 22px; font-weight: 900; margin-bottom: 2px; }
-.wild-encounter-card .wec-info { font-size: 12px; opacity: 0.8; }
-.wild-encounter-card .wec-stats { display: flex; justify-content: center; gap: 16px; margin: 10px 0; font-size: 11px; }
-.wild-encounter-card .wec-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
-.wild-encounter-card .wec-btn {
-  padding: 10px 24px; border-radius: 20px; border: none; font-size: 14px;
-  font-weight: 700; cursor: pointer; transition: all 0.2s; color: #fff;
-}
-.wild-encounter-card .wec-btn:active { transform: scale(0.93); }
-.wec-fight { background: linear-gradient(90deg, #EF4444, #DC2626); }
-.wec-flee { background: rgba(255,255,255,0.15); border: 1.5px solid rgba(255,255,255,0.3) !important; }
-
-/* 捕捉动画 */
-@keyframes catchShake {
-  0%,100%{transform:translateX(0) rotate(0)}
-  15%{transform:translateX(-10px) rotate(-8deg)}
-  30%{transform:translateX(10px) rotate(8deg)}
-  45%{transform:translateX(-6px) rotate(-4deg)}
-  60%{transform:translateX(6px) rotate(4deg)}
-  75%{transform:translateX(-2px)}
-}
-@keyframes catchSuccess { 0%{transform:scale(1)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
-@keyframes catchEscape {
-  0%{transform:translateY(0);opacity:1}
-  30%{transform:translateY(-20px);opacity:0.5}
-  100%{transform:translateY(-60px);opacity:0}
-}
-.catch-ball { font-size: 54px; display: inline-block; transition: all 0.3s; }
-.catch-shaking { animation: catchShake 0.8s ease-in-out; }
-.catch-success { animation: catchSuccess 0.4s ease-out; }
-.catch-escaped { animation: catchEscape 0.6s ease-in forwards; }
-
-/* 收藏库 */
-.collection-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-.collection-card {
-  background: var(--card); border-radius: 16px; padding: 14px 10px;
-  text-align: center; box-shadow: var(--shadow); position: relative;
-  transition: all 0.25s;
-}
-.collection-card .cc-emoji { font-size: 40px; display: block; margin-bottom: 4px; }
-.collection-card .cc-name { font-size: 11px; font-weight: 700; color: var(--text); }
-.collection-card .cc-info { font-size: 10px; color: var(--text3); margin-top: 2px; }
-.collection-card .cc-date { font-size: 9px; color: var(--text3); margin-top: 4px; }
-.collection-empty { text-align: center; padding: 24px; color: var(--text3); font-size: 13px; }
-.collection-section-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 10px; margin-bottom: 10px; border-radius: 14px;
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  background: var(--card); color: var(--text); box-shadow: var(--shadow);
-  transition: all 0.2s;
-}
-.collection-section-toggle:active { transform: scale(0.97); }
 /* ===== 快速模板 ===== */
 .tpl-card {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -1228,6 +1039,40 @@ input,select{font-family:inherit;}
   <!-- 动作库页 -->
   <div class="page" id="page-lib" role="tabpanel" aria-label="动作库" tabindex="0">
     <input type="search" class="search-bar" id="searchEx" placeholder="🔍 搜索动作名称..." oninput="renderLibDebounced()" aria-label="搜索动作名称" role="searchbox" autocomplete="off">
+    <!-- 🧮 训练计算器（1RM / 热身组 / 杠铃片） -->
+    <div class="calc-hub" id="calcHub">
+      <div class="calc-hub-title">🧮 训练计算器</div>
+      <div class="calc-hub-tabs" role="tablist" aria-label="训练计算器切换">
+        <button class="calc-tab active" data-calc="rm" role="tab" aria-selected="true" aria-controls="calcPanelRm" onclick="switchCalcTab('rm')">1RM 极限重量</button>
+        <button class="calc-tab" data-calc="warmup" role="tab" aria-selected="false" aria-controls="calcPanelWarmup" onclick="switchCalcTab('warmup')">热身组</button>
+        <button class="calc-tab" data-calc="plate" role="tab" aria-selected="false" aria-controls="calcPanelPlate" onclick="switchCalcTab('plate')">杠铃片</button>
+      </div>
+      <div class="calc-panel active" id="calcPanelRm" role="tabpanel" aria-label="1RM 极限重量计算器">
+        <div class="rm-actions">
+          <button class="active" data-formula="epley" onclick="switchRMFormula('epley',this)">Epley 公式</button>
+          <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
+        </div>
+        <div class="rm-input-row">
+          <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()" aria-label="举起重量（公斤）"></div>
+          <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()" aria-label="完成次数"></div>
+        </div>
+        <div class="rm-result" id="rmResult" style="display:none;">
+          <div class="rm-result-num" id="rmValue">--</div>
+          <div class="rm-result-label" id="rmFormulaLabel">Epley 公式估算</div>
+          <table class="rm-table" style="margin-top:10px;">
+            <tr><td>50% 1RM</td><td id="rm50">-- kg</td></tr>
+            <tr><td>60% 1RM</td><td id="rm60">-- kg</td></tr>
+            <tr><td>70% 1RM</td><td id="rm70">-- kg</td></tr>
+            <tr><td>80% 1RM</td><td id="rm80">-- kg</td></tr>
+            <tr><td>85% 1RM</td><td id="rm85">-- kg</td></tr>
+            <tr><td>90% 1RM</td><td id="rm90">-- kg</td></tr>
+            <tr><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="calc-panel" id="calcPanelWarmup" role="tabpanel" aria-label="热身组计算器"></div>
+      <div class="calc-panel" id="calcPanelPlate" role="tabpanel" aria-label="杠铃片计算器"></div>
+    </div>
     <div class="filter-row" id="partFilter">
       <div class="filter-chip active" data-part="all">全部部位</div>
       <div class="filter-chip" data-part="腿">🦵 腿</div>
@@ -1257,33 +1102,6 @@ input,select{font-family:inherit;}
       <span style="font-size:18px;">➕</span> 添加自定义动作
     </button>
     <div id="libList" aria-live="polite" aria-label="动作库列表"></div>
-    <!-- 1RM 极限重量计算器 -->
-    <div class="rm-calc" id="rmCalc">
-      <div class="rm-title">🏋️ 1RM 极限重量计算器</div>
-      <div class="rm-actions">
-        <button class="active" data-formula="epley" onclick="switchRMFormula('epley',this)">Epley 公式</button>
-        <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
-      </div>
-      <div class="rm-input-row">
-        <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()" aria-label="举起重量（公斤）"></div>
-        <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()" aria-label="完成次数"></div>
-      </div>
-      <div class="rm-result" id="rmResult" style="display:none;">
-        <div class="rm-result-num" id="rmValue">--</div>
-        <div class="rm-result-label" id="rmFormulaLabel">Epley 公式估算</div>
-        <table class="rm-table" style="margin-top:10px;">
-          <tr><td>50% 1RM</td><td id="rm50">-- kg</td></tr>
-          <tr><td>60% 1RM</td><td id="rm60">-- kg</td></tr>
-          <tr><td>70% 1RM</td><td id="rm70">-- kg</td></tr>
-          <tr><td>80% 1RM</td><td id="rm80">-- kg</td></tr>
-          <tr><td>85% 1RM</td><td id="rm85">-- kg</td></tr>
-          <tr><td>90% 1RM</td><td id="rm90">-- kg</td></tr>
-          <tr><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
-        </table>
-      </div>
-    </div>
-    <!-- Pro Tools: 热身组+杠铃片计算器 -->
-    <div id="proCalcContainer"></div>
   </div>
 
   <!-- 进度页 -->
@@ -1341,14 +1159,6 @@ input,select{font-family:inherit;}
     <div id="suppsContent"></div>
   </div>
 
-  <!-- 社区大厅页 -->
-  <div class="page" id="page-community" role="tabpanel" aria-label="社区" tabindex="0">
-    <div class="community-banner">
-      <div class="cb-title">🏟️ 训练者社区</div>
-      <div class="cb-sub">与全世界的 FitBuddy 训练者一起成长</div>
-    </div>
-    <div id="communityContent" aria-live="polite" aria-label="社区内容"></div>
-  </div>
   </main>
 
   <!-- 底部导航 -->
@@ -1361,9 +1171,6 @@ input,select{font-family:inherit;}
     </button>
     <button class="tab-btn" data-tab="page-prog" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-prog" tabindex="-1">
       <span class="icon" aria-hidden="true">📊</span><span>进度</span>
-    </button>
-    <button class="tab-btn" data-tab="page-community" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-community" tabindex="-1">
-      <span class="icon" aria-hidden="true">🏟️</span><span>社区</span>
     </button>
     <button class="tab-btn" data-tab="page-supps" onclick="switchTab(this)" role="tab" aria-selected="false" aria-controls="page-supps" tabindex="-1">
       <span class="icon" aria-hidden="true">💊</span><span>补给</span>
@@ -1423,10 +1230,10 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=22" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=33" defer></script>
-<script src="pro-tools.js?v=3" defer></script>
-<script src="pets.js" defer></script>
-<script src="community.js" defer></script>
+<script src="planner-core.js?v=36" defer></script>
+<script src="pro-tools.js?v=4" defer></script>
+<script src="pets.js?v=2" defer></script>
+<script src="group-qr.js?v=1" defer></script>
 <script src="deeplink.js?v=1" defer></script>
 <script src="install-banner.js?v=1" defer></script>
 <script src="backup-code.js?v=1" defer></script>
@@ -1435,6 +1242,9 @@ input,select{font-family:inherit;}
   <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
+  <div style="margin-top:12px;">
+    <button onclick="showGroupQR()" style="background:none;border:1.5px solid var(--border);color:var(--text3);font-size:12px;padding:6px 16px;border-radius:16px;cursor:pointer;">🤝 加入 FitBuddy 训练群</button>
+  </div>
 </footer>
 
 <script>
