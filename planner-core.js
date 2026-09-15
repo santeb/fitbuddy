@@ -1823,11 +1823,13 @@ function buildMusclePlan(level, days, equip, wOff) {
     return arr;
   }
   if (days === 4) {
+    // 真·上下分化 ×2:上肢 A(推侧重)/下肢 A/上肢 B(拉侧重)/下肢 B(后链)
+    // 每个部位每周自然 2 次(上肢 周一·周四,下肢 周二·周五),间隔 ≥48 小时
     return [
-      {name:"胸·肩·三头(推)", exes: dedup(pickExes(getExes("胸",equip,level),2,wOff).concat(pickExes(getExes("肩",equip,level),2,wOff)).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("臂屈伸")>=0||e.n.indexOf("下压")>=0;}),1,wOff)))},
-      {name:"腿(前)·核心", exes: dedup(pickExes(getExes("腿",equip,level),exCnt,wOff).concat(pickExes(getExes("核心",equip,level),1,wOff)))},
-      {name:"背·二头(拉)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("二头")>=0||e.n.indexOf("弯举")>=0;}),2,wOff)))},
-      {name:"腿(后链)·核心", exes: dedup(pickExes(getExes("腿",equip,level).filter(function(e){return e.n.indexOf("硬拉")>=0||e.n.indexOf("弯举")>=0||e.n.indexOf("保加利亚")>=0||e.n.indexOf("单腿")>=0;}),2,wOff).concat(pickExes(getExes("腿",equip,level),1,wOff)).concat(pickExes(getExes("核心",equip,level),2,wOff)))}
+      {name:"上肢 A(推:胸·肩·三头)", exes: dedup(pickExes(getExes("胸",equip,level),2,wOff).concat(pickExes(getExes("肩",equip,level),2,wOff)).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("臂屈伸")>=0||e.n.indexOf("下压")>=0;}),1,wOff)))},
+      {name:"下肢 A(腿·核心)", exes: dedup(pickExes(getExes("腿",equip,level),exCnt,wOff).concat(pickExes(getExes("核心",equip,level),1,wOff)))},
+      {name:"上肢 B(拉:背·二头)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("二头")>=0||e.n.indexOf("弯举")>=0;}),2,wOff)))},
+      {name:"下肢 B(后链·核心)", exes: dedup(pickExes(getExes("腿",equip,level).filter(function(e){return e.n.indexOf("硬拉")>=0||e.n.indexOf("弯举")>=0||e.n.indexOf("罗马尼亚")>=0||e.n.indexOf("保加利亚")>=0||e.n.indexOf("单腿")>=0;}),2,wOff).concat(pickExes(getExes("腿",equip,level),1,wOff)).concat(pickExes(getExes("核心",equip,level),2,wOff)))}
     ];
   }
   var plan = [
@@ -2155,6 +2157,24 @@ function calcMarathonWeekKm(trainingDays) {
   return Math.round(total);
 }
 
+// 分化方案说明:把编排算法"说出来",让用户看到计划背后的道理(算法即壁垒的外显)
+function getSplitInfo(goal, days) {
+  if (goal === "muscle") {
+    if (days <= 3)  return {name:"全身循环 ×" + days, note:"每个部位每周 2 次，新手涨最快"};
+    if (days === 4) return {name:"上下分化 ×2", note:"每部位每周 2 次，间隔 ≥48 小时"};
+    if (days === 5) return {name:"推拉腿 + 强化日", note:"每部位每周 2 次，容量更高"};
+    return {name:"推拉腿 ×2", note:"容量拉满，前提是睡够吃够"};
+  }
+  if (goal === "strength") {
+    if (days <= 3)  return {name:"全身力量 A/B", note:"三大项高频打磨，恢复充分"};
+    if (days === 4) return {name:"大项分化 + 拉日", note:"深蹲/卧推/硬拉各 1 次 + 划船辅助"};
+    return {name:"大项分化", note:"各大项每周 1~2 次，注意间隔 48 小时"};
+  }
+  if (goal === "cut")     return {name:"力量 + 有氧交替", note:"力量保肌肉，有氧烧脂肪"};
+  if (goal === "cardio")  return {name:"LISS / HIIT / 力量轮换", note:"强度高低交错，恢复不欠账"};
+  return null; // 马拉松等专项有自己的说明面板
+}
+
 function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, intensity, goal) {
   var presTag;
   if (goal === "marathon") {
@@ -2164,9 +2184,11 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
   } else {
     presTag = sets + '组 x ' + goalCfg.reps;
   }
+  var split = getSplitInfo(goal, days);
   return '<div class="summary-card">'+
     '<div class="summary-label">你的专属计划已生成</div>'+
     '<div class="summary-title">'+goalName+' · '+days+'天/周</div>'+
+    (split ? '<div style="margin-top:8px;display:inline-block;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.35);border-radius:10px;padding:4px 12px;font-size:13px;font-weight:700;color:#fff;">🧩 '+split.name+'<span style="font-weight:500;opacity:0.88;"> · '+split.note+'</span></div>' : '')+
     '<div class="summary-tags">'+
       '<span class="summary-tag">'+levelName+'</span>'+
       '<span class="summary-tag">'+equipName+'</span>'+
