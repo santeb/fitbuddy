@@ -979,6 +979,7 @@ window.renderProCalculators = function() {
   if (w && !w.dataset.rendered) { w.innerHTML = renderWarmupCalculator(); w.dataset.rendered = '1'; }
   var p = document.getElementById('calcPanelPlate');
   if (p && !p.dataset.rendered) { p.innerHTML = renderPlateCalculator(); p.dataset.rendered = '1'; }
+  if (window.renderDietCalculator) window.renderDietCalculator();
 };
 
 // 进度页增强:在原有内容后追加Pro模块

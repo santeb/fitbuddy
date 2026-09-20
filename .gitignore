@@ -32,3 +32,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Python cache
+__pycache__/
+
+# temp output
+_trim_out.txt

@@ -438,6 +438,77 @@ input,select{font-family:inherit;}
 .calc-panel .rm-calc .rm-title{display:none;}
 .calc-panel .rm-actions{margin:0 0 12px;}
 
+/* ========== 饮食计算器（#calcPanelDiet） ========== */
+.diet-inputs{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;padding:12px;background:var(--bg);border-radius:12px;}
+.diet-row{display:flex;align-items:center;gap:8px;}
+.diet-label{font-size:13px;font-weight:700;color:var(--text2);width:42px;flex-shrink:0;}
+.diet-step{width:30px;height:30px;border:1px solid var(--border);background:var(--card);border-radius:8px;font-size:16px;font-weight:700;color:var(--text2);cursor:pointer;}
+.diet-step:hover{border-color:var(--primary);color:var(--primary);}
+.diet-bw{width:60px;height:30px;border:1px solid var(--border);background:var(--card);border-radius:8px;text-align:center;font-size:14px;font-weight:700;color:var(--text);outline:none;}
+.diet-bw:focus{border-color:var(--primary);}
+.diet-unit{font-size:13px;color:var(--text3);font-weight:600;}
+.diet-seg{display:flex;gap:4px;flex:1;}
+.diet-seg-btn{flex:1;padding:7px 4px;border:1px solid var(--border);background:var(--card);border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s;}
+.diet-seg-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+
+.diet-result{background:linear-gradient(135deg,#0b0714 0%,#5b21b6 100%);border-radius:14px;padding:14px 16px;color:#fff;margin-bottom:14px;box-shadow:0 4px 18px rgba(91,33,182,0.18);}
+.diet-result-title{font-size:13px;font-weight:600;opacity:0.75;margin-bottom:6px;letter-spacing:1px;}
+.diet-result-line{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;font-size:14px;margin-bottom:8px;}
+.diet-result-line .rp b{font-weight:600;opacity:0.85;margin-right:3px;font-size:12.5px;}
+.diet-result-line .rp i{font-style:normal;font-size:22px;font-weight:900;color:#00e5a0;margin-right:2px;}
+.diet-result-line .rp.rkcal i{color:#ffd166;}
+.diet-palm{font-size:13px;line-height:1.5;opacity:0.92;}
+.diet-palm b{color:#ffd166;font-size:15px;margin:0 2px;}
+.diet-hint{font-size:11.5px;opacity:0.6;margin-top:6px;line-height:1.5;}
+
+.diet-foods{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:14px;}
+.diet-foods-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px;}
+.diet-cat{margin-bottom:6px;}
+.diet-cat-h{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;user-select:none;}
+.diet-cat-name{font-size:13px;font-weight:700;color:var(--text);}
+.diet-cat-cnt{font-size:11px;color:var(--text3);font-weight:500;}
+.diet-cat-arrow{margin-left:auto;font-size:14px;color:var(--text3);transition:transform .2s;display:inline-block;}
+.diet-cat-arrow.open{transform:rotate(180deg);}
+.diet-cat-list{display:flex;flex-direction:column;gap:4px;margin-top:4px;}
+.diet-food{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:8px;font-size:12.5px;transition:background .15s;flex-wrap:nowrap;}
+.diet-food.on{background:rgba(67,97,238,0.08);}
+.diet-food-name{flex-shrink:0;background:transparent;border:none;cursor:pointer;color:var(--text);font-size:12.5px;font-weight:600;padding:2px 6px;border-radius:6px;text-align:left;}
+.diet-food-name:hover{background:var(--bg);}
+.diet-food-hint{font-size:11px;color:var(--text3);font-weight:500;flex-shrink:0;}
+.diet-food-data{flex:1;color:var(--text3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.diet-food-grams{display:flex;align-items:center;gap:2px;flex-shrink:0;}
+.diet-food-grams button{width:22px;height:22px;border:1px solid var(--border);background:var(--bg);border-radius:5px;font-size:12px;font-weight:700;color:var(--text2);cursor:pointer;line-height:1;padding:0;}
+.diet-food-grams button:hover{border-color:var(--primary);color:var(--primary);}
+.diet-food-grams input{width:46px;height:22px;border:1px solid var(--border);background:var(--bg);border-radius:5px;text-align:center;font-size:11.5px;font-weight:700;color:var(--text);outline:none;padding:0 2px;}
+.diet-food-grams input:focus{border-color:var(--primary);}
+.diet-food-unit{font-size:11px;color:var(--text3);font-weight:600;width:10px;}
+
+.diet-eaten{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;}
+.diet-eaten-title{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px;}
+.diet-eaten-line{font-size:13px;color:var(--text);line-height:1.6;margin-bottom:10px;}
+.diet-eaten-line b{font-size:15px;color:var(--primary);}
+.diet-bars{display:flex;flex-direction:column;gap:6px;}
+.diet-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);}
+.diet-bar span{width:32px;font-weight:600;flex-shrink:0;}
+.diet-bar .bar{flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden;}
+.diet-bar .bar i{display:block;height:100%;border-radius:4px;transition:width .25s;}
+.diet-bar b{width:40px;text-align:right;font-weight:700;color:var(--text);}
+.diet-clear{margin-top:10px;padding:6px 12px;border:1px solid var(--border);background:var(--bg);border-radius:8px;font-size:12px;color:var(--text3);cursor:pointer;}
+.diet-clear:hover{border-color:#e94e3b;color:#e94e3b;}
+
+.diet-palm-detail{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:14px;}
+.diet-palm-detail summary{font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;list-style:none;padding:4px 0;}
+.diet-palm-detail summary::-webkit-details-marker{display:none;}
+.diet-palm-detail summary::before{content:'🤚';margin-right:6px;}
+.diet-palm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px;}
+.pp-card{background:var(--bg);border-radius:10px;padding:10px;display:flex;flex-direction:column;align-items:center;text-align:center;}
+.pp-icon{font-size:28px;margin-bottom:2px;}
+.pp-t{font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;}
+.pp-s{font-size:11.5px;color:var(--text3);line-height:1.4;}
+.diet-palm-note{font-size:11.5px;color:var(--text3);margin-top:8px;line-height:1.5;text-align:center;}
+.diet-sync-hint{font-size:11px;color:var(--text3);margin:-6px 0 10px 2px;}
+.diet-gap{font-size:12px;color:var(--text2);margin-top:9px;line-height:1.6;background:var(--bg);border-radius:8px;padding:7px 10px;}
+
 /* Progress Page */
 .progress-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:14px;box-shadow:var(--shadow);}
 .progress-stat{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
@@ -1046,6 +1117,7 @@ input,select{font-family:inherit;}
         <button class="calc-tab active" data-calc="rm" role="tab" aria-selected="true" aria-controls="calcPanelRm" onclick="switchCalcTab('rm')">1RM 极限重量</button>
         <button class="calc-tab" data-calc="warmup" role="tab" aria-selected="false" aria-controls="calcPanelWarmup" onclick="switchCalcTab('warmup')">热身组</button>
         <button class="calc-tab" data-calc="plate" role="tab" aria-selected="false" aria-controls="calcPanelPlate" onclick="switchCalcTab('plate')">杠铃片</button>
+        <button class="calc-tab" data-calc="diet" role="tab" aria-selected="false" aria-controls="calcPanelDiet" onclick="switchCalcTab('diet')">饮食</button>
       </div>
       <div class="calc-panel active" id="calcPanelRm" role="tabpanel" aria-label="1RM 极限重量计算器">
         <div class="rm-actions">
@@ -1072,6 +1144,7 @@ input,select{font-family:inherit;}
       </div>
       <div class="calc-panel" id="calcPanelWarmup" role="tabpanel" aria-label="热身组计算器"></div>
       <div class="calc-panel" id="calcPanelPlate" role="tabpanel" aria-label="杠铃片计算器"></div>
+      <div class="calc-panel" id="calcPanelDiet" role="tabpanel" aria-label="饮食计算器"></div>
     </div>
     <div class="filter-row" id="partFilter">
       <div class="filter-chip active" data-part="all">全部部位</div>
@@ -1230,8 +1303,9 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=22" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=38" defer></script>
+<script src="planner-core.js?v=40" defer></script>
 <script src="pro-tools.js?v=4" defer></script>
+<script src="calculator-diet.js?v=5" defer></script>
 <script src="pets.js?v=2" defer></script>
 <script src="group-qr.js?v=1" defer></script>
 <script src="deeplink.js?v=1" defer></script>

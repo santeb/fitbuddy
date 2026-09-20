@@ -1366,8 +1366,12 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
       return b > 0 ? calcNutrition(weight, height, age, gender || 'male', goal, b) : null;
     });
     // 存储营养上下文,供 chip 切换时重新渲染食谱
+    // schedule + trainDayNames + dayCalBurns 一并存进去,饮食计算器(goaDietCalc 联动)
+    // 要靠它们识别「今天是否训练日」并按各训练日的不同消耗生成逐日档
     _lastNutriCtx = { weight: weight, height: height, age: age, gender: gender || 'male', goal: goal,
-                      nRest: nutrition, nTrain: nutritionTrain, nEasy: nutritionEasy, dayCalBurns: dayCalBurns };
+                      nRest: nutrition, nTrain: nutritionTrain, nEasy: nutritionEasy, dayCalBurns: dayCalBurns,
+                      schedule: schedule,
+                      trainDayNames: (trainingDays || []).map(function(d){ return d && d.name; }) };
     html += renderNutrition(nutrition, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nutritionTrain, nutritionEasy, dayNutris);
   }
   var trainSchedule = schedule.filter(function(s){ return s.isTraining; });
@@ -1403,6 +1407,10 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   // 恢复方式：取消下面一行注释，并把 pets.js 顶部 PET_UI_VISIBLE 改回 true。
   // html += '<div id="petArea">' + (typeof renderPetCard === 'function' ? renderPetCard() : '') + '</div>';
   document.getElementById("planResult").innerHTML = html;
+  // 🍽 计划变更时同步动作库饮食计算器的联动目标(仅联动模式,静默,不弹任何提示)
+  try {
+    if (_lastNutriCtx && typeof window.dietRefreshFromPlan === 'function') window.dietRefreshFromPlan(_lastNutriCtx);
+  } catch(e) {}
   updateTodayBanner();
   } catch(renderErr) {
     console.error('渲染计划出错:', renderErr);
@@ -2463,6 +2471,10 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
   html += '<div id="'+mealsId+'">';
   html += renderDynamicMealPlan(n, goal, undefined, nTrain, dayCalBurns, nEasy, undefined, undefined, 'morning');
   html += '</div>';
+
+  // 闭环入口:跳到动作库「饮食」tab 勾食材记「今天吃了多少」(goDietCalc 在 calculator-diet.js)
+  // 跳转即联动:饮食计算器直接采用本面板算好的 蛋白/碳水/脂肪/热量(含训练日/休息日两套)
+  html += '<div onclick="goDietCalc()" style="margin-top:10px;padding-top:9px;border-top:1px solid var(--border);font-size:12px;color:var(--primary);font-weight:600;cursor:pointer;">🧮 记录今天吃了多少？→ 饮食计算器（目标已同步本面板，含训练日/休息日档）</div>';
 
   // 马拉松目标:存储渲染参数,供晨跑/夜跑切换时重新渲染食谱(直接在JS中赋值,不依赖innerHTML中的script标签)
   if (goal === 'marathon') {
@@ -6024,7 +6036,7 @@ function showToast(msg) {
 
 // ============ 训练计算器：tab 切换(1RM / 热身组 / 杠铃片) ============
 // 三个计算器合并在动作库页顶部 #calcHub 内,面板常驻(仅 display 切换),切回时输入值不丢
-var _calcTabMap = { rm: "calcPanelRm", warmup: "calcPanelWarmup", plate: "calcPanelPlate" };
+var _calcTabMap = { rm: "calcPanelRm", warmup: "calcPanelWarmup", plate: "calcPanelPlate", diet: "calcPanelDiet" };
 function switchCalcTab(kind) {
   var hub = document.getElementById("calcHub");
   if (!hub || !_calcTabMap[kind]) return;
