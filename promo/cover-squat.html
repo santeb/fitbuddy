@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>杠铃深蹲拆解封面</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1500px;
+    height: 2000px;
+    overflow: hidden;
+    background: #0a0a0f;
+  }
+  .cover {
+    width: 750px;
+    height: 1000px;
+    transform: scale(2);
+    transform-origin: 0 0;
+    background: linear-gradient(160deg, #070b14 0%, #0d1b2e 35%, #0f3460 65%, #155e75 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 60px 50px;
+  }
+  .tag-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .tag-bar .badge {
+    background: #00e5a0;
+    color: #06251c;
+    font-size: 24px;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 6px;
+    letter-spacing: 2px;
+  }
+  .tag-bar .num {
+    color: rgba(255,255,255,0.5);
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .title-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 20px;
+  }
+  .main-title {
+    font-size: 92px;
+    font-weight: 900;
+    line-height: 1.18;
+    color: #fff;
+    letter-spacing: 2px;
+    text-shadow: 0 4px 30px rgba(0,229,160,0.35);
+  }
+  .main-title .hl {
+    color: #00e5a0;
+  }
+  .sub-title {
+    font-size: 42px;
+    font-weight: 700;
+    color: #ffd166;
+    letter-spacing: 1px;
+  }
+  .sub-title .emoji {
+    font-size: 46px;
+  }
+  .deco-line {
+    width: 80px;
+    height: 5px;
+    background: linear-gradient(90deg, #00e5a0, #ffd166);
+    border-radius: 3px;
+    margin-top: 10px;
+  }
+  .step-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .step-chip {
+    font-size: 22px;
+    font-weight: 700;
+    color: #d8f5ec;
+    background: rgba(0,229,160,0.12);
+    border: 1.5px solid rgba(0,229,160,0.45);
+    border-radius: 8px;
+    padding: 5px 14px;
+    letter-spacing: 1px;
+  }
+  .step-chip.step {
+    background: rgba(255,209,102,0.12);
+    border-color: rgba(255,209,102,0.5);
+    color: #ffe9b3;
+  }
+  .bottom-area {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .bottom-left {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .keyword {
+    font-size: 26px;
+    color: rgba(255,255,255,0.6);
+    font-weight: 600;
+    letter-spacing: 3px;
+  }
+  .keyword span {
+    color: #00e5a0;
+  }
+  .bottom-right {
+    text-align: right;
+  }
+  .bottom-right .label {
+    font-size: 22px;
+    color: rgba(255,255,255,0.4);
+    font-weight: 600;
+  }
+  /* 杠铃装饰 */
+  .barbell {
+    position: absolute;
+    top: 96px;
+    right: 46px;
+    width: 190px;
+    height: 44px;
+    opacity: 0.95;
+  }
+  .barbell .shaft {
+    position: absolute;
+    top: 19px;
+    left: 22px;
+    right: 22px;
+    height: 6px;
+    background: #cbd5e1;
+    border-radius: 3px;
+    box-shadow: 0 0 12px rgba(203,213,225,0.5);
+  }
+  .barbell .plate {
+    position: absolute;
+    top: 0;
+    width: 22px;
+    height: 44px;
+    background: linear-gradient(180deg, #e2e8f0, #94a3b8);
+    border-radius: 5px;
+  }
+  .barbell .plate.l { left: 0; }
+  .barbell .plate.r { right: 0; }
+  .barbell .plate.l2 { left: 24px; }
+  .barbell .plate.r2 { right: 24px; }
+  .glow-dot {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.18;
+  }
+  .glow-dot:nth-child(1) {
+    width: 300px;
+    height: 300px;
+    background: #00e5a0;
+    top: -60px;
+    right: -60px;
+  }
+  .glow-dot:nth-child(2) {
+    width: 220px;
+    height: 220px;
+    background: #ffd166;
+    bottom: 90px;
+    left: -40px;
+  }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+
+    <div class="barbell">
+      <div class="plate l"></div>
+      <div class="plate l2"></div>
+      <div class="shaft"></div>
+      <div class="plate r2"></div>
+      <div class="plate r"></div>
+    </div>
+
+    <div class="tag-bar">
+      <span class="badge">动作拆解</span>
+      <span class="num">No.01 · 深蹲</span>
+    </div>
+
+    <div class="title-area">
+      <div class="main-title">
+        杠铃深蹲<br>
+        <span class="hl">全拆解</span>
+      </div>
+      <div class="deco-line"></div>
+      <div class="sub-title">从出杠到回杠 每步都有讲究 <span class="emoji">🏋️</span></div>
+      <div class="step-chips">
+        <span class="step-chip step">① 杠位</span>
+        <span class="step-chip step">② 出杠</span>
+        <span class="step-chip step">③ 呼吸</span>
+        <span class="step-chip step">④ 下蹲</span>
+        <span class="step-chip step">⑤ 起身</span>
+        <span class="step-chip step">⑥ 回杠</span>
+        <span class="step-chip">5个高频错误自查</span>
+      </div>
+    </div>
+
+    <div class="bottom-area">
+      <div class="bottom-left">
+        <div class="keyword"><span>垂直轨迹</span> · <span>大腿平行</span> · <span>瓦式呼吸</span></div>
+        <div class="keyword"><span>膝盖内扣</span> · <span>早臀起身</span> 全解析</div>
+      </div>
+      <div class="bottom-right">
+        <div class="label">收藏照着练</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

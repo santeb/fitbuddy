@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>背部训练封面</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1500px;
+    height: 2000px;
+    overflow: hidden;
+    background: #0a0a0f;
+  }
+  .cover {
+    width: 750px;
+    height: 1000px;
+    transform: scale(2);
+    transform-origin: 0 0;
+    background: linear-gradient(160deg, #0b0714 0%, #1a0d2e 35%, #2e1065 65%, #5b21b6 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 60px 50px;
+  }
+  .tag-bar { display: flex; align-items: center; gap: 12px; }
+  .tag-bar .badge { background: #00e5a0; color: #06251c; font-size: 24px; font-weight: 700; padding: 6px 16px; border-radius: 6px; letter-spacing: 2px; }
+  .tag-bar .num { color: rgba(255,255,255,0.5); font-size: 22px; font-weight: 600; }
+  .title-area { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 20px; }
+  .main-title { font-size: 62px; font-weight: 900; line-height: 1.32; color: #fff; letter-spacing: 0; white-space: nowrap; text-shadow: 0 4px 30px rgba(0,229,160,0.35); }
+  .main-title .hl { color: #00e5a0; }
+  .main-title .warn { color: #ffd166; }
+  .sub-title { font-size: 42px; font-weight: 700; color: #ffd166; letter-spacing: 1px; }
+  .deco-line { width: 80px; height: 5px; background: linear-gradient(90deg, #00e5a0, #ffd166); border-radius: 3px; margin-top: 10px; }
+  .step-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+  .step-chip { font-size: 22px; font-weight: 700; color: #d8f5ec; background: rgba(0,229,160,0.12); border: 1.5px solid rgba(0,229,160,0.45); border-radius: 8px; padding: 5px 14px; letter-spacing: 1px; }
+  .step-chip.hot { color: #2a1a00; background: #ffd166; border-color: #ffd166; }
+  .bottom-area { display: flex; justify-content: space-between; align-items: flex-end; }
+  .bottom-left { display: flex; flex-direction: column; gap: 8px; }
+  .keyword { font-size: 26px; color: rgba(255,255,255,0.6); font-weight: 600; letter-spacing: 3px; }
+  .keyword span { color: #00e5a0; }
+  .bottom-right { text-align: right; }
+  .bottom-right .label { font-size: 22px; color: rgba(255,255,255,0.4); font-weight: 600; }
+  .glow-dot { position: absolute; border-radius: 50%; filter: blur(40px); opacity: 0.18; }
+  .glow-dot:nth-child(1) { width: 300px; height: 300px; background: #00e5a0; top: -60px; right: -60px; }
+  .glow-dot:nth-child(2) { width: 220px; height: 220px; background: #ffd166; bottom: 90px; left: -40px; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+
+    <div class="tag-bar">
+      <span class="badge">健身干货</span>
+      <span class="num">No.16 · 部位系列 ②</span>
+    </div>
+
+    <div class="title-area">
+      <div class="main-title">
+        练背就这 <span class="hl">5 个动作</span><br>
+        <span class="warn">顺序错了</span> 背永远薄
+      </div>
+      <div class="deco-line"></div>
+      <div class="sub-title">宽度靠垂直拉　厚度靠水平拉</div>
+      <div class="step-chips">
+        <span class="step-chip hot">高位下拉</span>
+        <span class="step-chip hot">杠铃划船</span>
+        <span class="step-chip">坐姿划船</span>
+        <span class="step-chip">直臂下压</span>
+        <span class="step-chip">面拉</span>
+      </div>
+    </div>
+
+    <div class="bottom-area">
+      <div class="bottom-left">
+        <div class="keyword"><span>先复合拉</span> · <span>再孤立刻</span> · <span>别让二头抢戏</span></div>
+        <div class="keyword">垂直拉宽度 水平拉厚度</div>
+      </div>
+      <div class="bottom-right">
+        <div class="label">收藏照着练</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

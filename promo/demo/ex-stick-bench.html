@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>动作配图 - 平板卧推</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1080px; height: 1350px; overflow: hidden; background: #0a0a0f; }
+  .cover {
+    width: 1080px; height: 1350px;
+    background: linear-gradient(160deg, #0b0714 0%, #1a0d2e 35%, #2e1065 65%, #5b21b6 100%);
+    position: relative; overflow: hidden;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    padding: 48px 50px; display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .tag-bar { display: flex; align-items: center; gap: 10px; }
+  .tag-bar .badge { background: #00e5a0; color: #06251c; font-size: 22px; font-weight: 700; padding: 5px 14px; border-radius: 6px; letter-spacing: 2px; }
+  .tag-bar .num { color: rgba(255,255,255,0.5); font-size: 20px; font-weight: 600; }
+  .figure-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+  .figure-wrap svg { width: 100%; height: 100%; }
+  .bottom-area { display: flex; flex-direction: column; gap: 12px; }
+  .exercise-name { font-size: 64px; font-weight: 900; color: #fff; line-height: 1; letter-spacing: 1px; text-shadow: 0 4px 24px rgba(0,229,160,0.35); }
+  .exercise-name .num { color: #00e5a0; }
+  .deco-line { width: 80px; height: 5px; background: linear-gradient(90deg, #00e5a0, #ffd166); border-radius: 3px; }
+  .exercise-cue { font-size: 30px; color: #ffd166; font-weight: 600; line-height: 1.4; }
+  .step-chips { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 4px; }
+  .step-chip { font-size: 22px; font-weight: 700; color: #d8f5ec; background: rgba(0,229,160,0.12); border: 1.5px solid rgba(0,229,160,0.45); border-radius: 8px; padding: 6px 14px; letter-spacing: 0.5px; white-space: nowrap; }
+  .step-chip.hot { color: #2a1a00; background: #ffd166; border-color: #ffd166; }
+  .glow-dot { position: absolute; border-radius: 50%; filter: blur(50px); opacity: 0.18; pointer-events: none; }
+  .glow-dot:nth-of-type(1) { width: 280px; height: 280px; background: #00e5a0; top: -60px; right: -60px; }
+  .glow-dot:nth-of-type(2) { width: 200px; height: 200px; background: #ffd166; bottom: 80px; left: -40px; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <div class="glow-dot"></div>
+    <div class="glow-dot"></div>
+
+    <div class="tag-bar">
+      <span class="badge">动作示范</span>
+      <span class="num">No.15 · 部位系列 ① · 动作 1/5</span>
+    </div>
+
+    <div class="figure-wrap">
+      <svg viewBox="0 0 1000 800" xmlns="http://www.w3.org/2000/svg">
+        <!-- 地面线 -->
+        <line x1="60" y1="700" x2="940" y2="700" stroke="rgba(0,229,160,0.22)" stroke-width="3" stroke-dasharray="10 12"/>
+
+        <!-- 卧推凳（凳面 y=430 宽 30 → 上沿 430） -->
+        <g stroke="#00e5a0" stroke-width="7" stroke-linecap="round" fill="none">
+          <rect x="250" y="430" width="520" height="30" rx="6" fill="rgba(0,229,160,0.10)"/>
+          <line x1="330" y1="460" x2="330" y2="700"/>
+          <line x1="690" y1="460" x2="690" y2="700"/>
+          <!-- 凳脚横杆 -->
+          <line x1="310" y1="620" x2="350" y2="620"/>
+          <line x1="670" y1="620" x2="710" y2="620"/>
+        </g>
+
+        <!-- 人体火柴人：仰卧，躯干贴凳面，头悬空在凳外 -->
+        <g stroke="#fff" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.96">
+          <!-- 头（枕在凳左端外侧，不与凳面重叠） -->
+          <circle cx="228" cy="398" r="36" fill="rgba(255,255,255,0.16)"/>
+          <!-- 颈 头→肩 -->
+          <line x1="262" y1="406" x2="300" y2="414"/>
+          <!-- 躯干 肩→髋（贴凳面 y≈414） -->
+          <line x1="300" y1="414" x2="560" y2="418"/>
+          <!-- 髋→膝 -->
+          <line x1="560" y1="418" x2="660" y2="512"/>
+          <!-- 膝→脚 -->
+          <line x1="660" y1="512" x2="706" y2="664"/>
+          <!-- 大臂 肩→肘 -->
+          <line x1="300" y1="414" x2="330" y2="308"/>
+          <!-- 小臂 肘→腕(握杠) -->
+          <line x1="330" y1="308" x2="356" y2="232"/>
+        </g>
+
+        <!-- 关节点 -->
+        <g fill="#fff">
+          <circle cx="300" cy="414" r="11"/>
+          <circle cx="560" cy="418" r="11"/>
+          <circle cx="660" cy="512" r="11"/>
+          <circle cx="330" cy="308" r="9"/>
+          <circle cx="356" cy="232" r="9"/>
+        </g>
+
+        <!-- 杠铃（横杆 y=232 与握位同高） -->
+        <g stroke="#00e5a0" stroke-width="14" stroke-linecap="round" fill="none">
+          <line x1="196" y1="232" x2="740" y2="232"/>
+        </g>
+        <g fill="#00e5a0" stroke="#06251c" stroke-width="3">
+          <rect x="194" y="177" width="26" height="115" rx="10"/>
+          <rect x="232" y="192" width="22" height="85" rx="8"/>
+          <rect x="716" y="177" width="26" height="115" rx="10"/>
+          <rect x="682" y="192" width="22" height="85" rx="8"/>
+        </g>
+        <!-- 对侧手臂（淡显，示意对称） -->
+        <g stroke="#fff" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.5">
+          <line x1="560" y1="418" x2="530" y2="312"/>
+          <line x1="530" y1="312" x2="504" y2="232"/>
+        </g>
+
+        <!-- 运动轨迹：单弧线 推起→下放 -->
+        <g stroke="#ffd166" stroke-width="6" fill="none" opacity="0.95">
+          <path d="M356 232 Q 480 262 548 392" stroke-dasharray="16 11"/>
+        </g>
+        <g fill="#ffd166">
+          <polygon points="356,232 383,221 373,248"/>
+          <polygon points="548,392 520,384 536,364"/>
+        </g>
+
+        <!-- 小臂垂直辅助线（只留一条，短） -->
+        <line x1="356" y1="232" x2="356" y2="480" stroke="rgba(255,209,102,0.4)" stroke-width="3" stroke-dasharray="8 10"/>
+
+        <!-- 标注 -->
+        <g font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="23" font-weight="700">
+          <text x="150" y="180" text-anchor="middle" fill="rgba(255,255,255,0.85)">杠推到顶</text>
+          <text x="628" y="372" text-anchor="start" fill="#ffd166">杠到胸口中线</text>
+          <text x="450" y="530" text-anchor="middle" fill="rgba(255,255,255,0.65)" font-size="21">小臂始终垂直地面</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="bottom-area">
+      <div class="exercise-name"><span class="num">①</span> 平板卧推</div>
+      <div class="deco-line"></div>
+      <div class="exercise-cue">杠下降到胸口中线　小臂垂直地面<br>整个胸在发力　不是胳膊在硬扛</div>
+      <div class="step-chips">
+        <span class="step-chip hot">复合 · 核心中的核心</span>
+        <span class="step-chip">4 组 × 6-10 个</span>
+        <span class="step-chip">杠铃 / 哑铃</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
