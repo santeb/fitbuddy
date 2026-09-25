@@ -2378,7 +2378,10 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
 }
 
 function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nTrain, nEasy, dayNutris) {
-  var goalNote = (goal === "muscle" || goal === "strength") ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
+  var isSurplus = (goal === "muscle" || goal === "strength");
+  var goalNote = isSurplus ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
+  var goalNoteColor = isSurplus ? "#F97316" : goal === "cut" ? "#22C55E" : goal === "marathon" ? "#3B82F6" : "#8B5CF6";
+  var goalNoteHtml = '<span style="color:'+goalNoteColor+';font-weight:800;font-size:13px;">'+goalNote+'</span>';
   var fg = FOOD_GUIDE[goal] || FOOD_GUIDE.muscle;
   var restCal = n.targetCal;
   var trainProtein = nTrain ? nTrain.protein : n.protein;
@@ -2427,7 +2430,7 @@ function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, training
       '<div class="nutrition-item"><div class="nutrition-label">碳水</div><div class="nutrition-value">'+n.carb+'<span class="nutrition-unit"> g/天</span></div></div>'+
       '<div class="nutrition-item"><div class="nutrition-label">脂肪</div><div class="nutrition-value">'+n.fat+'<span class="nutrition-unit"> g/天</span></div></div>'+
     '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-top:8px;">基础代谢 '+n.bmr+' kcal · 日常消耗 '+n.tdee+' kcal · '+goalNote+'</div>';
+    '<div style="font-size:12px;color:var(--text3);margin-top:8px;">基础代谢 '+n.bmr+' kcal · 日常消耗 '+n.tdee+' kcal · '+goalNoteHtml+'</div>';
 
   // 训练日动态热量 + 日程选择器
   if (nutriDays.length > 0) {
