@@ -2378,7 +2378,7 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
 }
 
 function renderNutrition(n, goal, avgTrainBurn, maxTrainBurn, schedule, trainingDays, dayCalBurns, nTrain, nEasy, dayNutris) {
-  var goalNote = goal === "muscle" ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
+  var goalNote = (goal === "muscle" || goal === "strength") ? "热量盈余" : goal === "cut" ? "热量缺口" : goal === "marathon" ? "碳水优先" : "维持热量";
   var fg = FOOD_GUIDE[goal] || FOOD_GUIDE.muscle;
   var restCal = n.targetCal;
   var trainProtein = nTrain ? nTrain.protein : n.protein;
