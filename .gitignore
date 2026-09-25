@@ -2,6 +2,12 @@
 rpg.js
 battle-preview.html
 
+# 推广素材 - 仅本地不上传
+promo/
+
+# 付费测试 - 仅本地不上传
+premium-test/
+
 # 本地临时文件
 FitBuddy演示视频.html
 index-tmp.html

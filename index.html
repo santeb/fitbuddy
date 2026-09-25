@@ -538,6 +538,11 @@ input,select{font-family:inherit;}
 /* RPE badge */
 .rpe-badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700;background:#EEF2FF;color:#4F46E5;margin-left:6px;}
 [data-theme="dark"] .rpe-badge{background:#1E2148;color:#818CF8;}
+/* 术语问号徽章 + 解释弹层（新手友好，点 ? 看术语解释） */
+.term-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(255,107,53,0.12);color:var(--primary);font-size:11px;font-weight:700;cursor:pointer;vertical-align:middle;margin-left:3px;border:1px solid rgba(255,107,53,0.35);user-select:none;line-height:1;padding:0;}
+.term-popover{position:fixed;z-index:9999;width:260px;background:var(--card);border:1.5px solid var(--primary);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;font-size:12px;color:var(--text2);line-height:1.7;display:none;}
+.term-popover.show{display:block;}
+.term-popover b{color:var(--text);display:block;margin-bottom:4px;font-size:13px;}
 
 /* Progressive Overload - weight/reps inputs */
 .prog-input{width:54px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center;background:var(--bg);color:var(--text);}
@@ -973,6 +978,27 @@ input,select{font-family:inherit;}
       </div>
     </div>
 
+    <!-- 🔥 Pro 专区：场景定制付费模板（【2026-09-25 暂时隐藏】需求恢复时去掉 style 里的 display:none 即可） -->
+    <div class="card collapsible-card collapsed" style="display:none;margin-bottom:14px;border:1.5px solid var(--primary);">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
+        <span style="display:flex;align-items:baseline;gap:8px;min-width:0;">💍 Pro 专区 · 场景定制模板
+          <span style="font-weight:400;font-size:11px;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">深度定制 · 永久买断</span>
+        </span>
+        <span class="collapse-arrow" style="flex-shrink:0;">▼</span>
+      </div>
+      <div class="collapse-body">
+      <button type="button" class="tpl-card" style="width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;" onclick="location.href='premium-test/test-pricing.html'" role="button" aria-label="进入 Pro 模板商店">
+        <div style="font-size:26px;line-height:1;">🛍️</div>
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">塑形 12 周、减脂显腹肌 10 周<span style="font-size:9px;color:#fff;background:var(--primary);border-radius:6px;padding:1px 5px;margin-left:3px;vertical-align:middle;">PRO</span> 等 6 个场景模板</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">单买 ¥19 起 · 季卡/年卡可选 · 男女通用 · 进店查看全部与定价</div>
+        </div>
+        <div style="color:var(--text3);font-size:16px;">›</div>
+      </button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;" id="proZoneStatus">与免费快速模板的区别：免费版填参数生成通用计划；Pro 版按真实场景定制（如婚礼倒计时、测试周期、糖原管理），含每日动作与阶段解锁。</div>
+      </div>
+    </div>
+
     <div class="card collapsible-card" id="planCard">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
         <span>🎯 定制你的计划</span>
@@ -986,6 +1012,7 @@ input,select{font-family:inherit;}
           <div class="radio-item"><input type="radio" name="goal" id="g1" value="muscle" checked onchange="toggleEquip()"><label for="g1">💪 增肌</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g2" value="strength" onchange="toggleEquip()"><label for="g2">🔱 力量</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g3" value="cut" onchange="toggleEquip()"><label for="g3">🔥 减脂</label></div>
+          <div class="radio-item"><input type="radio" name="goal" id="gShape" value="shape" onchange="toggleEquip()"><label for="gShape">✨ 塑形</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g4" value="cardio" onchange="toggleEquip()"><label for="g4">❤️ 心肺</label></div>
           <div class="radio-item"><input type="radio" name="goal" id="g5" value="marathon" onchange="toggleEquip()"><label for="g5">🏃 马拉松</label></div>
           
@@ -1124,6 +1151,7 @@ input,select{font-family:inherit;}
           <button class="active" data-formula="epley" onclick="switchRMFormula('epley',this)">Epley 公式</button>
           <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
         </div>
+        <div style="font-size:11px;color:var(--text3);margin:6px 0 2px;line-height:1.6;">📖 1RM = 最多能标准举起 1 次的重量 · 两种公式只是不同的估算算法，结果略有差异，选哪个都行</div>
         <div class="rm-input-row">
           <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()" aria-label="举起重量（公斤）"></div>
           <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()" aria-label="完成次数"></div>
@@ -1300,10 +1328,10 @@ input,select{font-family:inherit;}
 
 <script src="analytics.js?v=5" defer></script>
 <script src="onboarding.js?v=1" defer></script>
-<script src="data-constants.js?v=22" defer></script>
+<script src="data-constants.js?v=24" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=40" defer></script>
+<script src="planner-core.js?v=43" defer></script>
 <script src="pro-tools.js?v=4" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="pets.js?v=2" defer></script>
@@ -1344,5 +1372,54 @@ function installApp() {
   });
 }
 </script>
+<script>
+// Pro 专区解锁状态提示（读取付费区写入的 localStorage，只读不改）
+(function(){
+  try{
+    var raw = localStorage.getItem('fitbuddy.premium.state.v1');
+    if(!raw) return;
+    var s = JSON.parse(raw);
+    var owned = Object.values(s.owned||{}).filter(Boolean).length;
+    var card = (s.seasonUntil && new Date(s.seasonUntil) > new Date()) ? '季卡' : ((s.yearUntil && new Date(s.yearUntil) > new Date()) ? '年卡' : '');
+    var el = document.getElementById('proZoneStatus');
+    if(el && (owned>0 || card)){
+      el.innerHTML = '已解锁 <b style="color:var(--primary);">'+owned+'</b> 个 Pro 模板'+(card?'（'+card+'生效中）':'，永久有效')+' · <a href="premium-test/index.html" style="color:var(--primary);">去查看 →</a>';
+    }
+  }catch(e){}
+})();
+</script>
+<script>
+// 📖 术语问号徽章组件：全局词表 + 点击浮层（新增术语只改这里，页面里插 <span class="term-badge" data-term="xxx">?</span> 即可）
+var TERM_GLOSSARY = {
+  progressive: {t:"渐进超负荷", d:"肌肉只在接受新刺激时生长。每周比上周重一点、或多做一次，这个「慢慢加码」就是进步的核心。别一次加太多，动作变形就亏了。"},
+  superset: {t:"超级组", d:"两个动作背靠背做完再休息（如深蹲完立刻弓步），省时间、心跳不掉、燃脂效率高。"},
+  dropset: {t:"递减组", d:"最后一个动作做到做不动时，立刻减 30% 重量继续做，榨干剩余力气。"},
+  pump: {t:"泵感", d:"肌肉练到发胀、变硬的感觉，是增肌练到位的信号之一，但不等于一定练到位。"},
+  lactate: {t:"乳酸阈值", d:"跑得越快身体越「烧」。乳酸阈值就是「开始烧但还能撑住」的临界速度，提高它 = 同样的速度跑起来更轻松。"}
+};
+(function(){
+  document.addEventListener('click', function(e){
+    var pop = document.getElementById('termPopover');
+    if (!pop) return;
+    var b = e.target && e.target.closest ? e.target.closest('.term-badge') : null;
+    if (b) {
+      var item = TERM_GLOSSARY[b.getAttribute('data-term')];
+      if (!item) { pop.classList.remove('show'); return; }
+      pop.innerHTML = '<b>' + item.t + '</b>' + item.d;
+      pop.classList.add('show');
+      var r = b.getBoundingClientRect();
+      var pw = pop.offsetWidth, ph = pop.offsetHeight;
+      var left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+      var top = r.bottom + 8;
+      if (top + ph > window.innerHeight) top = Math.max(8, r.top - ph - 8);
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+    } else {
+      pop.classList.remove('show');
+    }
+  });
+})();
+</script>
+<div class="term-popover" id="termPopover" role="tooltip" aria-live="polite"></div>
 </body>
 </html>

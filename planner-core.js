@@ -87,7 +87,7 @@ function renderDynamicMealPlan(nRest, goal, isTrainingDay, nTrain, dayCalBurns, 
         ];
       }
     }
-    if (goal === 'muscle' || goal === 'strength') {
+    if (goal === 'muscle' || goal === 'strength' || goal === 'shape') {
       if (training) {
         return [
           {label:'早餐', items:'燕麦'+sc(55,cMul)+'g + 脱脂奶'+scm(250,pMul)+'ml + 水煮蛋2个 + 香蕉1根'},
@@ -895,6 +895,11 @@ function calcNutrition(weight, height, age, gender, goal, dayCalBurn) {
     targetCal = tdee + (isTrainingDay ? -200 + activityCal : -450);
     protein = weight * 1.8; carb = weight * (isTrainingDay ? 2.0 + Math.min(activityCal / 400, 1) : 2.0); fat = weight * 0.8;
   }
+  else if (goal === "shape") {
+    // 塑形:维持热量(训练日吃回运动消耗),高蛋白保线条
+    targetCal = tdee + (isTrainingDay ? activityCal : 0);
+    protein = weight * 1.8; carb = weight * (isTrainingDay ? 3.5 + Math.min(activityCal / 300, 1) : 3.5); fat = weight * 0.9;
+  }
   else if (goal === "marathon") {
     // 马拉松:休息日5.0,训练日5.0~9.0(每300kcal+1,封顶+4)
     targetCal = tdee + (isTrainingDay ? 200 + activityCal : 100);
@@ -1274,7 +1279,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   if (!trainingDays || !Array.isArray(trainingDays) || trainingDays.length === 0) {
     trainingDays = [{day:"第1天",isTraining:true,exes:[{n:"深蹲",m:"腿",p:"腿",s:"初级",eq:"gym",diff:"初级",desc:"徒手深蹲",tips:"脚跟贴地",vid:"aclHkVaku9U",_exId:"squat"}]}];
   }
-  var goalNames  = {muscle:"增肌",strength:"力量",cut:"减脂",cardio:"心肺",marathon:"马拉松"};
+  var goalNames  = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",marathon:"马拉松"};
   var levelNames = {beginner:"新手 🌱",intermediate:"中级 ⚡",advanced:"进阶 🔥"};
   var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var cycleLen = getCycleLength();
@@ -1334,6 +1339,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     if (actualKm) goalCfg = Object.assign({}, goalCfg, {_weekKm: actualKm});
   }
   html += renderSummary(goalNames[goal], levelNames[level], equipNames[equip], days, goalCfg, cfg.sets, intensityStr, goal);
+  // 术语图例行（紧跟摘要，新手第一眼就能看懂强度缩写）
+  html += renderLegendRow(goal);
   var isLastWeek = goal === "marathon" ? (currentWeek >= 16) : (currentWeek >= getCycleLength());
   if (isLastWeek) {
     html += '<div class="cycle-banner"><div class="cycle-info">🔄 当前:第'+currentCycle+'周期 · 第'+currentWeek+'周'+
@@ -1628,7 +1635,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     var title = "FitBuddy - 该训练啦!💪";
     var body = "今天还有训练等着你!打开 FitBuddy 开始打卡 💪";
     if (plan && plan.goal) {
-      var goalNames = {muscle:"增肌",strength:"力量",cut:"减脂",cardio:"心肺",marathon:"马拉松"};
+      var goalNames = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",marathon:"马拉松"};
       body = "你的" + (goalNames[plan.goal] || plan.goal) + "训练等你来!打开 FitBuddy 打卡 💪";
     }
 
@@ -1789,6 +1796,7 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   if (goal === "muscle") trainingDays = buildMusclePlan(level, days, equip, weekOffset);
   else if (goal === "strength") trainingDays = buildStrengthPlan(level, days, equip, weekOffset);
   else if (goal === "cut") trainingDays = buildCutPlan(level, days, equip, weekOffset);
+  else if (goal === "shape") trainingDays = buildShapePlan(level, days, equip, weekOffset);
   else if (goal === "cardio") trainingDays = buildCardioPlan(level, days, equip, weekOffset);
   else if (goal === "marathon") trainingDays = buildMarathonPlan(level, days, equip, weekOffset);
   // 仅自重 + 力量类目标:按本周难度档位把动作映射到变式族对应档位(周期升档/降档)
@@ -1898,6 +1906,38 @@ function buildCutPlan(level, days, equip, wOff) {
       var cardExes = getExes("有氧",equip,level);
       var picked2 = pickExes(cardExes,2,wOff);
       plan.push({name:"有氧专项 " + (Math.floor(i/2)+1), exes: picked2.length ? picked2 : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
+    }
+  }
+  return plan;
+}
+
+// 塑形:力量塑线条(臀腿/肩背重点轮换) + 每3天1次慢速有氧,热量维持
+function buildShapePlan(level, days, equip, wOff) {
+  var plan = [];
+  var strIdx = 0, cardioIdx = 0;
+  var cardioPool = getExes("有氧", equip, level);
+  for (var i=0; i<days; i++) {
+    if (i % 3 !== 2) {
+      // 力量塑形日:全身基础动作 + 臀腿/肩背重点轮换
+      var exes = getFullBody(equip, level, "muscle", wOff + i);
+      var focus = [];
+      if (i % 2 === 0) {
+        // 臀腿线条:臀桥/深蹲/硬拉/弓步类
+        var legs = getExes("腿",equip,level).filter(function(e){return e.n.indexOf("臀")>=0||e.n.indexOf("深蹲")>=0||e.n.indexOf("硬拉")>=0||e.n.indexOf("弓步")>=0||e.n.indexOf("箭步")>=0;});
+        focus = pickExes(legs, 1, wOff + i);
+        if (!focus.length) focus = pickExes(getExes("腿",equip,level), 1, wOff + i);
+      } else {
+        // 肩背线条:肩部塑形优先
+        focus = pickExes(getExes("肩",equip,level), 1, wOff + i);
+      }
+      if (focus.length) exes = dedup(exes.concat(focus));
+      strIdx++;
+      plan.push({name:"力量塑形 " + strIdx, exes: exes});
+    } else {
+      // 有氧线条日:慢速有氧控体脂
+      cardioIdx++;
+      var picked = pickExes(cardioPool, 1, wOff + i);
+      plan.push({name:"有氧线条 " + cardioIdx, exes: picked.length ? picked : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
     }
   }
   return plan;
@@ -2042,7 +2082,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
       plan = [
         {name:"轻松跑", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "恢复+有氧基础", "轻松热身,为周中高强度训练蓄力")]},
         {name:"间歇跑", exes:[mkRun("间歇跑", intervalSpec, cfg.intervalPace+"/km", "高级", "速度训练,提升最大摄氧量(VO2max)", "充分热身2km,每组间慢跑恢复,跑完冷身1km")]},
-        {name:"节奏跑", exes:[mkRun("节奏跑", tempoDist, cfg.tempoPace+"/km", "中级", "乳酸阈值训练,提升持续高速能力", "\"舒适地困难\"--能说短语但不能聊天,匀速")]},
+        {name:"节奏跑", exes:[mkRun("节奏跑", tempoDist, cfg.tempoPace+"/km", "中级", "乳酸阈值<span class='term-badge' data-term='lactate'>?</span>训练,提升持续高速能力", "\"舒适地困难\"--能说短语但不能聊天,匀速")]},
         {name:"LSD 长距离", exes:[mkRun("LSD 长距离", lsdDist+"km", cfg.longRunPace+"/km", "中级", "周末长距离,提升耐力和脂肪供能能力", "带水/能量胶,跑前吃碳水,享受过程")]}
       ];
     } else if (phase === "peak") {
@@ -2114,7 +2154,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
         {name:"轻松跑", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "恢复+有氧积累", "为新的一周热身")]},
         {name:"间歇跑", exes:[mkRun("间歇跑", intervalSpec, cfg.intervalPace+"/km", "高级", "速度训练日", "充分热身,记录每组分段时间")]},
         {name:"轻松跑 (中距离)", exes:[mkRun("轻松跑", midDist, cfg.easyPace+"/km", "初级", "中距离有氧跑", "保持Zone 2,匀速推进")]},
-        {name:"节奏跑", exes:[mkRun("节奏跑", tempoDist, cfg.tempoPace+"/km", "中级", "乳酸阈值巩固", "马拉松配速或略快")]},
+        {name:"节奏跑", exes:[mkRun("节奏跑", tempoDist, cfg.tempoPace+"/km", "中级", "乳酸阈值<span class='term-badge' data-term='lactate'>?</span>巩固", "马拉松配速或略快")]},
         {name:"恢复跑", exes:[mkRun("恢复跑", recDist, "非常轻松", "初级", "赛前放松", "超级轻松,为明天LSD蓄力")]},
         {name:"LSD 长距离", exes:[mkRun("LSD 长距离", lsdDist+"km", cfg.longRunPace+"/km", "中级", "本周关键训练", "长距离慢跑,模拟比赛后半程感觉")]}
       ];
@@ -2179,6 +2219,7 @@ function getSplitInfo(goal, days) {
     return {name:"大项分化", note:"各大项每周 1~2 次，注意间隔 48 小时"};
   }
   if (goal === "cut")     return {name:"力量 + 有氧交替", note:"力量保肌肉，有氧烧脂肪"};
+  if (goal === "shape")   return {name:"力量塑形 + 有氧线条", note:"臀腿/肩背重点轮换，线条和体脂两头抓"};
   if (goal === "cardio")  return {name:"LISS / HIIT / 力量轮换", note:"强度高低交错，恢复不欠账"};
   return null; // 马拉松等专项有自己的说明面板
 }
@@ -2256,7 +2297,7 @@ var BW_ADJUST_TEXT = {
 // 仅自重时横幅左侧的周阶段文案(替换 weightAdjust 中"增加重量"等器械语言)
 var BW_NOTE_TEXT = {
   "+0%": "基础适应周 — 打磨动作模式与姿势",
-  "+5%": "渐进超负荷 — 每组次数 +2~3 次",
+  "+5%": "渐进超负荷<span class='term-badge' data-term='progressive'>?</span> — 每组次数 +2~3 次",
   "+10%": "挑战周 — 变式升 1 档，突破平台期",
   "+15%": "挑战周 — 变式升 2 档 + 离心慢放 3 秒",
   "+20%": "巅峰周 — 变式升 3 档，冲击族内最高",
@@ -2265,6 +2306,19 @@ var BW_NOTE_TEXT = {
   "-15%": "半减载周 — 降 1 档，巩固动作质量",
   "-30%": "减载周 — 最基础变式，彻底恢复"
 };
+// 📖 术语图例行：一次性解释强度栏里的缩写（新手不懵，老手自动忽略）
+function renderLegendRow(goal) {
+  var items;
+  if (goal === 'cardio') {
+    items = ['心率 % = 最大心跳的百分比', 'RPE = 累不累自评 1~10 分', 'LISS = 慢速稳态有氧 / HIIT = 冲刺间歇'];
+  } else if (goal === 'marathon') {
+    items = ['配速 = 每公里用时', 'RPE = 累不累自评 1~10 分', 'LSD = 长距离慢跑'];
+  } else {
+    items = ['%1RM = 用极限重量的百分之几', 'RPE = 累不累自评 1~10 分'];
+  }
+  return '<div style="font-size:11px;color:var(--text3);background:var(--bg);border-radius:10px;padding:8px 12px;margin-bottom:12px;line-height:1.7;">📖 ' +
+    items.join(' · ') + ' · 卡片上的 <b style="color:var(--primary);">?</b> 可点击看解释</div>';
+}
 function renderWeekInfo(wk) {
   var displayWeek = ((currentWeek - 1) % getCycleLength()) + 1;
   var icon = wk.deload ? "🔄" : "📈";
@@ -2597,7 +2651,7 @@ function getZoneForRunType(runName) {
     return { zone: 'Zone 2-3', desc: '长距离耐力', color: '#3B82F6' };
   }
   if (runName.indexOf('节奏跑') >= 0 || runName.indexOf('配速跑') >= 0) {
-    return { zone: 'Zone 3-4', desc: '乳酸阈值', color: '#F97316' };
+    return { zone: 'Zone 3-4', desc: '乳酸阈值<span class="term-badge" data-term="lactate">?</span>', color: '#F97316' };
   }
   if (runName.indexOf('间歇') >= 0) {
     return { zone: 'Zone 4-5', desc: '速度/VO2max', color: '#EF4444' };
@@ -3262,7 +3316,7 @@ function generateShareImage() {
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   if (hist.length === 0) { alert('暂无训练数据,完成训练后再来生成分享图吧!'); return; }
   var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
-  var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
+  var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',shape:'塑形',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
   var levelName = plan ? ({beginner:'入门',intermediate:'进阶',advanced:'高手'})[plan.level] || '' : '';
   var totalSessions = new Set(hist.map(function(h){ return h.date; })).size;
   var totalSets = hist.reduce(function(s,h){ return s + (h.count||h.sets||1); }, 0);
@@ -4350,7 +4404,7 @@ function showWeeklySummary() {
     checkDate.setDate(checkDate.getDate() - 1);
   }
 
-  var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
+  var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',shape:'塑形',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
   var html = '<div class="weekly-summary">'+
     '<h3 style="text-align:center;margin-bottom:16px;">📊 本周训练总结</h3>'+
     '<div class="weekly-stat-row"><span>本周训练天数</span><span class="weekly-stat-val">'+trainedDays.size+' 天</span></div>'+
@@ -4538,7 +4592,7 @@ function genPlanCode() {
   var plan = null;
   try { plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null'); } catch(e) { plan = null; }
   if (!plan || !plan.goal || !plan.trainingDays || !plan.trainingDays.length) return '';
-  var g = { muscle:'m', strength:'s', cut:'c', cardio:'a', marathon:'r' }[plan.goal] || 'm';
+  var g = { muscle:'m', strength:'s', cut:'c', shape:'p', cardio:'a', marathon:'r' }[plan.goal] || 'm';
   var l = { beginner:'b', intermediate:'i', advanced:'a' }[plan.level] || 'b';
   var d = parseInt(plan.days);
   if (isNaN(d) || d < 2 || d > 6) d = 4;
@@ -4558,7 +4612,7 @@ function parsePlanCode(code) {
   var sum = 0;
   for (var i = 0; i < code.length - 1; i++) sum += code.charCodeAt(i);
   if (String.fromCharCode(65 + (sum % 26)) !== code.charAt(6)) return null;
-  var gRev = { M:'muscle', S:'strength', C:'cut', A:'cardio', R:'marathon' };
+  var gRev = { M:'muscle', S:'strength', C:'cut', P:'shape', A:'cardio', R:'marathon' };
   var lRev = { B:'beginner', I:'intermediate', A:'advanced' };
   var eqRev = { G:'gym', D:'dumbbell', B:'bodyweight', O:'outdoor', T:'treadmill' };
   var goal = gRev[code.charAt(2)], level = lRev[code.charAt(3)], eq = eqRev[code.charAt(5)];
@@ -4573,7 +4627,7 @@ function showPlanShareModal() {
   if (!code) { showToast('请先生成训练计划再分享'); return; }
   var plan = null;
   try { plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null'); } catch(e) {}
-  var goalName = (plan && { muscle:'增肌', strength:'力量', cut:'减脂', cardio:'心肺', marathon:'马拉松' }[plan.goal]) || '健身';
+  var goalName = (plan && { muscle:'增肌', strength:'力量', cut:'减脂', shape:'塑形', cardio:'心肺', marathon:'马拉松' }[plan.goal]) || '健身';
   var levelName = (plan && { beginner:'新手', intermediate:'中级', advanced:'进阶' }[plan.level]) || '';
   var html = '<div class="modal-handle"></div>' +
     '<div class="modal-title">📤 分享我的计划</div>' +

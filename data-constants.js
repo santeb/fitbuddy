@@ -204,22 +204,25 @@ var CONFIGS = {
     muscle:   {reps:"12-15次", rest:"60秒", intensity:"50-65% 1RM", rpe:"RPE 5-7", note:"感受肌肉发力，以正确动作为首要目标"},
     strength: {reps:"8-10次",  rest:"90秒", intensity:"60-70% 1RM", rpe:"RPE 6-7", note:"注意动作规范，不追求大重量"},
     cut:      {reps:"15-20次", rest:"45秒", intensity:"40-55% 1RM", rpe:"RPE 5-6", note:"保持运动节奏，以轻重量高次数燃脂"},
+    shape:    {reps:"10-15次", rest:"60秒", intensity:"55-65% 1RM", rpe:"RPE 6-7", note:"臀腿+肩背线条优先，动作标准比重量重要"},
     cardio:   {reps:"—", totalDuration:"20分钟", hiitPerSet:"20秒工作 + 40秒休息", lissPerSet:"持续进行", rest:"60秒", intensity:"心率 55-65%", rpe:"RPE 4-5", note:"轻松有氧为主，能正常说话的配速"},
     marathon: {weeklyKms:"30-45", longRunMax:30, easyPace:"6:30-7:00", tempoPace:"5:30-6:00", intervalPace:"5:00-5:30", longRunPace:"6:30-7:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：安全完赛（4:30-5:30），享受比赛"}
   },
   intermediate: {
     sets: 4,
-    muscle:   {reps:"8-12次",  rest:"75秒", intensity:"65-75% 1RM", rpe:"RPE 7-8", note:"力竭前留1-2个(RIR)，追求肌肉泵感"},
+    muscle:   {reps:"8-12次",  rest:"75秒", intensity:"65-75% 1RM", rpe:"RPE 7-8", note:"力竭前留 1~2 个 RIR（还能再做几次），追求肌肉泵感<span class='term-badge' data-term='pump'>?</span>"},
     strength: {reps:"5-8次",   rest:"2分钟",intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"每组接近力竭，记录每次重量"},
     cut:      {reps:"12-15次", rest:"30秒", intensity:"55-65% 1RM", rpe:"RPE 7-8", note:"可使用超级组提升燃脂效率"},
+    shape:    {reps:"10-12次", rest:"60秒", intensity:"60-70% 1RM", rpe:"RPE 7-8", note:"力竭前留 1~2 个 RIR（还能再做几次），练完加 15-20 分钟慢速有氧"},
     cardio:   {reps:"—", totalDuration:"30分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"45秒", intensity:"心率 65-80%", rpe:"LISS RPE5-6 / HIIT RPE8-9", note:"HIIT与LISS交替进行"},
     marathon: {weeklyKms:"50-70", longRunMax:35, easyPace:"5:30-6:00", tempoPace:"4:45-5:15", intervalPace:"4:15-4:30", longRunPace:"6:00-6:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 4:00-4:30，有比赛经验"}
   },
   advanced: {
     sets: 5,
-    muscle:   {reps:"6-10次",  rest:"90秒", intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"力竭前留1个RIR，考虑降重组"},
+    muscle:   {reps:"6-10次",  rest:"90秒", intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"力竭前留 1 个 RIR（还能再做 1 次），考虑降重组"},
     strength: {reps:"3-6次",   rest:"3分钟",intensity:"85%+ 1RM",   rpe:"RPE 8-10", note:"加入RPE评估，追求渐进超负荷"},
-    cut:      {reps:"10-12次", rest:"20秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"超级组+递减组，最大化热量消耗"},
+    cut:      {reps:"10-12次", rest:"20秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"超级组<span class='term-badge' data-term='superset'>?</span>+递减组<span class='term-badge' data-term='dropset'>?</span>，最大化热量消耗"},
+    shape:    {reps:"8-12次",  rest:"75秒", intensity:"70-80% 1RM", rpe:"RPE 8-9", note:"超级组<span class='term-badge' data-term='superset'>?</span>提升密度，臀腿+肩背双重点"},
     cardio:   {reps:"—", totalDuration:"40分钟", hiitPerSet:"45秒工作 + 15秒休息", lissPerSet:"持续进行", rest:"20秒", intensity:"心率 70-85%", rpe:"LISS RPE6-7 / HIIT RPE9-10", note:"高强度间歇为主，最大化燃脂效果"},
     marathon: {weeklyKms:"70-100", longRunMax:38, easyPace:"4:45-5:15", tempoPace:"4:15-4:30", intervalPace:"3:45-4:00", longRunPace:"5:15-5:45", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 3:30，冲击PB"}
   }
@@ -271,7 +274,7 @@ function getWeekOffset(week, totalWeeks) {
 // 周期化进度
 var WEEK_INFO = [
   {note:"基础适应周 — 重点掌握动作模式，不追求重量", deload:false, weightAdjust:"+0%"},
-  {note:"渐进超负荷 — 尝试增加重量 2.5-5kg，保持次数", deload:false, weightAdjust:"+5%"},
+  {note:"渐进超负荷<span class='term-badge' data-term='progressive'>?</span> — 尝试增加重量 2.5-5kg，保持次数", deload:false, weightAdjust:"+5%"},
   {note:"挑战周 — 继续增加重量或次数，接近力竭", deload:false, weightAdjust:"+10%"},
   {note:"减载周（Deload）— 重量降至70%，让身体充分恢复", deload:true, weightAdjust:"-30%"}
 ];
@@ -498,6 +501,13 @@ var FOOD_GUIDE = {
     fat:     ["少量坚果（每天10-15g）","橄榄油（烹饪用）"],
     snack:   ["黄瓜条+低脂蘸酱","蛋白粉+水","零糖气泡水","无糖酸奶（少量）"],
     timing:  ["早餐丰盛、午餐适中、晚餐从简","碳水集中在训前训后，其余餐少吃主食","晚上8点后不再进食","每天喝足 2-3L 水抑制饥饿感"]
+  },
+  shape: {
+    protein: ["鸡胸肉","鸡蛋（全蛋）","三文鱼/虾","老豆腐","希腊酸奶","乳清蛋白粉"],
+    carb:    ["糙米饭","红薯/紫薯","燕麦片","全麦面包","玉米","藜麦"],
+    fat:     ["坚果（每天15-20g）","牛油果","橄榄油"],
+    snack:   ["希腊酸奶+蓝莓","水煮蛋 2个","香蕉+花生酱（训前）","蛋白棒"],
+    timing:  ["三餐规律，蛋白质均匀分到每餐（每餐一掌心）","碳水集中在训前训后","练完 30min 内补充蛋白（如 蛋白粉+香蕉）","每天喝足 1.5-2L 水"]
   },
   cardio: {
     protein: ["鸡蛋","鸡胸肉","鱼肉","虾","牛奶","豆腐"],
