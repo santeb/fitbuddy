@@ -1154,14 +1154,18 @@ function updateTodayBanner() {
 
   // 简单匹配:根据训练天数找今天该练什么
   var daysPerWeek = plan.trainingDays.length;
-  var weekday = today.getDay(); // 0=周日
-  // 把周日=0 映射成计划里的"休息日"或"第N天"
+  var wd = (today.getDay() + 6) % 7; // 周一=0
+  // 把今天映射成计划里的"休息日"或"第N个训练日"
   var traindayIdx = -1;
-  if (plan.schedule) {
-    for (var si = 0; si < plan.schedule.length; si++) {
-      if (plan.schedule[si].day.indexOf(todayName) >= 0) {
-        traindayIdx = si; break;
-      }
+  if (plan.schedule && plan.schedule.length) {
+    if (typeof plan.schedule[0] === 'number') {
+      // 数字数组格式 [0,2,4] (周一=0)
+      traindayIdx = plan.schedule.indexOf(wd);
+    } else if (plan.schedule[wd] && plan.schedule[wd].isTraining) {
+      // 对象格式 [{day:'周一',isTraining:true},...] (7项完整周)
+      var rank = 0;
+      for (var i = 0; i <= wd; i++) if (plan.schedule[i] && plan.schedule[i].isTraining) rank++;
+      traindayIdx = rank - 1;
     }
   }
   // fallback:按顺序轮
@@ -1415,6 +1419,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     if (_lastNutriCtx && typeof window.dietRefreshFromPlan === 'function') window.dietRefreshFromPlan(_lastNutriCtx);
   } catch(e) {}
   updateTodayBanner();
+  // 默认折叠:只展开今天(或下一个)训练日,其余收起
+  fbCollapseToToday();
   } catch(renderErr) {
     console.error('渲染计划出错:', renderErr);
     // 改用顶部错误条(保留已渲染内容 + 暴露完整堆栈 + 一键复制/重新渲染),原 innerHTML 替换会让用户觉得页面崩了
@@ -1598,13 +1604,17 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     if (plan && plan.schedule) {
       var dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
       var todayName = dayNames[new Date().getDay()];
+      var wd = (new Date().getDay() + 6) % 7; // 周一=0
       for (var i = 0; i < plan.schedule.length; i++) {
         if (plan.schedule[i].day.indexOf(todayName) >= 0) {
           if (!plan.schedule[i].isTraining) {
             title = "😴 今天是休息日";
             sub = "好好恢复,明天继续!";
           } else {
-            var dayData = plan.trainingDays[i];
+            // 计算今天是本周第几个训练日 → trainingDays 索引
+            var rank = 0;
+            for (var r = 0; r <= i; r++) if (plan.schedule[r] && plan.schedule[r].isTraining) rank++;
+            var dayData = plan.trainingDays[rank - 1];
             if (dayData && dayData.exes && dayData.exes.length) {
               var exNames = dayData.exes.slice(0,2).map(function(e){ return e.n; }).join("、");
               title = "🏋️ " + (plan.schedule[i].day || "今天") + " 训练";
@@ -2879,14 +2889,14 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         if (isBodyweight) {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
             '<span class="prog-label">次数</span><input type="number" class="prog-input" placeholder="次" min="1" max="50" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE</span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>';
         } else {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
             '<span class="prog-label">重量</span><input type="number" class="prog-input" placeholder="kg" step="0.5" min="0" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
             '<span class="prog-label">次数</span><input type="number" class="prog-input" placeholder="次" min="1" max="50" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE</span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>';
         }
@@ -3222,6 +3232,31 @@ function saveNote(noteId, goal, week, dayName) {
 }
 
 // ============ 渐进超负荷记录 ============
+// RPE 打分指南(底部弹窗): 核心是"还能标准做几次"的 RIR 换算法
+function fbShowRpeGuide() {
+  var rows = [
+    {r:'10', tag:'力竭', desc:'一个都做不动了，最后几次动作可能已变形', color:'#EF4444'},
+    {r:'9',  tag:'极限', desc:'还能标准地做 1 次', color:'#F97316'},
+    {r:'8',  tag:'吃力', desc:'还能标准地做 2 次 · 增肌黄金区上限', color:'#F59E0B'},
+    {r:'7',  tag:'标准', desc:'还能标准地做 3 次 · 增肌黄金区', color:'#22C55E'},
+    {r:'5-6',tag:'轻松', desc:'有明显富余，动作很稳', color:'#3B82F6'},
+    {r:'1-4',tag:'热身', desc:'几乎无负担，热身/恢复水平', color:'#999999'}
+  ];
+  var html = '<div class="modal-handle"></div><div class="modal-title">💪 RPE 怎么打分？</div>'
+    + '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">RPE = 自我感觉用力程度，1~10 分</div>'
+    + '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px;padding:12px;background:var(--bg);border-radius:12px;">做完一组后问自己一句话：<b style="color:var(--primary);">「我还能标准地再做几次？」</b><br>答案就是你的 RPE——还剩 2 次就是 RPE 8，一次不剩就是 RPE 10。</div>';
+  rows.forEach(function(x){
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);">'
+      + '<span style="min-width:36px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;background:'+x.color+'18;color:'+x.color+';font-weight:800;font-size:13px;">'+x.r+'</span>'
+      + '<span style="font-weight:700;font-size:13px;color:var(--text);min-width:32px;">'+x.tag+'</span>'
+      + '<span style="font-size:12px;color:var(--text2);flex:1;">'+x.desc+'</span></div>';
+  });
+  html += '<div style="font-size:12px;color:var(--text2);line-height:1.6;margin:14px 0 4px;">💡 增肌建议大部分组落在 <b style="color:var(--green);">RPE 7~8</b>：刺激到位、动作不变形。状态好时偶尔冲 9，但别组组都顶到 10。</div>'
+    + '<button onclick="closeModal()" style="width:100%;margin-top:14px;padding:12px;border-radius:14px;background:var(--primary);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">懂了</button>';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.add('show');
+}
+
 function saveTrainingLog(exName, weight, reps, rpeVal) {
   if (!exName) return;
   if (!trainingLog[exName]) trainingLog[exName] = [];
@@ -3948,12 +3983,16 @@ function toggleDone(id) {
         }
       }
     }
-    // 🎮 游戏化:更新连续打卡/成就
-    afterTrainingDone();
+    // 🎮 游戏化:更新连续打卡/成就 (2026-10-09 改用 checkAchievements,原 afterTrainingDone 在已删的 pets.js)
+    checkAchievements();
     // 🔄 检测本周全部完成 → 自动刷新勾选(跳过已由 autoAdvance 处理的情况)
     if (!_autoAdvanced && checkWeekComplete()) {
       speakText("太棒了，本周训练全部完成！");
       setTimeout(resetAllCheckmarks, 1200);
+    }
+    // 🎉 今日全部完成 → 弹多重反馈庆祝 modal (首次达成)
+    if (typeof fbCheckDailyCompleteCelebrate === 'function') {
+      fbCheckDailyCompleteCelebrate();
     }
   }
 }
@@ -3993,8 +4032,61 @@ function getDaysSinceLastCheckin() {
 function fbGetTodayDayIdx() {
   if (!lastPlan || !lastPlan.trainingDays) return -1;
   var sched = lastPlan.schedule || getSchedule(lastPlan.days);
-  var wd = (new Date().getDay() + 6) % 7;
-  return sched.indexOf(wd);
+  if (!sched || !sched.length) return -1;
+  var wd = (new Date().getDay() + 6) % 7; // 周一=0
+  // 格式A: 数字数组 [0,2,4] (周一=0)
+  if (typeof sched[0] === 'number') return sched.indexOf(wd);
+  // 格式B: 真实计划格式 [{day:'周一',isTraining:true},...] (7项完整周)
+  if (!sched[wd] || !sched[wd].isTraining) return -1; // 今天是休息日
+  var rank = 0;
+  for (var i = 0; i <= wd; i++) if (sched[i] && sched[i].isTraining) rank++;
+  return rank - 1; // 今天是本周第 rank 个训练日 → trainingDays 索引
+}
+
+// 计划渲染后默认折叠:只展开今天(或下一个)训练日卡片,其余收起
+function fbCollapseToToday() {
+  var cards = document.querySelectorAll('#planResult .plan-day');
+  if (!cards.length) return;
+  var openIdx = fbGetTodayDayIdx();
+  var tag = '今天';
+  if (openIdx < 0) {
+    // 今天休息 → 展开本周下一个训练日;本周训练日已过完 → 展开第1个(下周)
+    tag = '下一个训练日';
+    var sched = (lastPlan && lastPlan.schedule) || (lastPlan ? getSchedule(lastPlan.days) : null);
+    var wd = (new Date().getDay() + 6) % 7; // 周一=0
+    if (sched && sched.length && typeof sched[0] === 'object') {
+      for (var i = wd + 1; i < 7; i++) {
+        if (sched[i] && sched[i].isTraining) { openIdx = fbDayRankInSchedule(sched, i) - 1; break; }
+      }
+    }
+    if (openIdx < 0 || openIdx >= cards.length) openIdx = 0;
+  }
+  if (openIdx >= cards.length) openIdx = 0;
+  Array.prototype.forEach.call(cards, function(card, i) {
+    if (i === openIdx) {
+      card.classList.remove('collapsed');
+      card.classList.add('today');
+      var name = card.querySelector('.plan-day-name');
+      if (name && !card.querySelector('.fb-today-tag')) {
+        var s = document.createElement('span');
+        s.className = 'fb-today-tag';
+        s.textContent = '📍 ' + tag;
+        name.appendChild(s);
+      }
+    } else {
+      card.classList.add('collapsed');
+      card.classList.remove('today');
+    }
+  });
+}
+
+// schedule 对象格式下,周一=0 的第 wdIdx 天是本周第几个训练日(1-based);0=非训练日/格式不符
+function fbDayRankInSchedule(sched, wdIdx) {
+  if (!sched || !sched.length || typeof sched[0] !== 'object') return 0;
+  if (!sched[wdIdx] || !sched[wdIdx].isTraining) return 0;
+  var rank = 0;
+  for (var i = 0; i <= wdIdx; i++) if (sched[i] && sched[i].isTraining) rank++;
+  return rank;
 }
 
 // 某训练日勾选进度 {done, total}
@@ -4028,10 +4120,29 @@ function fbCountWeekProgress() {
 }
 
 // 未完成感 banner HTML(今日剩余动作 + 本周进度条 + 完成态海报入口)
+// 2026-10-09 升级: 加 streak 火焰 + 差 X 天解锁 X 徽章 + 大字钩子
 function fbProgressBannerHtml() {
   if (!lastPlan || !lastPlan.trainingDays) return '';
   var hasContent = false;
+  var streak = getStreakData();
+  var nextAch = fbNextStreakAch(streak);
   var html = '<div id="fbProgressBanner" class="card" style="padding:14px 16px;margin-bottom:14px;">';
+
+  // 🆕 顶部:streak 火焰 + 差 X 天解锁 X 徽章(强未完成感)
+  if (streak > 0 || nextAch) {
+    hasContent = true;
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">';
+    if (streak > 0) {
+      html += '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:12px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;font-size:13px;font-weight:700;">🔥 已连续 '+streak+' 天</span>';
+    }
+    if (nextAch && nextAch.need > 0) {
+      html += '<span style="font-size:12px;color:var(--text2);font-weight:600;">差 <b style="color:var(--primary);">'+nextAch.need+'</b> 天解锁『'+nextAch.name+'』</span>';
+    } else if (nextAch && nextAch.need === 0) {
+      html += '<span style="font-size:12px;color:var(--green);font-weight:700;">🎯 今天就能解锁『'+nextAch.name+'』！</span>';
+    }
+    html += '</div>';
+  }
+
   var ti = fbGetTodayDayIdx();
   if (ti >= 0) {
     var p = fbCountDayProgress(ti);
@@ -4066,6 +4177,264 @@ function fbProgressBannerHtml() {
   }
   html += '</div>';
   return hasContent ? html : '';
+}
+
+// 找下一个未解锁的 streak_ 徽章 (差 X 天解锁 X 徽章 用)
+function fbNextStreakAch(streak) {
+  try {
+    var ach = getAchievements();
+    var targets = [3,7,14,21,30,50,100];
+    var names = {'streak_3':'三日之火','streak_7':'七日之焰','streak_14':'两周坚持','streak_21':'习惯养成','streak_30':'月度战士','streak_50':'半百之王','streak_100':'百炼成钢'};
+    for (var i = 0; i < targets.length; i++) {
+      var id = 'streak_' + targets[i];
+      if (ach.indexOf(id) < 0) {
+        return { id: id, name: names[id], need: targets[i] - streak };
+      }
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+// 🎯 首页大按钮 (今日训练 hero): plan tab 顶部、banner 之前
+function fbTodayHeroHtml() {
+  if (!lastPlan || !lastPlan.trainingDays) return '';
+  var ti = fbGetTodayDayIdx();
+  var html = '<div id="fbTodayHero" style="margin-bottom:12px;padding:18px 18px 16px;border-radius:18px;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;box-shadow:0 6px 20px rgba(255,107,53,0.25);">';
+  if (ti >= 0) {
+    var day = lastPlan.trainingDays[ti];
+    var muscles = (day && day.exes) ? Array.from(new Set(day.exes.map(function(e){return e.m||''}).filter(Boolean))) : [];
+    var muscleNames = muscles.map(function(m){return (typeof MUSCLE_LABELS !== 'undefined' && MUSCLE_LABELS[m]) ? MUSCLE_LABELS[m] : m;}).slice(0,3).join(' + ');
+    var p = fbCountDayProgress(ti);
+    var estMin = day && day.exes ? Math.round(day.exes.length * 6) : 0; // 粗估每动作6分钟(含组间休息)
+    var done = p.done >= p.total && p.total > 0;
+    if (done) {
+      html += '<div style="font-size:12px;opacity:0.85;">今日训练</div>'
+        + '<div style="font-size:22px;font-weight:800;margin:4px 0 6px;">✅ 已全部完成</div>'
+        + '<div style="font-size:13px;opacity:0.9;">'+p.done+'/'+p.total+' 个动作 · 太棒了</div>';
+    } else {
+      html += '<div style="font-size:12px;opacity:0.85;">今日训练 · Day '+(ti+1)+'</div>'
+        + '<div style="font-size:26px;font-weight:800;margin:4px 0 8px;line-height:1.2;">🎯 '+(muscleNames||'休息调整')+'</div>'
+        + '<div style="font-size:13px;opacity:0.9;margin-bottom:14px;">'+p.total+' 个动作 · 约 '+estMin+' 分钟</div>'
+        + '<button onclick="document.getElementById(\'planResult\').scrollIntoView({behavior:\'smooth\',block:\'start\'})" style="width:100%;padding:12px;border-radius:14px;background:#fff;color:var(--primary);border:none;font-size:15px;font-weight:700;cursor:pointer;">'
+        + (p.done > 0 ? '继续训练 ('+(p.total-p.done)+' 个待完成)' : '开始训练') + '</button>';
+    }
+  } else {
+    html += '<div style="font-size:12px;opacity:0.85;">今日训练</div>'
+      + '<div style="font-size:22px;font-weight:800;margin:4px 0 6px;">😴 休息日</div>'
+      + '<div style="font-size:13px;opacity:0.9;">今天不在训练计划内,放松拉伸、补充蛋白质</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// 启动/切 tab 时,把 hero + banner 注入到 page-plan 顶部(独立于完整计划渲染)
+function fbRefreshRetentionUI() {
+  if (!lastPlan || !lastPlan.trainingDays) return;
+  var top = document.getElementById('fbRetentionTop');
+  var planRes = document.getElementById('planResult');
+  if (!top && !planRes) return;
+  var hero = fbTodayHeroHtml();
+  var ban = fbProgressBannerHtml();
+  if (!hero && !ban) return;
+  // 旧的 hero/banner 移除
+  var oldHero = document.getElementById('fbTodayHero');
+  var oldBan = document.getElementById('fbProgressBanner');
+  if (oldHero) oldHero.remove();
+  if (oldBan) oldBan.remove();
+  // 优先注入 page-plan 顶部; 不存在则 fallback 到 planResult
+  if (top) {
+    top.innerHTML = (hero || '') + (ban || '');
+  } else if (planRes) {
+    if (ban) planRes.insertAdjacentHTML('afterbegin', ban);
+    if (hero) planRes.insertAdjacentHTML('afterbegin', hero);
+  }
+}
+
+// 🎉 今日训练全部完成 → 多重反馈 modal
+// 同一日内只弹一次(sessionStorage 标记,刷新不重弹;隔天重置)
+// ============ 🎰 多变奖励: 从用户自己的数据里随机挖"彩蛋事实" ============
+// 每次完成训练随机播 1-2 条,内容取决于数据 → 不可预测 + 有意义
+function fbWeekSum(hist, weekOffset) {
+  var now = new Date(); now.setHours(0,0,0,0);
+  var day = (now.getDay() + 6) % 7; // 周一=0
+  var monday = new Date(now); monday.setDate(now.getDate() - day - weekOffset * 7);
+  var end = new Date(monday); end.setDate(monday.getDate() + 7);
+  var s = { days: 0, sets: 0, cal: 0 };
+  (hist || []).forEach(function(h) {
+    if (!h || !h.date) return;
+    var d = new Date(h.date + 'T00:00:00');
+    if (d >= monday && d < end) {
+      s.days++;
+      s.sets += h.count || 0;
+      s.cal += h.calories || 0;
+    }
+  });
+  return s;
+}
+
+function fbRandomFacts() {
+  var facts = [];
+  try {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+    var streak = getStreakData();
+    var log = {};
+    try { log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}'); } catch(e) {}
+    var prs = getPRs();
+
+    // 1. 本周 vs 上周训练天数
+    var thisW = fbWeekSum(hist, 0), lastW = fbWeekSum(hist, 1);
+    if (thisW.days >= 2 && lastW.days > 0) {
+      if (thisW.days > lastW.days) facts.push('📈 本周已练 <b>' + thisW.days + '</b> 天，超过上周全周（' + lastW.days + ' 天）');
+      else facts.push('📊 本周已练 <b>' + thisW.days + '</b> 天，上周同期一起坚持下来了');
+    }
+
+    // 2. 本周训练量涨幅
+    if (thisW.sets >= 3 && lastW.sets >= 3 && thisW.sets > lastW.sets) {
+      var pct = Math.round((thisW.sets - lastW.sets) / lastW.sets * 100);
+      if (pct >= 5) facts.push('🚀 本周训练量比上周 <b>+' + pct + '%</b>，渐进超负荷拿捏了');
+    }
+
+    // 3. 累计打卡天数(与固定区的连续打卡数一致时不播,避免重复)
+    var daySet = {};
+    hist.forEach(function(h){ if (h && h.date) daySet[h.date] = 1; });
+    var totalDays = Object.keys(daySet).length;
+    if (totalDays >= 3 && totalDays !== streak) facts.push('💪 累计打卡 <b>' + totalDays + '</b> 天，每一步都算数');
+
+    // 4. 累计举起吨数
+    var totalKg = 0;
+    Object.keys(log).forEach(function(n) {
+      (log[n] || []).forEach(function(e) { totalKg += (e.weight || 0) * (e.reps || 0); });
+    });
+    if (totalKg >= 1000) {
+      var tons = (totalKg / 1000).toFixed(1);
+      if (tons >= 10) tons = Math.round(totalKg / 1000);
+      facts.push('🏋️ 你累计举起了 <b>' + tons + ' 吨</b>，相当于 ' + fbWeightEquivalKg(totalKg));
+    }
+
+    // 5. 累计跑量
+    var totalKm = 0;
+    hist.forEach(function(h){ totalKm += (h && h.distance) || 0; });
+    if (totalKm >= 10) {
+      var km = totalKm >= 100 ? Math.round(totalKm) : totalKm.toFixed(1);
+      facts.push('🏃 累计跑了 <b>' + km + ' km</b>，地球都被你跑小了一圈');
+    }
+
+    // 6. 累计消耗
+    var totalCal = 0;
+    hist.forEach(function(h){ totalCal += (h && h.calories) || 0; });
+    if (totalCal >= 1000) facts.push('🔥 累计消耗 <b>' + Math.round(totalCal) + ' kcal</b>，约 ' + Math.round(totalCal / 250) + ' 碗米饭');
+
+    // 7. 个人纪录数
+    var prCount = Object.keys(prs).length;
+    if (prCount >= 2) facts.push('🏆 已刷新 <b>' + prCount + ' 项</b>个人纪录，记录就是你的作品');
+
+    // 8. 最忠实的动作
+    var topName = '', topCnt = 0;
+    Object.keys(log).forEach(function(n) {
+      var c = (log[n] || []).length;
+      if (c > topCnt) { topCnt = c; topName = n; }
+    });
+    if (topCnt >= 5) facts.push('⭐ 『' + topName + '』陪你练了 <b>' + topCnt + ' 次</b>，老搭档了');
+
+    // 9. 使用天数
+    if (hist.length) {
+      var dates = hist.map(function(h){ return h.date; }).sort();
+      var first = new Date(dates[0] + 'T00:00:00');
+      var today = new Date(); today.setHours(0,0,0,0);
+      var span = Math.round((today - first) / 86400000);
+      if (span >= 7) facts.push('📅 和 FitBuddy 相遇 <b>' + span + ' 天</b>了，谢谢你还在');
+    }
+  } catch(e) {}
+  // 洗牌取 2 条
+  for (var i = facts.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = facts[i]; facts[i] = facts[j]; facts[j] = t;
+  }
+  return facts.slice(0, 2);
+}
+
+// 吨数具象化换算:优先选能凑整数的单位
+function fbWeightEquivalKg(kg) {
+  var units = [
+    { w: 6000, n: '头非洲象' },
+    { w: 1800, n: '辆 SUV' },
+    { w: 700,  n: '头奶牛' },
+    { w: 480,  n: '架钢琴' },
+    { w: 65,   n: '个成年人' },
+    { w: 25,   n: '袋大米' }
+  ];
+  for (var i = 0; i < units.length; i++) {
+    var cnt = Math.floor(kg / units[i].w);
+    if (cnt >= 2) return cnt + ' ' + units[i].n;
+    if (cnt === 1) return '1 ' + units[i].n;
+  }
+  return '一堆哑铃';
+}
+
+function fbCheckDailyCompleteCelebrate() {
+  if (!lastPlan || !lastPlan.trainingDays) return;
+  var ti = fbGetTodayDayIdx();
+  if (ti < 0) return;
+  var p = fbCountDayProgress(ti);
+  if (p.total === 0 || p.done < p.total) return;
+  var today = new Date().toISOString().slice(0,10);
+  var flagKey = 'fitbuddy_daily_celebrated_' + today;
+  try {
+    if (sessionStorage.getItem(flagKey)) return;
+    sessionStorage.setItem(flagKey, '1');
+  } catch(e) {}
+  fbShowCelebrationModal(p.total);
+}
+
+function fbShowCelebrationModal(actionCount) {
+  var streak = getStreakData();
+  var nextAch = fbNextStreakAch(streak);
+  var today = new Date().toISOString().slice(0,10);
+  // 今日 kcal 估算 (用今日 history)
+  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+  var todayH = hist.find(function(h){ return h.date === today; });
+  var cal = todayH && todayH.calories ? Math.round(todayH.calories) : 0;
+  // 今日动作数 = actionCount
+  // 关闭已存在的庆祝弹窗
+  var old = document.getElementById('fbCelebrateOverlay');
+  if (old) old.remove();
+
+  var html = '<div id="fbCelebrateOverlay" style="position:fixed;inset:0;background:rgba(10,10,20,0.78);z-index:10001;display:flex;align-items:center;justify-content:center;padding:24px;animation:fbCelebrateFade 0.4s ease-out;">'
+    + '<div style="width:100%;max-width:340px;background:var(--card);border-radius:20px;padding:24px 22px 18px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);">'
+    + '<div style="font-size:54px;line-height:1;margin:6px 0 4px;">🎉</div>'
+    + '<div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px;">今日训练完成！</div>'
+    + '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;">'+actionCount+' 个动作 · 太棒了</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">'
+    +   '<div style="padding:10px 8px;background:var(--bg);border-radius:12px;">'
+    +     '<div style="font-size:11px;color:var(--text3);">消耗热量</div>'
+    +     '<div style="font-size:18px;font-weight:800;color:#FF6B35;margin-top:2px;">🔥 '+(cal>0?(cal+' kcal'):'-')+'</div>'
+    +   '</div>'
+    +   '<div style="padding:10px 8px;background:var(--bg);border-radius:12px;">'
+    +     '<div style="font-size:11px;color:var(--text3);">连续打卡</div>'
+    +     '<div style="font-size:18px;font-weight:800;color:#EF4444;margin-top:2px;">🔥 '+(streak>0?(streak+' 天'):'-')+'</div>'
+    +   '</div>'
+    + '</div>';
+  if (nextAch && nextAch.need > 0) {
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;padding:10px;background:linear-gradient(90deg,#FFF7ED,#FEF3C7);border-radius:12px;">🎯 差 <b style="color:var(--primary);">'+nextAch.need+'</b> 天解锁『'+nextAch.name+'』</div>';
+  } else if (nextAch && nextAch.need === 0) {
+    html += '<div style="font-size:13px;color:var(--green);font-weight:700;margin-bottom:14px;padding:10px;background:#F0FDF4;border-radius:12px;">🎯 今天就能解锁『'+nextAch.name+'』！</div>';
+  }
+  // 🎰 多变奖励: 随机播 1-2 条来自用户自己数据的彩蛋
+  var facts = fbRandomFacts();
+  facts.forEach(function(f) {
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;padding:10px;background:var(--bg);border-radius:12px;border:1px dashed var(--border);">'+f+'</div>';
+  });
+  html += '<button onclick="var o=document.getElementById(\'fbCelebrateOverlay\'); if(o)o.remove(); setTimeout(generateShareImage,150);" style="width:100%;padding:12px;border-radius:14px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px;">📸 生成分享图</button>'
+    + '<button onclick="var o=document.getElementById(\'fbCelebrateOverlay\'); if(o)o.remove();" style="width:100%;padding:10px;border-radius:12px;background:transparent;color:var(--text3);border:none;font-size:13px;cursor:pointer;">关闭</button>'
+    + '</div></div>';
+  // 加 CSS (动画)
+  if (!document.getElementById('fbCelebrateStyle')) {
+    var s = document.createElement('style');
+    s.id = 'fbCelebrateStyle';
+    s.textContent = '@keyframes fbCelebrateFade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}';
+    document.head.appendChild(s);
+  }
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // 勾选/取消勾选后刷新 banner(元素不存在则跳过)
@@ -4551,9 +4920,17 @@ function checkPR(exName, weight, reps) {
   var prs = getPRs();
   var old = prs[exName];
   if (!old || est > old.e1rm) {
+    var msg;
+    if (!old) {
+      msg = '🎉 首个纪录诞生！' + exName + ' 估算1RM ' + est + 'kg';
+    } else {
+      var delta = est - old.e1rm;
+      var deltaStr = (delta % 1 === 0) ? String(delta) : delta.toFixed(1);
+      msg = '🎉 新纪录！' + exName + ' 估算1RM ' + est + 'kg（超越旧纪录 +' + deltaStr + 'kg）';
+    }
     prs[exName] = { e1rm: est, weight: parseFloat(weight) || 0, reps: parseInt(reps) || 0, date: new Date().toISOString().slice(0,10) };
     localStorage.setItem(PR_KEY, JSON.stringify(prs));
-    showToast('🎉 新纪录！' + exName + ' 估算1RM ' + est + 'kg');
+    showToast(msg);
   }
 }
 
@@ -5323,6 +5700,7 @@ function switchTab(btn) {
   if (tab === "page-plan") {
     updateReminderTrainDays();
     checkReminder();
+    fbRefreshRetentionUI();
   }
 }
 
@@ -5424,6 +5802,8 @@ function restoreLastPlan() {
     doGenerateInternal(lastPlan.goal, lastPlan.level, lastPlan.days, lastPlan.equip,
       lastPlan.trainingDays, lastPlan.schedule || getSchedule(lastPlan.days), _cfg, _goalCfg);
   } catch(e) { console.error('恢复计划失败:', e); }
+  // 🆕 启动时刷新今日训练 hero + 未完成感 banner
+  fbRefreshRetentionUI();
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', restoreLastPlan);
@@ -6433,24 +6813,19 @@ function checkMissedDays() {
   if (!trainSchedule.length) return null;
 
   // Check if today is a training day that hasn't been completed
-  var todayIsTraining = false;
-  var todayIdx = -1;
-  for (var i = 0; i < lastPlan.schedule.length; i++) {
-    if (lastPlan.schedule[i].day.indexOf(todayName) >= 0) {
-      todayIsTraining = lastPlan.schedule[i].isTraining;
-      todayIdx = i;
-      break;
-    }
-  }
-  if (!todayIsTraining || todayIdx < 0) return null;
+  var wd = (today.getDay() + 6) % 7; // 周一=0
+  var todayIsTraining = !!(lastPlan.schedule[wd] && lastPlan.schedule[wd].isTraining);
+  if (!todayIsTraining) return null;
+  var todayRank = fbDayRankInSchedule(lastPlan.schedule, wd); // 1-based
+  if (todayRank <= 0) return null;
 
   // Check if today's training is already done
-  var day = lastPlan.trainingDays[todayIdx];
+  var day = lastPlan.trainingDays[todayRank - 1];
   if (!day || !day.exes || !day.exes.length) return null;
 
   var allDone = true;
   for (var ei = 0; ei < day.exes.length; ei++) {
-    if (localStorage.getItem(doneKey('day_' + todayIdx + '_ex' + ei)) !== '1') {
+    if (localStorage.getItem(doneKey('day_' + (todayRank - 1) + '_ex' + ei)) !== '1') {
       allDone = false;
       break;
     }
@@ -6458,23 +6833,20 @@ function checkMissedDays() {
   if (allDone) return null; // Already done
 
   // Check if yesterday was a training day and was missed
-  var yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  var yName = dayNames[yesterday.getDay()];
-  for (var j = 0; j < lastPlan.schedule.length; j++) {
-    if (lastPlan.schedule[j].day.indexOf(yName) >= 0 && lastPlan.schedule[j].isTraining) {
-      var yDay = lastPlan.trainingDays[j];
-      if (yDay && yDay.exes && yDay.exes.length) {
-        var yDone = true;
-        for (var k = 0; k < yDay.exes.length; k++) {
-          if (localStorage.getItem(doneKey('day_' + j + '_ex' + k)) !== '1') {
-            yDone = false;
-            break;
-          }
+  var yWd = (wd + 6) % 7; // 昨天的周一=0下标
+  if (lastPlan.schedule[yWd] && lastPlan.schedule[yWd].isTraining) {
+    var yRank = fbDayRankInSchedule(lastPlan.schedule, yWd);
+    var yDay = lastPlan.trainingDays[yRank - 1];
+    if (yDay && yDay.exes && yDay.exes.length) {
+      var yDone = true;
+      for (var k = 0; k < yDay.exes.length; k++) {
+        if (localStorage.getItem(doneKey('day_' + (yRank - 1) + '_ex' + k)) !== '1') {
+          yDone = false;
+          break;
         }
-        if (!yDone) {
-          return { missedDayIdx: j, missedDayName: lastPlan.schedule[j].day };
-        }
+      }
+      if (!yDone) {
+        return { missedDayIdx: yRank - 1, missedDayName: lastPlan.schedule[yWd].day };
       }
     }
   }
@@ -6497,14 +6869,13 @@ function rescheduleMissedDay(missedIdx) {
   var dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
   var todayName = dayNames[today.getDay()];
 
-  // Find today's index
-  var todayIdx = -1;
-  for (var i = 0; i < lastPlan.schedule.length; i++) {
-    if (lastPlan.schedule[i].day.indexOf(todayName) >= 0) {
-      todayIdx = i;
-      break;
-    }
+  // Find today's training day rank (1-based) → trainingDays index
+  var wd = (today.getDay() + 6) % 7; // 周一=0
+  if (!(lastPlan.schedule[wd] && lastPlan.schedule[wd].isTraining)) {
+    showToast('❌ 今天不是训练日'); return;
   }
+  var todayRank = fbDayRankInSchedule(lastPlan.schedule, wd);
+  var todayIdx = todayRank - 1;
   if (todayIdx < 0) { showToast('❌ 无法找到今日训练日'); return; }
 
   // Merge missed exercises into today's plan

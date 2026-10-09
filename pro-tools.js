@@ -1011,7 +1011,7 @@ window.initProToolsProgress = function() {
             return getRPEAdjustment(k);
           });
           if (rpeAdjustments.length) {
-            proHtml += '<div class="progress-card"><div class="card-title">🎯 RPE自调节建议</div>' +
+            proHtml += '<div class="progress-card"><div class="card-title">🎯 RPE自调节建议 <span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></div>' +
               '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">基于最近3次训练的RPE评分,自动建议下周调整</div>';
             rpeAdjustments.forEach(function(exName) {
               var adj = getRPEAdjustment(exName);

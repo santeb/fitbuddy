@@ -175,6 +175,10 @@ input,select{font-family:inherit;}
 .plan-day-toggle{font-size:14px;color:var(--text3);transition:transform .2s;}
 .plan-day.collapsed .plan-day-toggle{transform:rotate(-90deg);}
 .plan-day.collapsed .plan-day-body{display:none;}
+.plan-day.today{border:1.5px solid var(--primary);}
+.fb-today-tag{font-size:10px;font-weight:700;color:#fff;background:var(--primary);padding:2px 8px;border-radius:8px;margin-left:6px;vertical-align:1px;}
+.rpe-help{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;border:1.2px solid var(--border);color:var(--text3);font-size:9px;font-weight:700;cursor:pointer;margin-left:3px;margin-right:4px;flex-shrink:0;user-select:none;vertical-align:1px;transition:all .2s;}
+.rpe-help:hover{border-color:var(--primary);color:var(--primary);}
 .plan-day-body{padding:0 14px;}
 .ex-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
 .ex-row:last-child{border-bottom:none;}
@@ -807,6 +811,9 @@ input,select{font-family:inherit;}
       <button onclick="scrollToPlan()" style="margin-top:8px;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(255,255,255,0.25);color:#fff;border:none;cursor:pointer;">去训练 →</button>
     </div>
 
+    <!-- 🎯 今日训练 Hero + 未完成感 Banner (2026-10-09 上瘾机制) -->
+    <div id="fbRetentionTop"></div>
+
     <!-- ⚡ 快速模板 -->
     <div class="card collapsible-card collapsed" style="margin-bottom:14px;">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
@@ -1199,8 +1206,8 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=24" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=47" defer></script>
-<script src="pro-tools.js?v=4" defer></script>
+<script src="planner-core.js?v=52" defer></script>
+<script src="pro-tools.js?v=5" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>
