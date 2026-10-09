@@ -5550,6 +5550,36 @@ function getLevelProgress() {
   return { cur: cur, nxt: nxt, total: total, progress: progress };
 }
 
+// 进度页等级条+成就墙渲染（2026-10-09 从 pets.js 抽出，pets.js 已删）
+function renderGamificationHTML(hist) {
+  var ach = getAchievements();
+  var lv = getLevel();
+  var lp = getLevelProgress();
+  var html = '';
+
+  html += '<div class="level-bar"><span class="level-icon">'+lp.cur.icon+'</span>'+
+    '<div class="level-info"><div class="level-name">'+lp.cur.name+'</div>'+
+    '<div class="level-progress-bar"><div class="level-progress-fill" style="width:'+lp.progress+'%"></div></div>'+
+    '<div class="level-progress-text">训练 '+lp.total+' 天 · 距离下一级 '+(lp.nxt.need-lp.total)+(lp.nxt.need>lp.total?' 天':'')+'</div>'+
+    '</div>';
+
+  var cats = {};
+  ACHIEVEMENTS.forEach(function(a){ if (!cats[a.cat]) cats[a.cat]=[]; cats[a.cat].push(a); });
+  Object.keys(cats).forEach(function(cat){
+    html += '<div style="font-size:11px;font-weight:700;color:var(--text3);margin:8px 0 4px;">'+cat+'</div>';
+    html += '<div class="ach-grid">';
+    cats[cat].forEach(function(a){
+      var unlocked = ach.indexOf(a.id)>=0;
+      html += '<div class="ach-badge'+(unlocked?' unlocked':' locked')+'">'+
+        '<span class="ach-icon">'+(unlocked?a.icon:'🔒')+'</span>'+
+        '<span class="ach-name">'+a.name+'</span>'+
+        '<span class="ach-date">'+a.desc+'</span></div>';
+    });
+    html += '</div>';
+  });
+  return html;
+}
+
 function updateStreak() {
   var streak = getStreakData();
   try { localStorage.setItem('fitbuddy_streak', streak); } catch(e) {}
