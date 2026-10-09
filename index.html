@@ -687,11 +687,11 @@ input,select{font-family:inherit;}
 @media print{
   @page { margin: 12mm 10mm; size: A4 portrait; }
   /* 隐藏所有 UI 交互元素 */
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.pet-panel,.pet-hud,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
   .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
   body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* 强制白色背景+黑色文字 */
-  .card,.plan-day,.nutrition-card,.rest-day,.tips-banner,.warmup-section,.week-info,.summary-card,.pet-card{background:#fff!important;color:#000!important;box-shadow:none!important;border:1px solid #ccc!important;page-break-inside:avoid!important;margin-bottom:8px!important;}
+  .card,.plan-day,.nutrition-card,.rest-day,.tips-banner,.warmup-section,.week-info,.summary-card{background:#fff!important;color:#000!important;box-shadow:none!important;border:1px solid #ccc!important;page-break-inside:avoid!important;margin-bottom:8px!important;}
   .summary-card{background:#f5f5f5!important;border:1px solid #bbb!important;}
   .summary-card::after{display:none!important;}
   .summary-tag{background:#eee!important;color:#333!important;}
@@ -719,140 +719,8 @@ input,select{font-family:inherit;}
   .page::after{content:"FitBuddy 训练计划 | 打印日期: " attr(data-print-date) " | fitbuddy.app";display:block!important;text-align:center;font-size:9px;color:#aaa!important;border-top:1px solid #eee;padding-top:8px;margin-top:20px;}
 }
 
-/* ====== 健身精灵宠物（多物种） ====== */
-.pet-card {
-  border-radius: 20px;
-  padding: 20px 16px;
-  margin: 16px 0;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
-  border: 2px solid;
-  transition: all 0.5s;
-  cursor: pointer;
-  user-select: none;
-}
-.pet-card:active { transform: scale(0.98); }
-.pet-card .pet-creature {
-  font-size: 72px;
-  display: block;
-  transition: transform 0.3s;
-  line-height: 1;
-  animation: petFloat 3s ease-in-out infinite;
-}
-@keyframes petFloat {
-  0%,100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-.pet-card.hungry .pet-creature {
-  animation: petShake 0.5s ease-in-out infinite;
-}
-@keyframes petShake {
-  0%,100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
-}
-.pet-card .pet-name {
-  font-size: 16px;
-  font-weight: 800;
-  margin-top: 4px;
-}
-.pet-card .pet-rarity-badge {
-  display: inline-block;
-  font-size: 10px;
-  padding: 1px 7px;
-  border-radius: 8px;
-  margin-left: 4px;
-  vertical-align: middle;
-  font-weight: 600;
-}
-.pet-card .pet-stage {
-  font-size: 11px;
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 10px;
-  margin-top: 4px;
-}
-.pet-card .pet-mood {
-  font-size: 12px;
-  margin-top: 4px;
-}
-.pet-card .pet-evo-bar {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  margin-top: 10px;
-  overflow: hidden;
-}
-.pet-card .pet-evo-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.pet-card .pet-sparkle {
-  position: absolute;
-  pointer-events: none;
-  animation: sparkleUp 1.5s ease-out forwards;
-  font-size: 18px;
-  opacity: 0;
-}
-@keyframes sparkleUp {
-  0% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-60px) scale(0.3); }
-}
-.pet-card.evolving { animation: petEvo 0.6s ease-out; }
-/* 宝可梦风格精灵SVG肖像 */
-.pet-creature-svg { display:block; margin:6px auto 0; animation:petFloat 3s ease-in-out infinite; }
-.pet-card.hungry .pet-creature-svg { animation:petShake 0.5s ease-in-out infinite; }
-.pet-card.evolving .pet-creature-svg { animation:petEvo 0.6s ease-out; }
-@keyframes petEvo {
-  0% { transform: scale(1); filter: brightness(2); }
-  50% { transform: scale(1.1); filter: brightness(1.5); }
-  100% { transform: scale(1); filter: brightness(1); }
-}
-.pet-tap-hint {
-  font-size: 10px;
-  color: #A8A29E;
-  margin-top: 6px;
-  opacity: 0.7;
-}
-/* 宠物切换栏 */
-.pet-switch-bar {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-}
-.pet-switch-dot {
-  width: 42px; height: 42px;
-  border-radius: 50%;
-  font-size: 22px;
-  line-height: 42px;
-  text-align: center;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: all 0.25s;
-  background: var(--card);
-  opacity: 0.6;
-}
-.pet-switch-dot.active {
-  border-color: var(--primary);
-  opacity: 1;
-  transform: scale(1.1);
-  box-shadow: 0 0 8px rgba(249,115,22,0.3);
-}
-.pet-switch-dot.locked {
-  opacity: 0.35;
-  cursor: not-allowed;
-  filter: grayscale(1);
-}
-.pet-switch-dot:hover:not(.locked) { opacity: 0.9; transform: scale(1.05); }
-.pet-switch-label {
-  font-size: 9px;
-  color: var(--text3);
-  margin-top: -2px;
-}
+/* 通用淡入动画（群二维码弹层等复用） */
+@keyframes fbFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* ===== 快速模板 ===== */
 .tpl-card {
@@ -1331,11 +1199,10 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=24" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=45" defer></script>
+<script src="planner-core.js?v=46" defer></script>
 <script src="pro-tools.js?v=4" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
-<script src="pets.js?v=2" defer></script>
-<script src="group-qr.js?v=1" defer></script>
+<script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>
 <script src="install-banner.js?v=1" defer></script>
 <script src="backup-code.js?v=1" defer></script>

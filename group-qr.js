@@ -12,7 +12,7 @@ function getQRCodeFallback() {
 function showGroupQR() {
   var overlay = document.createElement('div');
   overlay.id = 'groupQROverlay';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9998;display:flex;align-items:center;justify-content:center;animation:petEvo 0.3s ease-out;';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9998;display:flex;align-items:center;justify-content:center;animation:fbFadeIn 0.25s ease-out;';
   overlay.addEventListener('click', function(ev){ if(ev.target===overlay) overlay.remove(); });
 
   var html = '<div style="background:var(--card);border-radius:20px;max-width:340px;width:90%;text-align:center;overflow:hidden;">';

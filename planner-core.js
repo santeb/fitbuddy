@@ -1409,10 +1409,6 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     '📥 导入计划码</button></div>';
   // 🎣 蔡格尼克效应: 未完成感 banner
   html += fbProgressBannerHtml();
-  // 🐉 健身精灵宠物 —— 展示已摘除（2026-09-15）
-  // pets.js 仍在后台累积精灵数据（petAddDay 等照常执行），只是不再渲染到计划页。
-  // 恢复方式：取消下面一行注释，并把 pets.js 顶部 PET_UI_VISIBLE 改回 true。
-  // html += '<div id="petArea">' + (typeof renderPetCard === 'function' ? renderPetCard() : '') + '</div>';
   document.getElementById("planResult").innerHTML = html;
   // 🍽 计划变更时同步动作库饮食计算器的联动目标(仅联动模式,静默,不弹任何提示)
   try {
@@ -3337,19 +3333,6 @@ function generateShareImage() {
   while (dateSet.has(check.toISOString().slice(0,10))) {
     streak++; check.setDate(check.getDate()-1);
   }
-  // 精灵信息
-  var petInfo = (typeof petGetSpecies === 'function') ? petGetSpecies() : null;
-  var petSprite = '';
-  if (petInfo && typeof petGetDays === 'function') {
-    var pd = petGetDays(petInfo.speciesId);
-    var spu = PET_SPECIES ? PET_SPECIES[petInfo.speciesId] : null;
-    if (spu) {
-      var pstg = spu.stages.findIndex(function(s,i){ return i<spu.stages.length-1?pd<spu.stages[i+1].need:true; });
-      if (pstg<0) pstg=0;
-      petSprite = (spu && spu.stages[pstg]) ? spu.stages[pstg].emoji : '';
-    }
-  }
-
   var canvas = document.createElement('canvas');
   canvas.width = 1080; canvas.height = 1920;
   var ctx = canvas.getContext('2d');
@@ -3453,22 +3436,8 @@ function generateShareImage() {
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath(); ctx.moveTo(80, 1190); ctx.lineTo(W-80, 1190); ctx.stroke();
 
-  // 精灵区域
-  if (petSprite) {
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 700 30px sans-serif';
-    ctx.fillText('🐾 我的健身伙伴', 80, 1250);
-    ctx.textAlign = 'center';
-    ctx.font = '120px sans-serif';
-    ctx.fillText(petSprite, W/2, 1380);
-    if (spu) {
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '500 24px sans-serif';
-      ctx.fillText(spu.name + ' · ' + spu.stages[pstg].name + ' · 已训练' + pd + '天', W/2, 1420);
-    }
-  }
-
   // 底部装饰线
-  var bottomY = petSprite ? 1500 : 1280;
+  var bottomY = 1280;
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.beginPath(); ctx.moveTo(80, bottomY); ctx.lineTo(W-80, bottomY); ctx.stroke();
 
@@ -5435,7 +5404,7 @@ migrateBodyweightLog(); // 一次性修复:自重动作误存的重量字段(PR 
 renderLib();
 
 // 如果有上次生成的计划,直接渲染 HTML(用 doGenerateInternal,不触发按钮 Loading)
-// 延迟到 DOMContentLoaded 后执行，确保 pets.js 等后续脚本已加载
+// 延迟到 DOMContentLoaded 后执行，确保后续脚本已加载
 function restoreLastPlan() {
   if (!lastPlan || !lastPlan.goal || !lastPlan.trainingDays) return;
   try {
@@ -5522,12 +5491,6 @@ var ACHIEVEMENTS = [
   { id: 'train_100',  cat: '💪 训练次数', icon: '💪', name: '百战之躯', desc: '累计完成100次训练' },
   { id: 'ex_10',      cat: '🔍 探索发现', icon: '🔍', name: '动作达人', desc: '解锁10个不同动作' },
   { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' }
-  // 🐉 精灵伙伴成就随精灵展示一并摘除（2026-09-15）。
-  // 这 3 条在 checkAchievements() 里本来就没有解锁逻辑，属纯展示死项，摘掉不影响任何判定。
-  // 恢复精灵系统时把这 3 条加回数组即可：
-  // { id: 'pet_evolve3',cat: '🐉 精灵伙伴', icon: '🐉', name: '精灵进化', desc: '精灵达到第3阶段' },
-  // { id: 'pet_max',    cat: '🐉 精灵伙伴', icon: '🐉', name: '终极形态', desc: '精灵达到最终形态' },
-  // { id: 'hidden_pet', cat: '🐉 精灵伙伴', icon: '🦄', name: '幻光降临', desc: '解锁隐藏款精灵' }
 ];
 
 function getAchievements() {
