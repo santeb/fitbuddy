@@ -691,7 +691,7 @@ input,select{font-family:inherit;}
 @media print{
   @page { margin: 12mm 10mm; size: A4 portrait; }
   /* 隐藏所有 UI 交互元素 */
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,#chatbotWidget,#reminderBanner,#todayBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,#chatbotWidget,#reminderBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
   .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
   body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* 强制白色背景+黑色文字 */
@@ -801,14 +801,6 @@ input,select{font-family:inherit;}
         <button class="reminder-snooze-btn" onclick="snoozeReminder()">稍后提醒</button>
         <button class="reminder-goto-btn" onclick="goToTraining()">去训练 →</button>
       </div>
-    </div>
-
-    <!-- 今日训练提醒 Banner -->
-    <div id="todayBanner" style="display:none;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;box-shadow:0 4px 15px rgba(255,107,53,0.3);animation:fadeIn 0.3s ease;" role="status" aria-live="polite">
-      <div style="font-size:13px;opacity:0.85;" id="bannerDate"></div>
-      <div style="font-size:17px;font-weight:700;margin:4px 0;" id="bannerTitle"></div>
-      <div style="font-size:12px;opacity:0.9;" id="bannerSub"></div>
-      <button onclick="scrollToPlan()" style="margin-top:8px;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(255,255,255,0.25);color:#fff;border:none;cursor:pointer;">去训练 →</button>
     </div>
 
     <!-- 🎯 今日训练 Hero + 未完成感 Banner (2026-10-09 上瘾机制) -->
@@ -1206,7 +1198,7 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=24" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=52" defer></script>
+<script src="planner-core.js?v=53" defer></script>
 <script src="pro-tools.js?v=5" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>

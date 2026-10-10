@@ -1141,59 +1141,6 @@ var trainingLog = {};
 // 跑鞋数据:[{name, startDate, totalKm, retired}]
 var shoeList = [];
 
-// ============ 今日训练提醒 ============
-function updateTodayBanner() {
-  var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
-  var banner = document.getElementById("todayBanner");
-  if (!plan || !plan.trainingDays || plan.trainingDays.length === 0) { banner.style.display = "none"; return; }
-
-  var today = new Date();
-  var dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
-  var todayName = dayNames[today.getDay()];
-  var dateStr = (today.getMonth()+1)+'月'+today.getDate()+'日 '+todayName;
-
-  // 简单匹配:根据训练天数找今天该练什么
-  var daysPerWeek = plan.trainingDays.length;
-  var wd = (today.getDay() + 6) % 7; // 周一=0
-  // 把今天映射成计划里的"休息日"或"第N个训练日"
-  var traindayIdx = -1;
-  if (plan.schedule && plan.schedule.length) {
-    if (typeof plan.schedule[0] === 'number') {
-      // 数字数组格式 [0,2,4] (周一=0)
-      traindayIdx = plan.schedule.indexOf(wd);
-    } else if (plan.schedule[wd] && plan.schedule[wd].isTraining) {
-      // 对象格式 [{day:'周一',isTraining:true},...] (7项完整周)
-      var rank = 0;
-      for (var i = 0; i <= wd; i++) if (plan.schedule[i] && plan.schedule[i].isTraining) rank++;
-      traindayIdx = rank - 1;
-    }
-  }
-  // fallback:按顺序轮
-  if (traindayIdx < 0) {
-    var seed = (today.getFullYear()*10000 + (today.getMonth()+1)*100 + today.getDate());
-    traindayIdx = seed % plan.trainingDays.length;
-  }
-
-  var dayData = plan.trainingDays[traindayIdx] || plan.trainingDays[0];
-  var isRest = !dayData || dayData.length === 0 || (dayData.exes && dayData.exes.length === 0);
-
-  if (isRest) {
-    document.getElementById("bannerDate").textContent = dateStr;
-    document.getElementById("bannerTitle").textContent = '😴 今天是休息日';
-    document.getElementById("bannerSub").textContent = '好好恢复,明天继续';
-  } else {
-    var exNames = (dayData.exes || []).slice(0,3).map(function(e){ return e.n; }).join('、');
-    var totalEx = (dayData.exes || []).length;
-    document.getElementById("bannerDate").textContent = dateStr;
-    document.getElementById("bannerTitle").textContent = '🏋️ 今日训练:' + (dayData.title || ('第'+(traindayIdx+1)+'练'));
-    document.getElementById("bannerSub").textContent = exNames + (totalEx > 3 ? ' 等'+totalEx+'个动作' : '');
-  }
-  banner.style.display = "";
-}
-function scrollToPlan() {
-  var el = document.getElementById("planResult");
-  if (el) el.scrollIntoView({behavior:"smooth", block:"start"});
-}
 
 // ============ 计划生成 ============
 // 页面初始化时恢复上次计划(不操作按钮,不显示 Loading)
@@ -1418,7 +1365,6 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   try {
     if (_lastNutriCtx && typeof window.dietRefreshFromPlan === 'function') window.dietRefreshFromPlan(_lastNutriCtx);
   } catch(e) {}
-  updateTodayBanner();
   // 默认折叠:只展开今天(或下一个)训练日,其余收起
   fbCollapseToToday();
   } catch(renderErr) {
@@ -5810,7 +5756,6 @@ if (document.readyState === 'loading') {
 } else {
   restoreLastPlan();
 }
-updateTodayBanner();
 
 // 页面完全加载后,如果沒有计划则显示欢迎提示
 window.addEventListener('load', function() {
