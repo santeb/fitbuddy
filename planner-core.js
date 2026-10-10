@@ -2880,7 +2880,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
 
       // 渐进超负荷输入(在 ex-row 之后,力量动作专属)
       if (progInputsHtml && !isInjuredEx) {
-        html += '<div style="padding:0 14px 8px;border-bottom:1px solid var(--border);">' + progInputsHtml + '</div>';
+        html += '<div style="padding:0 14px 8px;border-bottom:1px solid var(--border);">' + progInputsHtml + (typeof getRPEBadgeHtml==='function'?getRPEBadgeHtml(ex.n):'') + '</div>';
       }
     });
   }
