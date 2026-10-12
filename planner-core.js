@@ -6211,7 +6211,9 @@ var SUPPS_DATA = [
     timing: "训练后30分钟内，或早餐补充",
     dose: "体重(kg) × 1.6~2.2g 蛋白质/天（含食物），每勺约24g蛋白",
     cycle: "每日可服，无周期限制",
-    note: "不要完全依赖蛋白粉，优先从天然食物（鸡胸肉、鸡蛋、鱼）获取蛋白质。乳糖不耐受可选分离乳清蛋白。"
+    note: "不要完全依赖蛋白粉，优先从天然食物（鸡胸肉、鸡蛋、鱼）获取蛋白质。乳糖不耐受可选分离乳清蛋白。",
+    link: "https://union-click.jd.com/jdc?e=618%7Cpc%7C&p=JF8BATwJK1olWAUEXVlUDE8SB18IGloXXAEDUl5eCUknRzBQRQQlBENHFRxWFlVPRjtUBABAQlRcCEBdCUoVAmgJHVsWXAQdDRsBVXtBWRNLfg4RL2VGAF4YFjtvHTYKcjx1UQoyVW5eCUkeBGsIH1sXbTYCU24PZkMfC2wNGV0dVAcEZF9tCE0fA2kAG1gQWwIHUm5aCEInWDpmUwVpI21SJiAFdylzM184GGsSXQ8WUiwcWl8RcV84G2sWbQYDVF9ZCk8RBG8PB1sQWQAGXUJdDkMXBWcIGF4UXwcGZFxcCU8eM1_WlutnKFl_KyoIUxYSYg0JHytFg4uyRSwtCEkVA344GCB1B21hLQ1dYzhvWRNoRSt2CU96DiI9fwheZCRodVl3KABACCMcUxFBWQYOYV1GDTYHZF1bAEIVM244",
+    linkLabel: "京东看同款乳清蛋白"
   },
   {
     emoji: "💪",
@@ -6220,7 +6222,9 @@ var SUPPS_DATA = [
     timing: "每天任意时间，建议训练后",
     dose: "每天5g（无需冲击期，长期服用更安全）",
     cycle: "可长期服用，无需循环",
-    note: "目前研究最充分的补剂之一，安全性高。会增加细胞内水分（体重可能涨1-2kg，属正常）。多喝水。"
+    note: "目前研究最充分的补剂之一，安全性高。会增加细胞内水分（体重可能涨1-2kg，属正常）。多喝水。",
+    link: "https://union-click.jd.com/jdc?e=618%7Cpc%7C&p=JF8BAU8JK1olWAQBVlxcAEkVAF8IGloUWQEEUF1cAU0nRzBQRQQlBENHFRxWFlVPRjtUBABAQlRcCEBdCUoWB2gOH1gUVAAdDRsBVUVTXDdWRCdBCF5SMQ4LBEh5AgEIKwYcNnxkTgxbbUlteBp4SAJPGGZhKQhRBHsWM2wJGVISWQYGVFxtOEsQMzlmG1oUXAMBUVpcCHsWM28OE1sTVQYEXF9ZD0snBG8BKwBAM05cKCA2WDlpWxBqf2slbQUyU15UHE1lQj0cHSklbQYyV25dCUsWCm8JGFwTXBoCV1pZDk4LA2kAG10dXQIGVF1bCnsVAm4MEmslg4uyKS1UUgNkfxkPZDAQKX1CHIDQuFplc28KE1kEbQ9qNC0-CB1hehNVYyhBW2J2NyM9cDhDBRRhYT0XPWgAXF4KUQtEfm17WCgQA1ZkKVptDXsUBWcBGWsUbQ",
+    linkLabel: "京东看同款一水肌酸"
   },
   {
     emoji: "🧂",
@@ -6256,7 +6260,9 @@ var SUPPS_DATA = [
     timing: "随含油脂的餐食服用（脂溶性）",
     dose: "维D3 1000~2000 IU/天，钙 500~1000mg/天",
     cycle: "每日长期服用，冬季维D可加量",
-    note: "室内训练者普遍缺维D。维D3+钙+镁联合补充效果更好。维D过量有毒性，不要超量。"
+    note: "室内训练者普遍缺维D。维D3+钙+镁联合补充效果更好。维D过量有毒性，不要超量。",
+    link: "https://union-click.jd.com/jdc?e=618%7Cpc%7C&p=JF8BAVkJK1olWAQAXFteC0wVBV8IGloXWg4HUV1bDU4nRzBQRQQlBENHFRxWFlVPRjtUBABAQlRcCEBdCUoVBGcNHlgTWAMdDRsBVUVTXDdWRCdBCF5SMQ4LBEh5AgEIK1hADVABHTsja0pTXwxwXiVzAnMYFwhRBHsWM2wJGVISWQYGVFxtOEsQMy1mzOmEioe8jdjE3Nil1NCRz9ObXQcyVW5dDkMXBWcLGFkSWQ8GZFldAXtMVgFARSdrNlZwKgYiai8nM18LK1wVVBIEJh8PHE1lM18IK1glXQcCVVlUAUgWC2YUG1sdVAEHSF5bAEsRC2wLGl0RXQUyVl9cDEInM7GFqygSAX9jJj80UzsfYjtXWCHL0LYTKClUDE8TEl9jXF58JQJWNC5fUzZ-SDhBGj1nAntrHwkYTilnfGpmGT1hG216DBYnYQ5-WAlOQzpmbQMyV1hVAUknAl8",
+    linkLabel: "京东看同款钙+维D3"
   },
   {
     emoji: "🧲",
@@ -6265,7 +6271,9 @@ var SUPPS_DATA = [
     timing: "睡前30分钟空腹服用",
     dose: "锌 15~30mg，镁 200~400mg",
     cycle: "每日可服，训练日更推荐",
-    note: "有助于睾酮水平和睡眠恢复。镁选甘氨酸镁吸收最好。避免与含钙食物同服（影响吸收）。"
+    note: "有助于睾酮水平和睡眠恢复。镁选甘氨酸镁吸收最好。避免与含钙食物同服（影响吸收）。",
+    link: "https://union-click.jd.com/jdc?e=618%7Cpc%7C&p=JF8BATsJK1olWAQBVlxcAEkVAF8IGloUWA4EV1dVCUgnRzBQRQQlBENHFRxWFlVPRjtUBABAQlRcCEBdCUoWBmcOGFIdXAUdDRsBVXsJWjxgZj0VFGRENjg-EkNFZidIHTNDUQoyVW5eCUkeBGsIH1sXbTYCU24LZksWAm4NGF4RXAYyVW5dDkMXBWcKGl8SXAMGZFldAXtMVgFARSdrNlZwKgYiai8nM18LK1wVVBIEJh8PHE1lM18IK1glXQcCVVpZCkwVA2sUG1kXWAMESF5bAEsRC2wBH1IdVAYyVl9cDEInM7GFqyllWXB7JB8IQA1FeDZIXivL0LYTKClfCkMWEl8LZTtCXH9DPCsney1AWTxLeFwVOGBVDg08QwJCUA9mGSJuHwFrHVgAXxZAdTxSRTpjbQMyV1hVAUknAl8",
+    linkLabel: "京东看同款锌镁片"
   },
   {
     emoji: "🍯",
@@ -6295,11 +6303,19 @@ function renderSuppsPage() {
       '<div class="supp-row"><div class="supp-label">📊 剂量</div><div class="supp-val">' + s.dose + '</div></div>' +
       '<div class="supp-row"><div class="supp-label">🔄 周期</div><div class="supp-val">' + s.cycle + '</div></div>' +
       '<div class="supp-note">💡 ' + s.note + '</div>' +
+      (s.link ? '<a class="supp-buy" href="' + s.link + '" target="_blank" rel="noopener nofollow sponsored" onclick="suppBuyClick(\'' + s.name + '\')">🛒 ' + (s.linkLabel || '去京东看看') + '<span class="supp-buy-tip">支持我继续做下去</span></a>' : '') +
     '</div>';
   });
   html += '<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px;line-height:1.6;">' +
-    '⚠️ 补剂不能替代均衡饮食和刻苦训练<br>如有疾病或服药，请咨询医生后再使用<br>购买补剂请选择正规品牌，注意第三方检测认证</div>';
+    '⚠️ 补剂不能替代均衡饮食和刻苦训练<br>如有疾病或服药，请咨询医生后再使用<br>购买补剂请选择正规品牌，注意第三方检测认证<br>' +
+    '<span style="opacity:.75">部分商品链接为京东联盟推广链接，你通过它购买我会获得少量佣金，<b>不影响你的价格</b>，也不是购买建议。</span></div>';
   c.innerHTML = html;
+}
+
+// 补给品购买链接点击(埋点用,不阻止默认跳转)
+function suppBuyClick(name) {
+  try { _trackStat('supp_buy'); } catch(e) {}
+  try { if (typeof gtag === 'function') gtag('event', 'supp_buy', {item: name}); } catch(e) {}
 }
 
 
