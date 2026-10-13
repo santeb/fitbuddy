@@ -1759,6 +1759,8 @@ function doGenerate() {
       syncSceneToIDB(localStorage.getItem('fitbuddy_lastcheck') || '');
       // 调用核心渲染
       doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cfg, goalCfg);
+      // 🆕 生成后立即刷新今日训练 hero + banner(否则 hero 挂旧计划内容)
+      fbRefreshRetentionUI();
     } catch(e) {
       console.error("生成计划出错:", e);
       if (btn) {
