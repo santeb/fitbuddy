@@ -3499,16 +3499,30 @@ function generateShareImage() {
   ctx.fillText('你的训练,你的节奏 💪', W/2, bottomY + 120);
   ctx.font = '500 24px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fillText('FitBuddy · 免费健身计划生成器', W/2, bottomY + 162);
-  ctx.font = '400 20px sans-serif';
-  ctx.fillText('扫码试试?用浏览器打开就能用!', W/2, bottomY + 198);
+  ctx.font = '500 22px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.fillText('扫码试试，浏览器打开就能用！', W/2, bottomY + 200);
 
-  // 底部装饰圆点
-  ctx.globalAlpha = 0.3;
-  for (var dot = 0; dot < 5; dot++) {
-    ctx.fillStyle = ['#FF6B35','#3B82F6','#22C55E','#F59E0B','#8B5CF6'][dot];
-    ctx.beginPath(); ctx.arc(W/2-120+dot*60, bottomY+250, 10, 0, Math.PI*2); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
+  // 二维码（qrcode-generator 本地同步生成，扫码直达 FitBuddy）
+  try {
+    var _qr = qrcode(0, 'M');
+    _qr.addData('https://santeb.github.io/fitbuddy/?utm_source=sharecard');
+    _qr.make();
+    var _n = _qr.getModuleCount();
+    var _box = 280, _cell = Math.floor((_box - 32) / _n);
+    var _sz = _cell * _n;
+    var _qx = W/2 - _box/2, _qy = bottomY + 235;
+    // 白底圆角卡片（留白即 quiet zone）
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.roundRect(_qx, _qy, _box, _box, 24); ctx.fill();
+    // 黑色模块
+    ctx.fillStyle = '#1A1A2E';
+    var _mx = _qx + (_box - _sz)/2, _my = _qy + (_box - _sz)/2;
+    for (var _r = 0; _r < _n; _r++) {
+      for (var _c = 0; _c < _n; _c++) {
+        if (_qr.isDark(_r, _c)) ctx.fillRect(_mx + _c*_cell, _my + _r*_cell, _cell, _cell);
+      }
+    }
+  } catch(e) {}
 
   // 水印
   ctx.textAlign = 'center'; ctx.font = '400 18px sans-serif';
