@@ -312,6 +312,7 @@ function toggleEquip() {
 
 // ============ ⚡ 快速模板(一键预填表单) ============
 var QUICK_TEMPLATES = [
+  { name:"梨形塑形 4 周", goal:"shape",    level:"beginner",    days:3, equip:"bodyweight", runEquip:"outdoor", cycleLength:4  },
   { name:"新手 6 周",   goal:"muscle",   level:"beginner",    days:3, equip:"bodyweight", runEquip:"outdoor", cycleLength:6  },
   { name:"增肌 12 周",  goal:"muscle",   level:"intermediate", days:4, equip:"gym",         runEquip:"outdoor", cycleLength:12 },
   { name:"减脂塑形",    goal:"cut",      level:"beginner",    days:4, equip:"dumbbell",     runEquip:"outdoor", cycleLength:6  },
@@ -321,6 +322,8 @@ var QUICK_TEMPLATES = [
 function applyTemplate(i) {
   var t = QUICK_TEMPLATES[i];
   if (!t) return;
+  // 🍐 QUICK_TEMPLATES[0] 「梨形塑形 4 周」是固定计划入口;非梨形模板进入时强制关闭
+  _forcePearFixed = (i === 0) && t.goal === "shape" && t.level === "beginner" && t.days === 3 && t.equip === "bodyweight";
   // 目标(先设置,再联动设备/跑步环境显示)
   var g = document.querySelector('input[name="goal"][value="' + t.goal + '"]');
   if (g) g.checked = true;
@@ -703,12 +706,17 @@ function pickExes(arr, count, weekOffset) {
 }
 
 function getFullBody(equip, level, goal, weekOffset) {
-  var muscles = goal === "cardio" ? ["腿","胸","背","核心","有氧"] : ["腿","胸","背","肩","核心"];
+  // shape(塑形/梨形专项): 腿臀占 3 槽, 核心肩各 1 —— 呼应 CONFIGS.shape "臀腿+肩背线条优先"
+  var muscles = goal === "cardio" ? ["腿","胸","背","核心","有氧"]
+             : goal === "shape"  ? ["腿","腿","腿","核心","肩"]
+             : ["腿","胸","背","肩","核心"];
   var list = [];
-  muscles.forEach(function(m){
+  muscles.forEach(function(m, idx){
     var ex = getExes(m, equip, level);
     if (ex.length) {
-      var picked = pickExes(ex, 1, weekOffset);
+      // shape 的重复肌群槽位用 idx 错开轮转起点, 避免同一天选中同一个动作
+      var off = (goal === "shape") ? weekOffset + idx : weekOffset;
+      var picked = pickExes(ex, 1, off);
       if (picked && picked[0]) list.push(picked[0]);
     }
   });
@@ -1134,6 +1142,9 @@ var maxWeek = 1;  // 已到达过的最远周(回看时不变,只增不减,用�
 var currentCycle = 1;
 var lastPlan = null;
 var _skipRebuild = false; // 动作替换后跳过buildPlan
+// 🍐 梨形塑形固定计划开关:applyTemplate(0) 设为 true 后,doGenerate() 会走独立的 buildPearFixedPlan,
+// 完全绕开 buildPlan(含 applyBwProgression 变式映射),保证与小红书宣传卡「梨形身材·完整周计划」严格一致
+var _forcePearFixed = false;
 // 伤病标记:{muscle:"膝", skipSquat:true, note:""} 或 null
 var injuryFlag = null;
 // 训练日志:{exName: [{date, weight, reps, rpe}]}
@@ -1300,6 +1311,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } else {
     html += '<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center;">第 '+currentCycle+' 周期 · 第 '+currentWeek+' 周</div>';
   }
+  // 👑 BOSS 战卡片(非马拉松计划,周期最后一周解锁)
+  html += renderBossCard(goal);
   // 周选择器 + 进度面板
   html += renderWeekBar(goal);
   if (goal === "marathon") {
@@ -1706,7 +1719,24 @@ function doGenerate() {
       var schedule = getSchedule(days);
       var weekOffset = goal === "marathon" ? (currentWeek - 1) : getWeekOffset(((currentWeek - 1) % getCycleLength()) + 1, getCycleLength());
       var trainingDays;
-      if (_skipRebuild && lastPlan && lastPlan.trainingDays) {
+      var pearFixedUsed = false;
+      if (_forcePearFixed) {
+        // 🍐 梨形固定计划(独立路径): 完全跳过 buildPlan(含 applyBwProgression 全部共用链路)
+        // 与小红书宣传卡「梨形身材·完整周计划」一一对应,杜绝"图上承诺 ≠ 计划实际"
+        if (_skipRebuild && lastPlan && lastPlan.trainingDays) {
+          // 动作替换后复用,保留用户对梨形动作的调整(但 week 切换会重新生成)
+          trainingDays = lastPlan.trainingDays;
+          _skipRebuild = false;
+        } else {
+          trainingDays = buildPearFixedPlan(level, days);
+          if (trainingDays) {
+            pearFixedUsed = true;
+          } else {
+            // 参数兜底(buildPearFixedPlan 仅支持 beginner×3天):退回原 buildPlan,不报错
+            trainingDays = buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset);
+          }
+        }
+      } else if (_skipRebuild && lastPlan && lastPlan.trainingDays) {
         trainingDays = lastPlan.trainingDays;
         _skipRebuild = false;
       } else {
@@ -1719,6 +1749,7 @@ function doGenerate() {
       }
       // 保存到 lastPlan
       lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
+      lastPlan._pearFixed = pearFixedUsed; // 🍐 当前计划是否为梨形固定计划(渲染/统计用)
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄,用于心率 Zone 计算
       var ageVal = parseInt(document.getElementById('bodyAge').value) || 0;
@@ -1859,6 +1890,39 @@ function buildCutPlan(level, days, equip, wOff) {
       var picked2 = pickExes(cardExes,2,wOff);
       plan.push({name:"有氧专项 " + (Math.floor(i/2)+1), exes: picked2.length ? picked2 : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
     }
+  }
+  return plan;
+}
+
+// ============ 🍐 梨形塑形专项固定计划（独立路径，不碰 buildShapePlan/buildPlan/applyBwProgression）============
+// 与小红书宣传卡「梨形身材·完整周计划」一一对应：7 动作·4 周轮换
+// 入参仅 level/days（与 _forcePearFixed 开关搭配调用），返回与其它 buildXxxPlan 同结构 [{name, exes}, ...]
+//   * 不读 buildShapePlan：缺有氧日、有氧线条日轮换,全 7 天都练同一组梨形动作
+//   * 不读 buildPlan：applyBwProgression 整个被跳过,动作名不会被自重变式升降档改写
+//   * 不读 getSplitInfo：宣传卡承诺通过 plan-day-name 自动体现("梨形专项 · 臀腿激活")
+// 参数不匹配(非新手/非3天)返回 null,由 doGenerate 兜底调用 buildShapePlan 保持兼容
+function buildPearFixedPlan(level, days) {
+  if (level !== "beginner" || days !== 3) return null;
+  var cycleLen = getCycleLength();
+  // 取本周在周期内的位置: 1..cycleLen,负数 week 兜底
+  var idx = ((currentWeek - 1) % cycleLen + cycleLen) % cycleLen + 1; // 1..cycleLen
+  // PEAR_WEEKS 是 4 长度,周期超过 4 周也按 4 周循环重复
+  var wk = PEAR_WEEKS[((idx - 1) % PEAR_WEEKS.length) | 0];
+  // 从 EXES 中按名查动作(共享原对象引用;渲染只读基础字段,安全)
+  var exes = [];
+  for (var i = 0; i < wk.moves.length; i++) {
+    var nm = PEAR_MOVES[wk.moves[i] | 0];
+    var ex = getExByName(nm);
+    if (ex) exes.push(ex);
+  }
+  if (exes.length === 0) return null; // 动作库异常兜底
+  // 四周4 训练天(3 天)每天重复本周动作清单(48h 恢复间隔),命名体现当前周主题
+  var plan = [];
+  for (var d = 0; d < days; d++) {
+    plan.push({
+      name: wk.name + " · 训练" + (d + 1) + "/" + days,
+      exes: exes.slice() // 浅拷贝,避免共用同一数组
+    });
   }
   return plan;
 }
@@ -4165,9 +4229,20 @@ function fbTodayHeroHtml() {
         + (p.done > 0 ? '继续训练 ('+(p.total-p.done)+' 个待完成)' : '开始训练') + '</button>';
     }
   } else {
-    html += '<div style="font-size:12px;opacity:0.85;">今日训练</div>'
-      + '<div style="font-size:22px;font-weight:800;margin:4px 0 6px;">😴 休息日</div>'
-      + '<div style="font-size:13px;opacity:0.9;">今天不在训练计划内,放松拉伸、补充蛋白质</div>';
+    // 🌙 休息日彩蛋:恢复也是训练的一部分
+    // 肌肉修复动画 + 按日期轮换的恢复彩蛋(每天一条,刷新不变) + streak 不断签安心感
+    fbEnsureGameCss();
+    var egg = fbRestDayEgg();
+    var st = getStreakData();
+    var nextDay = fbNextTrainDayLabel();
+    html += '<div style="font-size:12px;opacity:0.85;">今日状态</div>'
+      + '<div style="font-size:22px;font-weight:800;margin:4px 0 6px;">🌙 恢复日</div>'
+      + '<div class="fb-repair"><span class="fb-repair-icon">💪</span>&nbsp;肌肉修复中<span class="fb-dot">·</span><span class="fb-dot">·</span><span class="fb-dot">·</span></div>'
+      + '<div style="font-size:13px;opacity:0.92;margin:10px 0 2px;line-height:1.55;">🥚 ' + egg + '</div>'
+      + '<div style="font-size:12px;opacity:0.85;margin-top:8px;">'
+      + (st > 0 ? '🔥 连续 ' + st + ' 天 · 休息日不断签' : '💤 好好睡一觉,明天见')
+      + (nextDay ? ' · 下次训练: ' + nextDay : '')
+      + '</div>';
   }
   html += '</div>';
   return html;
@@ -5815,7 +5890,9 @@ var ACHIEVEMENTS = [
   { id: 'train_50',   cat: '💪 训练次数', icon: '💪', name: '五十战记', desc: '累计完成50次训练' },
   { id: 'train_100',  cat: '💪 训练次数', icon: '💪', name: '百战之躯', desc: '累计完成100次训练' },
   { id: 'ex_10',      cat: '🔍 探索发现', icon: '🔍', name: '动作达人', desc: '解锁10个不同动作' },
-  { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' }
+  { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' },
+  { id: 'boss_first', cat: '👑 BOSS战', icon: '👑', name: '初次击杀', desc: '首次击败周期BOSS' },
+  { id: 'boss_5',     cat: '👑 BOSS战', icon: '👑', name: '五度称王', desc: '累计击败BOSS 5次' }
 ];
 
 function getAchievements() {
@@ -5974,6 +6051,325 @@ function showAchievementToast(ach) {
   toast.innerHTML = '🏆 成就解锁!<br><span style="font-size:16px;">' + ach.icon + ' ' + ach.name + '</span><br><span style="font-size:11px;opacity:0.85;">' + ach.desc + '</span>';
   document.body.appendChild(toast);
   setTimeout(function(){ if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3500);
+}
+
+// ============ 👑 BOSS 战(周期末测试日) + 🌙 休息日彩蛋 ============
+// 设计原则:
+// - BOSS = 渐进超负荷的游戏化呈现:每个周期最后一周解锁一次极限测试
+// - 奇数周期=俯卧撑AMRAP(力量耐力),偶数周期=平板支撑(核心耐力),都无需器械、安全可测
+// - 击败条件 = 打破自己上个周期的纪录;首次挑战自动"首杀"
+// - 失败零惩罚:只显示"下个周期卷土重来",不扣任何东西
+// - 休息日彩蛋:恢复日也算进度,动画+每日一条恢复知识(按日期轮换,刷新不变)
+
+var FB_BOSS_META = {
+  pushup: { icon: '💪', name: '俯卧撑魔王', unit: '个',
+    desc: '一口气做到力竭,看看这个周期的训练有没有变成真实的力量',
+    howto: '双手略宽于肩,身体从头到脚一条直线,胸口接近地面再推起算 1 个' },
+  plank: { icon: '🧱', name: '平板支撑魔王', unit: '秒',
+    desc: '标准平板撑到抖为止——记得那篇爆文:超过 2 分钟就该去练别的了,但 BOSS 战例外',
+    howto: '肘撑地,从头到脚一条直线,腰不塌、臀不撅,呼吸不断' }
+};
+function fbBossTypeForCycle(cycle) {
+  return (cycle % 2 === 1) ? 'pushup' : 'plank';
+}
+function fbGetBossData() {
+  try { return JSON.parse(localStorage.getItem('fitbuddy_boss') || '{"records":[]}'); }
+  catch(e) { return { records: [] }; }
+}
+function fbSaveBossData(d) {
+  try { localStorage.setItem('fitbuddy_boss', JSON.stringify(d)); } catch(e) {}
+}
+function fbBossBest(type) {
+  var best = null;
+  (fbGetBossData().records || []).forEach(function(r) {
+    if (r.type === type && (best === null || r.score > best)) best = r.score;
+  });
+  return best;
+}
+function fbBossDoneThisCycle() {
+  return (fbGetBossData().records || []).some(function(r) { return r.cycle === currentCycle; });
+}
+
+// 游戏化动效 CSS(BOSS 卡/弹窗/休息日动画共用,只注入一次)
+function fbEnsureGameCss() {
+  if (document.getElementById('fbGameCss')) return;
+  var s = document.createElement('style');
+  s.id = 'fbGameCss';
+  s.textContent = ''
+    + '.fb-boss-card{margin:0 0 14px;padding:18px;border-radius:18px;position:relative;overflow:hidden;'
+    + 'background:linear-gradient(135deg,#1E1B4B,#4C1D95 60%,#7C3AED);color:#fff;box-shadow:0 8px 28px rgba(124,58,237,0.35);}'
+    + '.fb-boss-card::before{content:"";position:absolute;top:-46px;right:-46px;width:150px;height:150px;border-radius:50%;background:rgba(255,215,0,0.12);}'
+    + '.fb-boss-card.defeated{background:linear-gradient(135deg,#14532D,#166534 60%,#15803D);box-shadow:0 8px 28px rgba(21,128,61,0.35);}'
+    + '.fb-boss-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;position:relative;}'
+    + '.fb-boss-tag{font-size:11px;font-weight:700;background:rgba(255,215,0,0.22);color:#FDE047;padding:3px 10px;border-radius:10px;letter-spacing:1px;}'
+    + '.fb-boss-cycle{font-size:11px;opacity:0.75;}'
+    + '.fb-boss-name{font-size:22px;font-weight:800;margin:2px 0 6px;text-shadow:0 2px 8px rgba(0,0,0,0.3);position:relative;}'
+    + '.fb-boss-desc{font-size:12.5px;opacity:0.9;line-height:1.6;margin-bottom:12px;position:relative;}'
+    + '.fb-boss-best{font-size:12px;margin-bottom:12px;color:#FDE047;font-weight:700;position:relative;}'
+    + '.fb-boss-btn{width:100%;padding:12px;border-radius:14px;border:none;background:linear-gradient(90deg,#FDE047,#F59E0B);color:#422006;font-size:15px;font-weight:800;cursor:pointer;position:relative;}'
+    + '.fb-boss-btn:hover{filter:brightness(1.06);}'
+    + '.fb-boss-btn:active{transform:scale(0.98);}'
+    + '.fb-boss-btn.ghost{background:rgba(255,255,255,0.10);color:#fff;border:1px solid rgba(255,255,255,0.28);font-weight:700;}'
+    + '.fb-repair{font-size:14px;font-weight:700;display:flex;align-items:center;}'
+    + '.fb-repair-icon{display:inline-block;animation:fbPulse 1.6s ease-in-out infinite;}'
+    + '.fb-dot{animation:fbBlink 1.4s infinite;margin-left:2px;}'
+    + '.fb-dot:nth-child(3){animation-delay:0.2s;}.fb-dot:nth-child(4){animation-delay:0.4s;}'
+    + '.fb-rain{position:absolute;inset:0;pointer-events:none;overflow:hidden;}'
+    + '.fb-rain span{position:absolute;top:-40px;font-size:22px;animation:fbFall linear forwards;}'
+    + '@keyframes fbPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.28)}}'
+    + '@keyframes fbBlink{0%,100%{opacity:0.15}50%{opacity:1}}'
+    + '@keyframes fbFall{to{transform:translateY(560px) rotate(320deg);opacity:0.2}}'
+    + '@keyframes fbBossPop{0%{transform:scale(0.4);opacity:0}70%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}';
+  document.head.appendChild(s);
+}
+
+// BOSS 卡片(渲染进计划页)
+function renderBossCard(goal) {
+  try {
+    if (goal === 'marathon') return '';
+    if (currentWeek < getCycleLength()) return '';
+    fbEnsureGameCss();
+    var type = fbBossTypeForCycle(currentCycle);
+    var meta = FB_BOSS_META[type];
+    var best = fbBossBest(type);
+    var done = fbBossDoneThisCycle();
+    var thisCycleRec = null; // 本周期最佳战绩(支持多次挑战,取最高)
+    (fbGetBossData().records || []).forEach(function(r) {
+      if (r.cycle === currentCycle && (!thisCycleRec || r.score > thisCycleRec.score)) thisCycleRec = r;
+    });
+    var attempts = 0;
+    (fbGetBossData().records || []).forEach(function(r) { if (r.cycle === currentCycle) attempts++; });
+    var html = '<div class="fb-boss-card' + (done ? ' defeated' : '') + '">'
+      + '<div class="fb-boss-head"><span class="fb-boss-tag">👑 周期末 · BOSS 战</span>'
+      + '<span class="fb-boss-cycle">第 ' + currentCycle + ' 周期</span></div>'
+      + '<div class="fb-boss-name">' + meta.icon + ' ' + meta.name + '</div>';
+    if (done && thisCycleRec) {
+      var winTxt = thisCycleRec.win ? (thisCycleRec.first ? '🏆 首次击杀!' : '🏆 BOSS 已击败!') : '😤 挑战过,差一点';
+      html += '<div class="fb-boss-desc">本周期战绩:' + thisCycleRec.score + ' ' + meta.unit
+        + (attempts > 1 ? '(共挑战 ' + attempts + ' 次)' : '')
+        + (thisCycleRec.win ? '' : ' · 距离纪录还差 ' + (best - thisCycleRec.score) + ' ' + meta.unit) + '</div>'
+        + '<div class="fb-boss-best">' + winTxt + ' &nbsp;历史纪录:' + best + ' ' + meta.unit + '</div>'
+        // 已挑战 → 主按钮"再挑战"(误触可补救),副按钮"下一周期"(想推进随时走)
+        + '<div style="display:flex;gap:10px;position:relative;">'
+        + '<button class="fb-boss-btn" style="flex:1.4;" onclick="openBossModal()">⚔️ ' + (thisCycleRec.win ? '再战一次,刷纪录' : '再挑战一次') + '</button>'
+        + '<button class="fb-boss-btn ghost" style="flex:1;" onclick="nextCycle()">▶ 下一周期</button>'
+        + '</div>';
+    } else {
+      html += '<div class="fb-boss-desc">' + meta.desc + '</div>'
+        + '<div class="fb-boss-best">'
+        + (best === null ? '🗡 首次挑战,完成的瞬间就是"首杀"' : '🎯 当前纪录:' + best + ' ' + meta.unit + ' · 超过它就算击败')
+        + '</div>'
+        + '<button class="fb-boss-btn" onclick="openBossModal()">⚔️ 开始挑战</button>';
+    }
+    html += '</div>';
+    return html;
+  } catch(e) { return ''; }
+}
+
+// BOSS 弹窗(计数器/计时器 + 结果页)
+var fbBossCount = 0;      // pushup 模式:点击计数
+var fbBossSec = 0;        // plank 模式:秒数
+var fbBossTimer = null;   // plank 计时器句柄
+var fbBossFinished = false;
+
+function openBossModal() {
+  closeBossModal();
+  fbBossCount = 0; fbBossSec = 0; fbBossFinished = false;
+  if (fbBossTimer) { clearInterval(fbBossTimer); fbBossTimer = null; }
+  fbEnsureGameCss();
+  var type = fbBossTypeForCycle(currentCycle);
+  var meta = FB_BOSS_META[type];
+  var best = fbBossBest(type);
+  var ov = document.createElement('div');
+  ov.id = 'fbBossModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,10,30,0.78);backdrop-filter:blur(4px);z-index:10002;display:flex;align-items:center;justify-content:center;padding:20px;';
+  var inner = '<div style="width:100%;max-width:400px;max-height:86vh;overflow-y:auto;border-radius:22px;background:linear-gradient(160deg,#1E1B4B,#312E81);color:#fff;padding:24px 22px;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;animation:fbBossPop 0.45s ease-out;" id="fbBossBox">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+    + '<span style="font-size:11px;font-weight:700;color:#FDE047;letter-spacing:1px;">👑 BOSS 战 · 第 ' + currentCycle + ' 周期</span>'
+    + '<span onclick="closeBossModal()" style="cursor:pointer;font-size:20px;opacity:0.7;padding:2px 8px;">✕</span></div>'
+    + '<div style="font-size:20px;font-weight:800;margin-bottom:6px;">' + meta.icon + ' ' + meta.name + '</div>'
+    + '<div style="font-size:12px;opacity:0.85;line-height:1.6;margin-bottom:14px;">📋 ' + meta.howto
+    + (best !== null ? '<br>🎯 打破自己的纪录(' + best + ' ' + meta.unit + ')即算击败' : '<br>🏆 首次挑战,完成即"首杀"') + '</div>'
+    + '<div id="fbBossBody">';
+  if (type === 'pushup') {
+    inner += '<div id="fbBossScore" style="font-size:64px;font-weight:800;text-align:center;line-height:1;margin:10px 0 2px;">0</div>'
+      + '<div style="text-align:center;font-size:12px;opacity:0.7;margin-bottom:16px;">已完成个数</div>'
+      + '<button onclick="fbBossTap()" style="width:100%;padding:22px;border-radius:18px;border:none;background:linear-gradient(135deg,#FDE047,#F59E0B);color:#422006;font-size:17px;font-weight:800;cursor:pointer;">💪 做一个,点一下</button>'
+      + '<div style="display:flex;gap:10px;margin-top:12px;">'
+      + '<button onclick="fbBossUndo()" style="flex:1;padding:10px;border-radius:12px;border:none;background:rgba(255,255,255,0.12);color:#fff;font-size:13px;cursor:pointer;">↩ 误触-1</button>'
+      + '<button onclick="fbBossResetCount()" style="flex:1;padding:10px;border-radius:12px;border:none;background:rgba(255,255,255,0.12);color:#fff;font-size:13px;cursor:pointer;">🔄 重置</button></div>'
+      + '<button onclick="fbBossFinishFromUI()" style="width:100%;margin-top:14px;padding:14px;border-radius:14px;border:none;background:linear-gradient(90deg,#22C55E,#16A34A);color:#fff;font-size:15px;font-weight:800;cursor:pointer;">🏁 挑战结束,结算</button>';
+  } else {
+    inner += '<div id="fbBossScore" style="font-size:56px;font-weight:800;text-align:center;line-height:1;margin:10px 0 2px;">00:00</div>'
+      + '<div style="text-align:center;font-size:12px;opacity:0.7;margin-bottom:16px;">已坚持时长</div>'
+      + '<button id="fbBossTimerBtn" onclick="fbBossToggleTimer()" style="width:100%;padding:18px;border-radius:18px;border:none;background:linear-gradient(135deg,#FDE047,#F59E0B);color:#422006;font-size:16px;font-weight:800;cursor:pointer;">▶ 开始计时(摆好姿势再点)</button>'
+      + '<button onclick="fbBossFinishFromUI()" style="width:100%;margin-top:14px;padding:14px;border-radius:14px;border:none;background:linear-gradient(90deg,#22C55E,#16A34A);color:#fff;font-size:15px;font-weight:800;cursor:pointer;">🏁 撑不住了,结算</button>';
+  }
+  inner += '</div></div>';
+  ov.innerHTML = inner;
+  ov.addEventListener('click', function(ev) { if (ev.target === ov) closeBossModal(); });
+  document.body.appendChild(ov);
+}
+function closeBossModal() {
+  var m = document.getElementById('fbBossModal');
+  if (m) m.remove();
+  if (fbBossTimer) { clearInterval(fbBossTimer); fbBossTimer = null; }
+  // 挑战已结算 → 重渲染计划页,让 BOSS 卡切到"已挑战"状态
+  if (fbBossFinished) {
+    fbBossFinished = false;
+    try { doGenerate(); } catch(e) {}
+  }
+}
+function fbBossTap() {
+  fbBossCount++;
+  var el = document.getElementById('fbBossScore');
+  if (el) el.textContent = fbBossCount;
+}
+function fbBossUndo() {
+  fbBossCount = Math.max(0, fbBossCount - 1);
+  var el = document.getElementById('fbBossScore');
+  if (el) el.textContent = fbBossCount;
+}
+function fbBossResetCount() {
+  fbBossCount = 0;
+  var el = document.getElementById('fbBossScore');
+  if (el) el.textContent = '0';
+}
+function fbBossToggleTimer() {
+  var btn = document.getElementById('fbBossTimerBtn');
+  if (fbBossTimer) {
+    clearInterval(fbBossTimer); fbBossTimer = null;
+    if (btn) { btn.textContent = '▶ 继续计时'; btn.style.background = 'linear-gradient(135deg,#FDE047,#F59E0B)'; }
+  } else {
+    fbBossTimer = setInterval(function() {
+      fbBossSec++;
+      var el = document.getElementById('fbBossScore');
+      if (el) {
+        var mm = String(Math.floor(fbBossSec / 60)).padStart(2, '0');
+        var ss = String(fbBossSec % 60).padStart(2, '0');
+        el.textContent = mm + ':' + ss;
+      }
+    }, 1000);
+    if (btn) { btn.textContent = '⏸ 暂停(撑不住时点)'; btn.style.background = 'linear-gradient(135deg,#F87171,#EF4444)'; btn.style.color = '#fff'; }
+  }
+}
+function fbBossFinishFromUI() {
+  var type = fbBossTypeForCycle(currentCycle);
+  var score = type === 'pushup' ? fbBossCount : fbBossSec;
+  if (type === 'pushup' && score <= 0) { alert('一个都没做完可不算挑战哦,点"做一个,点一下"计数'); return; }
+  if (type === 'plank' && score < 5) { alert('时间太短啦,摆好姿势认真撑一次!'); return; }
+  fbBossFinish(score);
+}
+function fbBossFinish(score) {
+  if (fbBossTimer) { clearInterval(fbBossTimer); fbBossTimer = null; }
+  var type = fbBossTypeForCycle(currentCycle);
+  var meta = FB_BOSS_META[type];
+  var d = fbGetBossData();
+  var best = fbBossBest(type);
+  var firstBlood = best === null;
+  var win = firstBlood || score > best;
+  d.records = d.records || [];
+  d.records.push({ cycle: currentCycle, type: type, score: score, date: new Date().toISOString().slice(0, 10), win: win, first: firstBlood });
+  fbSaveBossData(d);
+
+  // 成就结算(BOSS 专属,不走 checkAchievements 的通用统计)
+  var wins = d.records.filter(function(r) { return r.win; }).length;
+  var earned = getAchievements();
+  var toasts = [];
+  function unlockBoss(id) {
+    if (earned.indexOf(id) < 0) {
+      earned.push(id);
+      for (var i = 0; i < ACHIEVEMENTS.length; i++) if (ACHIEVEMENTS[i].id === id) toasts.push(ACHIEVEMENTS[i]);
+    }
+  }
+  if (win) {
+    unlockBoss('boss_first');
+    if (wins >= 5) unlockBoss('boss_5');
+  }
+  if (toasts.length) {
+    saveAchievements(earned);
+    setTimeout(function() { toasts.forEach(function(a) { showAchievementToast(a); }); }, 1800);
+  }
+
+  // 🔊 语音播报
+  try {
+    if (typeof speakText === 'function') {
+      speakText(win ? (firstBlood ? '首次击杀！boss倒下了！' : '恭喜击败boss，新纪录诞生！')
+                    : '差一点点，boss还在等你，下个周期再来！');
+    }
+  } catch(e) {}
+
+  // 结果视图
+  fbBossFinished = true;
+  var body = document.getElementById('fbBossBody');
+  if (!body) return;
+  var resHtml = '<div style="text-align:center;padding:6px 0 2px;">';
+  if (win) {
+    resHtml += '<div style="font-size:52px;margin-bottom:6px;animation:fbBossPop 0.5s ease-out;">🏆</div>'
+      + '<div style="font-size:24px;font-weight:800;color:#FDE047;margin-bottom:6px;">' + (firstBlood ? '首次击杀!' : 'BOSS 击败!') + '</div>'
+      + '<div style="font-size:15px;font-weight:700;margin-bottom:4px;">新纪录:' + score + ' ' + meta.unit + '</div>'
+      + (firstBlood ? '' : '<div style="font-size:12px;opacity:0.75;">原纪录 ' + best + ' → 提升 ' + (score - best) + ' ' + meta.unit + '</div>')
+      + '<div style="font-size:12px;opacity:0.8;margin-top:10px;line-height:1.6;">这个周期的每一组训练,刚才都变成了真实的数字。</div>';
+  } else {
+    resHtml += '<div style="font-size:52px;margin-bottom:6px;animation:fbBossPop 0.5s ease-out;">😤</div>'
+      + '<div style="font-size:22px;font-weight:800;margin-bottom:6px;">Boss 未击败</div>'
+      + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">本次:' + score + ' ' + meta.unit + ' · 纪录:' + best + ' ' + meta.unit + '</div>'
+      + '<div style="font-size:12px;opacity:0.8;margin-top:10px;line-height:1.6;">差 ' + (best - score) + ' ' + meta.unit + ',什么都没损失——<br>下个周期卷土重来,BOSS 会等你。</div>';
+  }
+  resHtml += '<button onclick="closeBossModal()" style="width:100%;margin-top:16px;padding:13px;border-radius:14px;border:none;background:linear-gradient(90deg,#4F46E5,#7C3AED);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">收下战绩</button>'
+    + '</div>'
+    + '<div class="fb-rain">' + fbBossRainHtml(win) + '</div>';
+  body.innerHTML = resHtml;
+}
+function fbBossRainHtml(win) {
+  var pool = win ? ['💪','🎉','🔥','👑','⚡','⭐'] : ['💪','🌙','🌱'];
+  var html = '';
+  for (var i = 0; i < 14; i++) {
+    var left = Math.round(Math.random() * 92);
+    var dur = (1.6 + Math.random() * 1.6).toFixed(2);
+    var delay = (Math.random() * 1.2).toFixed(2);
+    var size = 16 + Math.round(Math.random() * 14);
+    html += '<span style="left:' + left + '%;animation-duration:' + dur + 's;animation-delay:' + delay + 's;font-size:' + size + 'px;">' + pool[Math.floor(Math.random() * pool.length)] + '</span>';
+  }
+  return html;
+}
+
+// ============ 🌙 休息日彩蛋(每日一条,按日期轮换,刷新不变) ============
+var FB_REST_EGGS = [
+  '训练只是发出"变强"的信号,生长发生在休息的 48 小时里——今天的"没练"正是变强的一部分',
+  '睡眠是免费的补剂:深睡阶段生长激素分泌达到峰值,今晚早点睡比多练一组更值',
+  '今天多喝 1 升水,明天训练的耐力和恢复速度都会不一样',
+  '泡沫轴滚 5 分钟大腿前侧和外侧,明天深蹲会明显更顺',
+  '蛋白质分散到每餐吃,比一顿吃完吸收效率高得多——今天试试每餐都有蛋白',
+  '出去走 20 分钟"垃圾配速"散步,比完全躺平恢复得更快(血液流动帮肌肉清垃圾)',
+  '拉伸时配合 5 次深呼吸,副交感神经一打开,恢复速度直接翻倍',
+  '今天拍一张身材照片存好,4 周后的同角度对比会让你吓一跳',
+  '肌肉还有一点酸?说明上次练到位了,这是正常的修复信号,不是伤',
+  '休息日不打卡,但连续天数不会断——FitBuddy 懂科学,你也该懂'
+];
+function fbRestDayEgg() {
+  try {
+    var eggs = (typeof FB_REST_EGGS !== 'undefined' && FB_REST_EGGS && FB_REST_EGGS.length) ? FB_REST_EGGS : ['休息也是训练的一部分,好好恢复'];
+    var d = new Date().toISOString().slice(0, 10);
+    var h = 0;
+    for (var i = 0; i < d.length; i++) h = (h * 31 + d.charCodeAt(i)) >>> 0;
+    return eggs[h % eggs.length];
+  } catch(e) { return ''; }
+}
+// 下一个训练日是周几(休息日彩蛋里给个盼头)
+function fbNextTrainDayLabel() {
+  try {
+    var sched = (lastPlan && lastPlan.schedule) || (lastPlan ? getSchedule(lastPlan.days) : null);
+    if (!sched || !sched.length || typeof sched[0] !== 'object') return '';
+    var wd = (new Date().getDay() + 6) % 7; // 周一=0
+    for (var i = wd + 1; i < 7; i++) {
+      if (sched[i] && sched[i].isTraining) return sched[i].day || '';
+    }
+    for (var j = 0; j <= wd; j++) {
+      if (sched[j] && sched[j].isTraining) return '下周' + String(sched[j].day || '').replace(/^周/, '');
+    }
+    return '';
+  } catch(e) { return ''; }
 }
 
 function updateHeaderStreak() {

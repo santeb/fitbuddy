@@ -13,6 +13,13 @@ var EXES = [
   {n:"箭步蹲", m:"腿", eq:"bodyweight", diff:"初级", desc:"单腿功能训练，提升平衡协调", tips:"前膝不超过脚尖，后膝接近但不触地", vid:"QOVaHwm-Q6s"},
   {n:"臀桥", m:"腿", eq:"bodyweight", diff:"初级", desc:"激活臀大肌和后链，保护腰椎", tips:"仰卧屈膝，臀部顶起至身体一条线，顶端挤压臀肌", vid:""},
   {n:"哑铃深蹲", m:"腿", eq:"dumbbell", diff:"初级", desc:"持哑铃增加阻力的深蹲变式", tips:"哑铃放两侧或前抱，动作同徒手深蹲", vid:""},
+  // 腿部 - 初级（梨形塑形专项）
+  {n:"宽距深蹲", m:"腿", eq:"bodyweight", diff:"初级", desc:"1.5倍肩宽站距，重点刺激臀大肌和大腿内侧", tips:"脚尖外展30°，蹲至大腿平行地面，重心放脚跟，感受臀部发力", vid:""},
+  {n:"侧弓步", m:"腿", eq:"bodyweight", diff:"初级", desc:"侧向弓步，收紧大腿内侧", tips:"侧跨一步，后腿伸直，上身挺直别前倾，重心坐回跨出侧", vid:""},
+  {n:"跪姿后踢", m:"腿", eq:"bodyweight", diff:"初级", desc:"四点支撑后踢腿，激活臀大肌", tips:"单腿向后上方踢，踢到顶停1秒感受臀部收缩，全程别塌腰", vid:""},
+  {n:"侧卧抬腿", m:"腿", eq:"bodyweight", diff:"初级", desc:"侧卧上抬，针对大腿外侧", tips:"侧躺，下腿弯曲上腿伸直向上抬，下落不碰地保持张力", vid:""},
+  {n:"跨坐侧蹲", m:"腿", eq:"bodyweight", diff:"初级", desc:"宽站距左右侧蹲，臀+大腿内侧一起练", tips:"重心往一侧压，屁股往后坐，膝盖始终对准脚尖不内扣", vid:""},
+  {n:"青蛙趴", m:"腿", eq:"bodyweight", diff:"初级", desc:"收工拉伸，放松髋部和腹股沟", tips:"双膝分开趴地，静态保持60-90秒，感受髋部放松，不按次数算", vid:""},
   // 腿部 - 中级
   {n:"深蹲跳", m:"腿", eq:"bodyweight", diff:"中级", desc:"爆发力深蹲，增加腿部力量和心率", tips:"蹲下后爆发跳起，落地时膝盖缓冲，前脚掌着地", vid:""},
   {n:"保加利亚分腿蹲（徒手）", m:"腿", eq:"bodyweight", diff:"中级", desc:"后脚抬高单腿蹲，强化臀腿", tips:"后脚搭在椅子上，前脚踩实，保持躯干直立下蹲", vid:""},
@@ -525,3 +532,16 @@ var FOOD_GUIDE = {
     timingEvening:  ["赛前 3 天碳水加载（每kg体重 8-10g）","赛前午餐：碳水为主，跑前 3-4h 吃完（如 12:00 前结束）","跑前 1h 加餐：香蕉/全麦面包+花生酱","下午 14:00 后避免咖啡因（心率叠加风险）","LSD 训练中每 45-60min 补充能量胶+水","赛后 30min 黄金窗口：碳水+蛋白=4:1（如 巧克力奶）","跑完 2h 内不要立刻躺下，影响消化和睡眠","比赛日：不要尝试没吃过的食物！"]
   }
 };
+
+// ============ 🍐 梨形塑形专项固定计划(与小红书宣传卡「梨形身材·完整周计划」一一对应) ============
+// 触发条件: 塑形 + 徒手 + 新手 + 一周三练(QUICK_TEMPLATES[0] 默认参数)
+// 全程走独立 builder(buildPearFixedPlan),完全绕过 buildShapePlan / buildPlan / applyBwProgression,
+// 不被自重变式升降档污染,保证「图上承诺 = 计划实际生成」
+// 三层 Object.freeze: 数组、对象、对象内的 moves 子数组,任何 mutate 都会在严格模式/TS 下报错
+var PEAR_MOVES = Object.freeze(["宽距深蹲","侧弓步","跪姿后踢","单腿臀桥","侧卧抬腿","跨坐侧蹲","青蛙趴"]);
+var PEAR_WEEKS = Object.freeze([
+  Object.freeze({ name: "梨形专项 · 臀腿激活",   moves: Object.freeze([0, 1, 2]) }),
+  Object.freeze({ name: "梨形专项 · 臀腿强化",   moves: Object.freeze([0, 3, 4]) }),
+  Object.freeze({ name: "梨形专项 · 臀腿线条",   moves: Object.freeze([5, 1, 3]) }),
+  Object.freeze({ name: "梨形专项 · 全动作整合", moves: Object.freeze([0, 1, 2, 3, 4, 5, 6]) })
+]);

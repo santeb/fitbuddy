@@ -37,9 +37,12 @@
       LA.init({
         id: LA_ID,
         ck: LA_ID,
-        autoTrack: true,  // 自动采基础PV/UV(漏斗第一层:来了多少人)
-        hashMode: false   // 本站非hash路由, tab切换由 track('page_view') 手动上报
+        autoTrack: true,        // 自动采基础PV/UV(漏斗第一层:来了多少人)
+        hashMode: true,         // SPA 必需: 切 tab 时改 location.hash, SDK 轮询自动补 PV
+        ignoreParams: ['_t']    // 忽略时间戳类噪声参数
       });
+      // 初始 hash: 让首次进入就有 PV 锚
+      if (!location.hash) location.hash = '#page-plan';
       window._laReady = true;
       // 补发初始化前积压的事件
       while (window._laPending && window._laPending.length) {
@@ -58,7 +61,16 @@
  */
 function track(event, params) {
   try {
-    if (window._laReady && window.LA) {
+    // hashMode 下, 切页 = 改 hash, 由 SDK 自动补 PV; 手动 LA.track 仅用于非页面类事件
+    if (event === 'page_view') {
+      var p = params || {};
+      var tabName = p.tab || p.page_title;
+      if (tabName && tabName !== location.hash.slice(1)) {
+        location.hash = '#' + tabName;
+      }
+      return; // 不再调 LA.track(SDK 内部会监听到 hash 变化)
+    }
+    if (window._laReady && window.LA && typeof LA.track === 'function') {
       LA.track(event, params || {});
     } else if (window._laReady === false) {
       // SDK 未就绪: 入队等 onload 后补发 (最多缓冲20条防膨胀)

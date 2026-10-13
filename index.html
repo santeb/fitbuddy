@@ -10,7 +10,8 @@
     var LA_ID = '3R6heDwfTUvB37ND'; // 51LA 上报ID (官方代码里的 id/ck, 来自参数设置页统计代码)
     function init51la() {
       try {
-        LA.init({ id: LA_ID, ck: LA_ID, autoTrack: true, hashMode: false });
+        LA.init({ id: LA_ID, ck: LA_ID, autoTrack: true, hashMode: true });
+        if (!location.hash) location.hash = '#page-plan';
         window._laReady = true;
         while (window._laPending && window._laPending.length) {
           var t = window._laPending.shift();
@@ -819,27 +820,32 @@ input,select{font-family:inherit;}
       </div>
       <div class="collapse-body">
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
-        <button type="button" class="tpl-card" onclick="applyTemplate(0)" role="button" aria-label="新手6周模板">
+        <button type="button" class="tpl-card" onclick="applyTemplate(0)" role="button" aria-label="梨形塑形4周模板">
+          <div style="font-size:22px;line-height:1;">🍑</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">梨形塑形 4 周</div>
+          <div style="font-size:10px;color:var(--text3);">臀腿线条 · 3天/周 · 4周周期</div>
+        </button>
+        <button type="button" class="tpl-card" onclick="applyTemplate(1)" role="button" aria-label="新手6周模板">
           <div style="font-size:22px;line-height:1;">🌱</div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">新手 6 周</div>
           <div style="font-size:10px;color:var(--text3);">入门打基础 · 3天/周 · 6周周期</div>
         </button>
-        <button type="button" class="tpl-card" onclick="applyTemplate(1)" role="button" aria-label="增肌12周模板">
+        <button type="button" class="tpl-card" onclick="applyTemplate(2)" role="button" aria-label="增肌12周模板">
           <div style="font-size:22px;line-height:1;">💪</div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">增肌 12 周</div>
           <div style="font-size:10px;color:var(--text3);">力量与围度 · 4天/周 · 12周周期</div>
         </button>
-        <button type="button" class="tpl-card" onclick="applyTemplate(2)" role="button" aria-label="减脂塑形模板">
+        <button type="button" class="tpl-card" onclick="applyTemplate(3)" role="button" aria-label="减脂塑形模板">
           <div style="font-size:22px;line-height:1;">🔥</div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">减脂塑形</div>
           <div style="font-size:10px;color:var(--text3);">燃脂紧致 · 4天/周 · 6周周期</div>
         </button>
-        <button type="button" class="tpl-card" onclick="applyTemplate(3)" role="button" aria-label="居家徒手模板">
+        <button type="button" class="tpl-card" onclick="applyTemplate(4)" role="button" aria-label="居家徒手模板">
           <div style="font-size:22px;line-height:1;">🏠</div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">居家徒手</div>
           <div style="font-size:10px;color:var(--text3);">零器械 · 3天/周 · 4周周期</div>
         </button>
-        <button type="button" class="tpl-card" onclick="applyTemplate(4)" role="button" aria-label="马拉松新手模板">
+        <button type="button" class="tpl-card" onclick="applyTemplate(5)" role="button" aria-label="马拉松新手模板">
           <div style="font-size:22px;line-height:1;">🏃</div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px;">马拉松新手</div>
           <div style="font-size:10px;color:var(--text3);">16周跑量计划</div>
@@ -1198,10 +1204,10 @@ input,select{font-family:inherit;}
 
 <script src="analytics.js?v=5" defer></script>
 <script src="onboarding.js?v=1" defer></script>
-<script src="data-constants.js?v=24" defer></script>
+<script src="data-constants.js?v=25" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
-<script src="planner-core.js?v=59" defer></script>
+<script src="planner-core.js?v=61" defer></script>
 <script src="pro-tools.js?v=5" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>

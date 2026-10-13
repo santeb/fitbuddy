@@ -44,3 +44,7 @@ __pycache__/
 
 # temp output
 _trim_out.txt
+_diagnose.html
+_tmp_seed2.js
+--full-page
+
