@@ -639,6 +639,11 @@ function isMachineEx(e) {
 // 健身房中级: 哑铃/自由重量 > 固定器械 (向自由重量过渡,器械留做孤立)
 // 健身房高级: 自由重量 > 哑铃 > 固定器械 (复合动作优先大重量)
 function getEqRank(e, equip, level) {
+  if (equip === "band") {
+    if (e.eq === "band") return 0;
+    if (e.eq === "bodyweight") return 1;
+    return 9;
+  }
   if (equip === "dumbbell") {
     if (e.eq === "dumbbell") return 0;
     if (e.eq === "bodyweight") return 1;
@@ -673,8 +678,9 @@ function getExes(muscle, equip, level) {
     if (e.m !== muscle) return false;
     if (levelAllowed.indexOf(e.diff) < 0) return false;
     if (equip === "gym") return true;
-    if (equip === "dumbbell") return e.eq === "dumbbell" || e.eq === "bodyweight";
+    if (equip === "dumbbell") return e.eq === "dumbbell" || e.eq === "bodyweight" || e.eq === "band";
     if (equip === "bodyweight") return e.eq === "bodyweight";
+    if (equip === "band") return e.eq === "band" || e.eq === "bodyweight";
     return true;
   });
   filtered.sort(function(a,b){
@@ -1205,8 +1211,8 @@ function renderRecoveryCard() {
   // 伤病部位 → 康复动作名关键词
   var recoveryMap = {
     '膝': ['直腿抬高','靠墙静蹲','踝关节泵','髋外展'],
-    '腰': ['猫牛式','死虫式','鸟狗式','骨盆倾斜'],
-    '肩': ['肩部环绕','墙面滑行','肩部外旋','门框拉伸'],
+    '腰': ['死虫式','骨盆倾斜'],
+    '肩': ['肩部环绕','肩部外旋','门框拉伸'],
     '腕': ['手腕屈伸','手指展开','前臂旋转'],
     '踝': ['脚踝字母','提踵','脚踝环绕']
   };
@@ -1243,7 +1249,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   }
   var goalNames  = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",marathon:"马拉松"};
   var levelNames = {beginner:"新手 🌱",intermediate:"中级 ⚡",advanced:"进阶 🔥"};
-  var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
+  var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",band:"自重+弹力带 🎀",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var cycleLen = getCycleLength();
   var wkInfo = buildCycleWeekInfo(cycleLen)[(currentWeek - 1) % cycleLen];
   // 心肺目标:使用心肺专用周期化配置覆盖 wkInfo 和 goalCfg
@@ -2699,7 +2705,6 @@ function getWarmupExercises(muscles) {
     ],
     '背': [
       {n:'肩关节绕环', dur:'前后各30秒'},
-      {n:'猫牛式', dur:'10次,激活脊柱'},
       {n:'手臂摆动', dur:'前后30秒,打开肩关节'}
     ],
     '肩': [
@@ -2817,7 +2822,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var exPrescriptionHtml;
       var distData = "";
       var isLiftEx = !isMarathon && ex.m !== '有氧'; // 力量动作(有重量/次数概念)
-      var isBodyweight = ex.eq === "bodyweight";     // 纯自重动作不显示重量输入
+      var isBodyweight = ex.eq === "bodyweight" || ex.eq === "band";     // 纯自重/弹力带动作不显示重量输入
 
       if (isMarathon && ex.isMarathon) {
         // 提取距离:支持 "12km"、"6-8km"、"6×800m" 三种格式(与 estimateDayCalBurn 一致)
@@ -2970,7 +2975,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
 }
 
 // ============ 增加/减少动作 ============
-var EQ_LABELS = {gym:"健身房", dumbbell:"哑铃", bodyweight:"自重", outdoor:"户外", treadmill:"跑步机"};
+var EQ_LABELS = {gym:"健身房", dumbbell:"哑铃", bodyweight:"自重", band:"弹力带", outdoor:"户外", treadmill:"跑步机"};
 
 // 增加动作弹窗状态(支持难度切换)
 var _pickerState = null;
@@ -3289,7 +3294,7 @@ function logProg(exName, progId) {
   var isBw = false;
   try {
     var bwEx = getExByName(exName);
-    isBw = !!(bwEx && bwEx.eq === 'bodyweight');
+    isBw = !!(bwEx && (bwEx.eq === 'bodyweight' || bwEx.eq === 'band'));
   } catch(e) { isBw = false; }
   var weight = '', reps = '', rpe = '';
   if (isBw) {
@@ -4629,7 +4634,7 @@ function renderLib() {
     html += '<div class="muscle-section"><div class="muscle-label">'+(MUSCLE_LABELS[m]||m)+'</div>';
     grouped[m].forEach(function(e){
       var diffColor = e.diff==="初级"?"#22C55E":e.diff==="中级"?"#F59E0B":"#EF4444";
-      var eqText = e.eq==="gym"?"健身房":e.eq==="dumbbell"?"哑铃":e.eq==="outdoor"?"户外路跑":e.eq==="treadmill"?"跑步机":"自重";
+      var eqText = e.eq==="gym"?"健身房":e.eq==="dumbbell"?"哑铃":e.eq==="band"?"弹力带":e.eq==="outdoor"?"户外路跑":e.eq==="treadmill"?"跑步机":"自重";
       var gifFile = GIF_MAP[e.n];
       var thumbHtml = '';
       if (gifFile) {
@@ -4666,7 +4671,7 @@ function showEx(name) {
   var bc = BADGE_COLORS[ex.m]||["#888","#F5F5F5"];
   var bt = BADGE_TEXT[ex.m]||(ex.m ? ex.m[0] : '?');
   var diffColor = ex.diff==="初级"?"#22C55E":ex.diff==="中级"?"#F59E0B":"#EF4444";
-  var eqText = ex.eq==="gym"?"健身房":ex.eq==="dumbbell"?"哑铃":ex.eq==="outdoor"?"户外路跑":ex.eq==="treadmill"?"跑步机":"自重";
+  var eqText = ex.eq==="gym"?"健身房":ex.eq==="dumbbell"?"哑铃":ex.eq==="band"?"弹力带":ex.eq==="outdoor"?"户外路跑":ex.eq==="treadmill"?"跑步机":"自重";
 
   // GIF动图(优先)
   var gifFile = GIF_MAP[name];
@@ -4918,7 +4923,7 @@ function migrateBodyweightLog() {
     var changed2 = false;
     Object.keys(prs).forEach(function(name){
       var ex = getExByName(name);
-      if (ex && ex.eq === 'bodyweight') { delete prs[name]; changed2 = true; }
+      if (ex && (ex.eq === 'bodyweight' || ex.eq === 'band')) { delete prs[name]; changed2 = true; }
     });
     if (changed2) localStorage.setItem(PR_KEY, JSON.stringify(prs));
   } catch(e) {}
@@ -7077,7 +7082,7 @@ function openAddExModal() {
     '<option value="初级">初级</option><option value="中级">中级</option><option value="高级">高级</option></select></div>' +
     '<div class="form-group" style="margin-bottom:12px;"><label style="font-size:13px;font-weight:600;">设备</label>' +
     '<select class="text-input" id="customExEq" style="width:100%;margin-top:4px;">' +
-    '<option value="gym">健身房</option><option value="dumbbell">哑铃</option><option value="bodyweight">自重</option></select></div>' +
+    '<option value="gym">健身房</option><option value="dumbbell">哑铃</option><option value="bodyweight">自重</option><option value="band">弹力带</option></select></div>' +
     '<div class="form-group" style="margin-bottom:12px;"><label style="font-size:13px;font-weight:600;">动作描述（选填）</label>' +
     '<input type="text" class="text-input" id="customExDesc" placeholder="简要描述" style="width:100%;margin-top:4px;"></div>' +
     '<div class="form-group" style="margin-bottom:12px;"><label style="font-size:13px;font-weight:600;">动作要点（选填）</label>' +
