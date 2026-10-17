@@ -603,6 +603,16 @@ input,select{font-family:inherit;}
 .cycle-banner .cycle-btn{padding:8px 16px;border-radius:10px;font-size:12px;font-weight:700;background:#4F46E5;color:#fff;border:none;cursor:pointer;white-space:nowrap;transition:all .2s;}
 .cycle-banner .cycle-btn:active{transform:scale(0.95);}
 
+/* Adaptive banner (训练水平自动校准 / 上周完成率→本周容量) */
+.adaptive-banner{background:linear-gradient(135deg,#FFFBEB,#FEF3C7);border-radius:var(--radius);padding:12px 15px;margin-bottom:12px;border-left:4px solid #F59E0B;}
+[data-theme="dark"] .adaptive-banner{background:linear-gradient(135deg,#2A2418,#332B1C);}
+.adaptive-title{font-size:13px;font-weight:700;color:#B45309;margin-bottom:4px;}
+[data-theme="dark"] .adaptive-title{color:#FBBF24;}
+.adaptive-body{font-size:12px;color:#92400E;line-height:1.7;}
+[data-theme="dark"] .adaptive-body{color:#FDE68A;}
+.adaptive-undo{padding:6px 13px;border-radius:9px;font-size:11px;font-weight:700;background:#F59E0B;color:#fff;border:none;cursor:pointer;transition:all .2s;}
+.adaptive-undo:active{transform:scale(0.95);}
+
 /* Shoe tracker */
 .shoe-card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:10px;box-shadow:var(--shadow);border-left:4px solid #F59E0B;display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .shoe-info{flex:1;}
@@ -1206,12 +1216,12 @@ input,select{font-family:inherit;}
 
 <script src="analytics.js?v=5" defer></script>
 <script src="onboarding.js?v=1" defer></script>
-<script src="data-constants.js?v=31" defer></script>
+<script src="data-constants.js?v=35" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=64" defer></script>
-<script src="pro-tools.js?v=5" defer></script>
+<script src="planner-core.js?v=75" defer></script>
+<script src="pro-tools.js?v=7" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>

@@ -670,6 +670,21 @@ function getEqRank(e, equip, level) {
   return 2;
 }
 
+// 器材归属分组(用于层内"先取所选器材的动作")。
+// 与 getEqRank 不同:后者是"健身房内部自由重量/器械"的细分偏好,这里是"是不是用户选的器材"。
+// 选了健身房却拿到自重动作、选了哑铃却拿到俯卧撑,都是这个分组没做导致的。
+//   组0 = 用户选的器材(gym 下的 gym 动作) / 组1 = 健身房里的哑铃 / 组2 = 自重兜底
+function eqGroup(e, equip) {
+  if (!e) return 2;
+  if (equip === "gym") {
+    if (e.eq === "gym") return 0;
+    if (e.eq === "dumbbell") return 1;
+    return 2;
+  }
+  if (e.eq === equip) return 0;
+  return 1;
+}
+
 function getExes(muscle, equip, level) {
   var diffRank = {"初级":1,"中级":2,"高级":3};
   var allowed = {beginner:["初级"], intermediate:["初级","中级"], advanced:["初级","中级","高级"]};
@@ -683,13 +698,31 @@ function getExes(muscle, equip, level) {
     if (equip === "band") return e.eq === "band" || e.eq === "bodyweight";
     return true;
   });
+  // 排序 = 与"本档位目标难度"的距离越小越靠前。
+  // 旧逻辑 intermediate 走升序(初级在前),实测中级用户 88.8% 的动作都是初级、
+  // 72.7% 的训练日整日全初级 —— 选了中级却排初级动作,难度根本没匹配上。
+  // 现在:beginner→初级优先 / intermediate→中级优先(不够再退初级) / advanced→高级优先。
+  // 池子不够时会自动降级到相邻难度,不会取不到动作。
+  var targetRank = {beginner:1, intermediate:2, advanced:3}[level] || 1;
+  // 器材优先封顶:目标难度要落在"所选器材的首选档(eqRank===0)"真正能摸到的范围内。
+  // 旧逻辑直接拿档位难度当目标 → 健身房高级用户的胸池里「单臂俯卧撑(高级·自重)」距离 0,
+  // 排在「卧推(中级·自由重量)」距离 1 前面,实测 23.6% 的主项动作是自重动作 —— 选了健身房
+  // 却拿到自重动作。现在先用首选器材组能达到的最高难度给目标封顶,再按距离排序。
+  // 下限 floorRank 保证中级/高级不会因为封顶而退回初级(那是之前修过的老 bug)。
+  var eq0 = filtered.filter(function(e){ return getEqRank(e, equip, level) === 0; });
+  if (eq0.length) {
+    var maxS = 0;
+    for (var i=0; i<eq0.length; i++) { var r = diffRank[eq0[i].diff] || 0; if (r > maxS) maxS = r; }
+    var floorRank = level === "beginner" ? 1 : 2;
+    targetRank = Math.max(floorRank, Math.min(targetRank, maxS));
+  }
+  // 把器材分组算好挂在元素上,供 pickExes 做"组内轮换"(避免重复算 + 层内要按组排序)
+  filtered = filtered.map(function(e){ return Object.assign({}, e, {_eqRank: getEqRank(e, equip, level), _eqGroup: eqGroup(e, equip), _equip: equip}); });
   filtered.sort(function(a,b){
-    var da = diffRank[a.diff] || 0, db = diffRank[b.diff] || 0;
-    if (level === "advanced") { var t = da; da = db; db = t; }
+    var da = Math.abs((diffRank[a.diff] || 0) - targetRank);
+    var db = Math.abs((diffRank[b.diff] || 0) - targetRank);
     if (da !== db) return da - db;
-    var ea = getEqRank(a, equip, level);
-    var eb = getEqRank(b, equip, level);
-    return ea - eb;
+    return a._eqRank - b._eqRank;
   });
   return filtered;
 }
@@ -697,25 +730,59 @@ function getExes(muscle, equip, level) {
 function pickExes(arr, count, weekOffset) {
   if (!arr || !arr.length) return [];
   var off = weekOffset || 0;
-  // 器械优先分组旋转: 仅当数组按器械优先排序(新手gym)时生效
-  // 器械组/非器械组各自按周轮换, 保证器械永远优先取到, 同时保持每周动作多样性
-  if (arr.length > 1 && isMachineEx(arr[0])) {
-    var machines = arr.filter(isMachineEx);
-    var others = arr.filter(function(e){ return !isMachineEx(e); });
-    function rot(g){ return g.slice(off % g.length).concat(g.slice(0, off % g.length)); }
-    var combo = rot(machines).concat(rot(others));
-    return combo.slice(0, Math.min(count, combo.length));
+  var diffRank = {"初级":1,"中级":2,"高级":3};
+  // 按难度分层:arr 已按"与档位目标难度的距离"排序,层出现的顺序就是优先级。
+  // 关键:轮换必须在层内进行。旧做法是整体旋转,off 随周递增会跨过难度层边界 ——
+  // 中级用户第1周取中级、第4周取初级,同一肌群难度随周漂移
+  // (实测 2102 个动作明明有中级可选却取了初级,bodyweight|肩 周均难度 1.86→1.00)。
+  // 层内取不够才降到下一层,这是池子小的时候的正常降级。
+  var layers = [], at = {};
+  arr.forEach(function(e){
+    var r = diffRank[e.diff] || 0;
+    if (at[r] === undefined) { at[r] = layers.length; layers.push([]); }
+    layers[at[r]].push(e);
+  });
+  function rot(g){ return g.slice(off % g.length).concat(g.slice(0, off % g.length)); }
+  // 层内再按"器材归属"分组轮换:所选器材的组整体排在前面,取不够才轮到下一组。
+  // 旧做法整个层一起旋转 → 健身房高级用户的胸池里「双杠臂屈伸(gym,组0)」轮完就轮到
+  // 「单臂俯卧撑(自重,组2)」,选了健身房却拿到自重动作(实测主项 23.6% 是自重)。
+  // 首选组不足 2 个动作时把次选组合并进来一起轮换,否则每周永远是同一个动作。
+  function pickLayer(g){
+    var groups = {}, order = [];
+    g.forEach(function(e){
+      var key = (e._eqGroup === undefined) ? 0 : e._eqGroup;
+      if (groups[key] === undefined) { groups[key] = []; order.push(key); }
+      groups[key].push(e);
+    });
+    order.sort(function(a,b){ return a - b; });
+    // 健身房里哑铃和器械是同等可用的,首选组不足 3 个就把哑铃组并进来一起轮,
+    // 否则高级用户的高级动作池太小,3 天全身计划会出现 Day1 和 Day3 完全一样。
+    // 居家器材(哑铃/自重/弹力带)门槛保持 2:否则自重动作会大量混进来。
+    var minSize = (g[0] && g[0]._equip === "gym") ? 3 : 2;
+    // 只并"次选器材组"(组1)。若组1 为空、order[1] 直接跳到自重组(组2),不能并 ——
+    // 那等于把自重动作拉回首选,前面排除自重的功夫白做了。
+    if (groups[order[0]].length < minSize && order.length > 1 && order[1] === 1) {
+      groups[order[0]] = groups[order[0]].concat(groups[order[1]]);
+      order.splice(1, 1);
+    }
+    var res = [];
+    order.forEach(function(k){ res = res.concat(rot(groups[k])); });
+    return res;
   }
-  // 按周轮换:将数组旋转 off 位,让不同周选不同动作
-  var rotated = arr.slice(off % arr.length).concat(arr.slice(0, off % arr.length));
-  return rotated.slice(0, Math.min(count, rotated.length));
+  var out = [];
+  for (var i = 0; i < layers.length && out.length < count; i++) out = out.concat(pickLayer(layers[i]));
+  return out.slice(0, Math.min(count, out.length));
 }
 
-function getFullBody(equip, level, goal, weekOffset) {
+// withArm: ≤3 天的全身计划是否补第 6 槽「臂」。
+// 旧版全身日固定 5 槽且不含臂 → 增肌/减脂/塑形选 2-3 天时臂覆盖率 0%,
+// 一周一次手臂都不练。全身分化本来就是每个部位每次都过一遍,臂不该缺席。
+function getFullBody(equip, level, goal, weekOffset, withArm) {
   // shape(塑形/梨形专项): 腿臀占 3 槽, 核心肩各 1 —— 呼应 CONFIGS.shape "臀腿+肩背线条优先"
   var muscles = goal === "cardio" ? ["腿","胸","背","核心","有氧"]
              : goal === "shape"  ? ["腿","腿","腿","核心","肩"]
              : ["腿","胸","背","肩","核心"];
+  if (withArm && goal !== "cardio") muscles.push("臂");
   var list = [];
   muscles.forEach(function(m, idx){
     var ex = getExes(m, equip, level);
@@ -775,8 +842,20 @@ function applyBwProgression(ex, shift, level) {
     // 基准档:beginner=1标准 / intermediate=2宽距 / advanced=3下斜,受族长度与 level 钳制
     var base = Math.min({beginner:1, intermediate:2, advanced:3}[level] || 2, maxAllowed);
     // +20% 及以上(shift>=3):基准+3(封顶族顶)=按级别可达的"冲击最高档";其余按基准档线性偏移
-    var target = shift >= 3 ? base + 3 : base + shift;
+    // 减载周(-30%/shift=-99):旧规则直落"族内最低档" —— 高级用户平均难度 2.4→1.2,
+    //   这是全场最大的周间落差,等于每周第4周重来一遍,高级用户会觉得计划不认识他。
+    //   减载的意义是降疲劳(组数/次数已由 effectiveCfg 同步打折),动作难度降 1 档足够。
+    var target = shift >= 3 ? base + 3 : (shift <= -99 ? base - 1 : base + shift);
     var t = Math.max(0, Math.min(target, fam.levels.length - 1));
+    // 上探封顶:挑战周最多跨 1 个难度档。旧逻辑 base+3 直接冲族顶,新手会拿到
+    //   前水平拉背/单臂俯卧撑/单腿深蹲这类"跨 2 档"的高级动作。
+    //   从 t 往下退到难度 <= ceilRank 的位置;但不低于 base,否则挑战周动作与常规周重复。
+    var ceilRank = maxRank + 1;
+    while (t > base) {
+      var cc = getExByName(fam.levels[t]);
+      if (!cc || (diffRank[cc.diff] || 3) <= ceilRank) break;
+      t--;
+    }
     // 升档只钳制族顶(挑战周允许上探更高级变式);降档天然落在 level 允许范围(base 之上/之下都安全)
     var cand = getExByName(fam.levels[t]);
     if (cand) return cand;
@@ -800,27 +879,223 @@ function getAdaptiveShift(originalShift, lastWeekRate) {
   return -1;
 }
 
+// 按指定 level 前缀统计上周完成率(内部实现)
+// 返回 null(无有效动作) 或 {rate, doneExes, totalExes}
+function _completionRateByLevel(level, lastWk) {
+  if (!lastPlan || !lastPlan.trainingDays) return null;
+  var pidPrefix = 'fitbuddy_done_' + lastPlan.goal + '_' + level + '_' + lastPlan.days + '_c' + (lastPlan.cycle || currentCycle || 1) + '_w' + lastWk;
+  var totalExes = 0, doneExes = 0;
+  lastPlan.trainingDays.forEach(function(day, di) {
+    if (!day || !day.exes || day.exes.length === 0) return;
+    day.exes.forEach(function(_, ei) {
+      totalExes++;
+      var key = pidPrefix + '_day_' + di + '_ex' + ei;
+      if (localStorage.getItem(key) === '1') doneExes++;
+    });
+  });
+  if (totalExes === 0) return null;
+  return {rate: doneExes / totalExes, doneExes: doneExes, totalExes: totalExes};
+}
+
+// 核心:读取上周完成情况(含 level 回退)
+// ⚠️ level 回退: doneKey 前缀里含 level。若水平被自动校准改过档,旧前缀就读不到上周数据,
+//    这里回退扫描其它 level 前缀取"打卡数最多"的那份,保证自适应反馈链不断裂。
+// 返回 null(无计划/第1周/无动作) 或 {rate, doneExes, totalExes}
+function _lastWeekCompletion() {
+  if (!lastPlan || !lastPlan.trainingDays) return null;
+  var lastWk = (lastPlan.week || currentWeek) - 1;
+  if (lastWk < 1) return null; // 第 1 周没有"上周"
+  var r = _completionRateByLevel(lastPlan.level, lastWk);
+  // 注意:回退判据必须是 doneExes === 0,不能只判 !r。
+  // _completionRateByLevel 只要 totalExes > 0 就返回对象(零打卡时是 {rate:0}),
+  // 只判 !r 会让"档位改过、旧前缀失效"这种情况永远走不到回退分支。
+  if (!r || r.doneExes === 0) {
+    var cands = ['beginner', 'intermediate', 'advanced'].filter(function(l){ return l !== lastPlan.level; });
+    cands.forEach(function(l) {
+      var rr = _completionRateByLevel(l, lastWk);
+      if (rr && (!r || rr.doneExes > r.doneExes)) r = rr;
+    });
+  }
+  return r || null;
+}
+
 // 读取上周完成率(扫描 lastPlan 的 trainingDays 中所有动作的 doneKey)
+// 供自重路径的 applyBwProgression 与新的自适应容量共用
 function getLastWeekCompletionRate() {
   try {
-    if (!lastPlan || !lastPlan.trainingDays) return null;
-    var lastWk = (lastPlan.week || currentWeek) - 1;
-    if (lastWk < 1) return null; // 第 1 周没有"上周"
-    var pidPrefix = 'fitbuddy_done_' + lastPlan.goal + '_' + lastPlan.level + '_' + lastPlan.days + '_c' + (lastPlan.cycle || currentCycle || 1) + '_w' + lastWk;
-    var totalExes = 0, doneExes = 0;
-    lastPlan.trainingDays.forEach(function(day, di) {
-      if (!day || !day.exes || day.exes.length === 0) return;
-      day.exes.forEach(function(_, ei) {
-        totalExes++;
-        var key = pidPrefix + '_day_' + di + '_ex' + ei;
-        if (localStorage.getItem(key) === '1') doneExes++;
-      });
-    });
-    if (totalExes === 0) return null;
-    return doneExes / totalExes;
+    var r = _lastWeekCompletion();
+    // 零打卡保护:整周一条都没点,无法区分"压根没练"和"练了但没记"——
+    // 两种解读的自适应结论完全相反(该降档 vs 不该动),没有依据就不该动。
+    if (!r || r.doneExes <= 0) return null;
+    return r.rate;
   } catch(e) {
     return null;
   }
+}
+
+// ============ 🧠 P1-1 训练水平自动校准(trainlog → 1RM → 体重倍数 → 档位) ============
+// 四条硬性约束:
+//  1) 只升不降 —— 估算档位低于用户选择时绝不自动下调。把"进阶"误判成"新手"的挫败感会直接劝退用户,
+//     而判保守最多是少加两组,后者代价远小于前者。
+//  2) 只认有重量的自由/固定器械动作 —— 自重与弹力带动作的 trainlog 历史上有"重量被误存为次数"的前科
+//     (见 migrateBodyweightLog),全部排除,口径与 BODYWEIGHT_EX_NAMES 保持一致。
+//  3) 数据不足不干预 —— 少于 2 个动作、或单动作少于 2 条有效记录时返回 null,保证新用户零行为变化。
+//  4) 可撤销 —— 用户点"改回 XX"后写入 fitbuddy_levelcal_off,永久尊重用户选择。
+var LEVEL_CAL_OFF_KEY = 'fitbuddy_levelcal_off';
+var LEVEL_ORDER = ['beginner', 'intermediate', 'advanced'];
+var LEVEL_RANK  = {beginner:0, intermediate:1, advanced:2};
+var _lastLevelCalibration = null; // 本次生成所用的校准详情(渲染提示条用,渲染后即清空)
+var _lastAdaptiveInfo = null;     // 本次生成的自适应容量详情
+
+// 取体重:优先当前表单输入,回落到已保存的 profile
+function getBodyWeightForCalibration() {
+  var w = 0;
+  var el = document.getElementById('bodyWeight');
+  if (el) w = parseFloat(el.value);
+  if (!(w >= 30 && w <= 200)) {
+    try {
+      var prof = JSON.parse(localStorage.getItem('fitbuddy_profile') || '{}');
+      w = parseFloat(prof.weight);
+    } catch(e) {}
+  }
+  return (w >= 30 && w <= 200) ? w : 0;
+}
+
+// 单动作估算 1RM(kg):只取 1-12 次的记录(更高次数下 Epley 误差过大),取历史最大值
+function estimateExE1RM(entries) {
+  if (!entries || !entries.length) return 0;
+  var best = 0;
+  entries.forEach(function(e){
+    if (!e) return;
+    var w = parseFloat(e.weight);
+    var r = parseInt(e.reps);
+    if (!(w > 0) || !(r >= 1) || r > 12) return;
+    var v = computeE1RM(w, r);
+    if (v > best) best = v;
+  });
+  return best;
+}
+
+// 主入口:从 trainingLog 估算训练水平档位
+// 返回 null(数据不足/已关闭) 或 {level, from, evidence:[...], sampleCount, exerciseCount, bodyWeight, gender}
+function estimateLevelFromLog() {
+  try {
+    if (typeof trainingLog === 'undefined' || !trainingLog) return null;
+    if (localStorage.getItem(LEVEL_CAL_OFF_KEY) === '1') return null; // 用户已明确拒绝
+    var bw = getBodyWeightForCalibration();
+    if (!bw) return null;                       // 没体重 → 无法换算倍数
+    if (typeof LEVEL_BENCHMARKS === 'undefined') return null;
+    var prof = {};
+    try { prof = JSON.parse(localStorage.getItem('fitbuddy_profile') || '{}'); } catch(e) {}
+    var gender = (prof.gender === 'female') ? 'female' : 'male';
+    var bench = LEVEL_BENCHMARKS[gender] || LEVEL_BENCHMARKS.male;
+    var cutoff = Date.now() - 90 * 864e5;       // 只看近 90 天,久远数据不代表当前水平
+    var evidence = [], sampleCount = 0;
+    bench.forEach(function(b) {
+      var ex = getExByName(b.ex);
+      if (!ex) return;
+      if (isBodyweightEx(b.ex)) return;   // 自重/弹力带不参与 1RM 校准
+      var entries = trainingLog[b.ex];
+      if (!entries || !entries.length) return;
+      var recent = entries.filter(function(e){
+        var t = Date.parse(e && e.date);
+        return isNaN(t) ? true : t >= cutoff;
+      });
+      if (recent.length < 2) return;                            // 单条记录偶然性太大
+      var e1rm = estimateExE1RM(recent);
+      if (!(e1rm > 0)) return;
+      var ratio = e1rm / bw;
+      var tier = ratio >= b.top ? 2 : (ratio >= b.mid ? 1 : 0);
+      evidence.push({ex:b.ex, e1rm:Math.round(e1rm*10)/10, ratio:Math.round(ratio*100)/100, mid:b.mid, top:b.top, tier:tier});
+      sampleCount += recent.length;
+    });
+    if (evidence.length < 2) return null;                       // 至少 2 个不同动作才敢动档位
+    // 取各动作档位的中位数抗单点噪声;偶数个时取下中位数(更保守)
+    var tiers = evidence.map(function(e){ return e.tier; }).sort(function(a,b){ return a-b; });
+    var med = tiers[Math.floor((tiers.length - 1) / 2)];
+    return {
+      level: LEVEL_ORDER[med],
+      from: null,                                // 由调用方填入"用户原本选的档位"
+      evidence: evidence,
+      sampleCount: sampleCount,
+      exerciseCount: evidence.length,
+      bodyWeight: bw,
+      gender: gender
+    };
+  } catch(e) {
+    return null;
+  }
+}
+
+// ============ 🧠 P1-2 自适应容量(把"按完成率反馈"从自重扩展到器械路径) ============
+// 自重路径靠"换变式"升降档(applyBwProgression);器械路径没有变式可换,改用"调组数"承载同样的反馈。
+// 阈值体系与 getAdaptiveShift 完全一致,保证两种路径的自适应逻辑同源、可解释。
+// 边界: 下限 2 组(再少不构成有效刺激),上限不超过原配置(不主动加量,加量交给周期化爬坡)。
+function computeAdaptiveVolume(baseSets, lastWeekRate) {
+  baseSets = parseInt(baseSets) || 3;
+  if (lastWeekRate === null || lastWeekRate === undefined) return baseSets;
+  if (lastWeekRate >= 0.85) return baseSets;                    // 完成得好 → 信任原计划
+  if (lastWeekRate >= 0.60) return Math.max(2, baseSets - 1);  // 60-84% → 减 1 组
+  if (lastWeekRate >= 0.40) return Math.min(baseSets, 3);        // 40-59% → 回到基准 3 组
+  return 2;                                                      // <40% → 强制减量
+}
+
+// 自适应强度文案:把完成率翻译成"本周重量怎么办"的具体动作,而不是干巴巴一个百分比
+function getAdaptiveIntensityNote(lastWeekRate) {
+  if (lastWeekRate === null || lastWeekRate === undefined) return '';
+  if (lastWeekRate >= 0.90) return '本周可以尝试加 2.5-5kg,或每组多做 1-2 次';
+  if (lastWeekRate >= 0.85) return '本周重量先不加,把动作质量做扎实';
+  if (lastWeekRate >= 0.60) return '本周重量维持不加,优先把规定的次数做满';
+  if (lastWeekRate >= 0.40) return '本周建议下调重量 5-10%,先把动作模式练顺';
+  return '本周进入减量模式,重量降到 70% —— 休息也是训练的一部分';
+}
+
+// 渲染「水平自动校准」提示条(透明化:说清依据、给出撤销入口)
+function renderLevelCalibrationBanner() {
+  var cal = _lastLevelCalibration;
+  if (!cal || !cal.from || cal.from === cal.level) return '';
+  var names = {beginner:'新手 🌱', intermediate:'中级 ⚡', advanced:'进阶 🔥'};
+  var ev = (cal.evidence || []).slice().sort(function(a,b){ return b.ratio - a.ratio; }).slice(0, 3);
+  var rows = ev.map(function(e){
+    var mark = e.tier >= 2 ? '🔥' : (e.tier >= 1 ? '⚡' : '🌱');
+    return '<div style="font-size:12px;color:var(--text2);margin-top:3px;">'+mark+' '+
+      e.ex.replace(/'/g, "")+' 估算 1RM <b>'+e.e1rm+'kg</b> ≈ <b>'+e.ratio+'×</b> 体重</div>';
+  }).join('');
+  return '<div class="adaptive-banner">'+
+    '<div class="adaptive-title">🧠 已按你的训练记录自动校准</div>'+
+    '<div class="adaptive-body">近 90 天里有 <b>'+cal.exerciseCount+'</b> 个动作、<b>'+cal.sampleCount+
+      '</b> 条带重量的记录(体重 '+cal.bodyWeight+'kg),水平已从 <b>'+names[cal.from]+
+      '</b> 上调为 <b>'+names[cal.level]+'</b>。</div>'+
+    rows+
+    '<div style="margin-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+      '<button class="adaptive-undo" onclick="undoLevelCalibration(\''+cal.from+'\')">↩ 改回 '+names[cal.from]+'</button>'+
+      '<span style="font-size:11px;color:var(--text3);">自动校准只会往上调,不会把你往下压</span>'+
+    '</div>'+
+  '</div>';
+}
+
+// 渲染「上周完成率 → 本周容量」提示条
+function renderAdaptiveVolumeBanner() {
+  var info = _lastAdaptiveInfo;
+  if (!info || info.rate === null || info.rate === undefined) return '';
+  var pct = Math.round(info.rate * 100);
+  var adj = (info.sets !== info.baseSets)
+    ? ('本周组数已由 <b>'+info.baseSets+' 组</b> 调整为 <b>'+info.sets+' 组</b>')
+    : ('本周维持 <b>'+info.sets+' 组</b>');
+  return '<div class="adaptive-banner">'+
+    '<div class="adaptive-title">📈 上周完成率 '+pct+'%</div>'+
+    '<div class="adaptive-body">'+adj+(info.note ? '。' + info.note + '。' : '。')+'</div>'+
+  '</div>';
+}
+
+// 撤销自动校准:写关闭标记 + 把表单改回用户原本的选择 + 重新生成
+function undoLevelCalibration(targetLevel) {
+  try { localStorage.setItem(LEVEL_CAL_OFF_KEY, '1'); } catch(e) {}
+  var lr = document.querySelector('input[name="level"][value="' + targetLevel + '"]');
+  if (lr) lr.checked = true;
+  var short = {beginner:'新手', intermediate:'中级', advanced:'进阶'}[targetLevel] || targetLevel;
+  if (typeof showToast === 'function') showToast('已改回「' + short + '」,以后不再自动校准');
+  doGenerate();
 }
 
 // 📊 当前 ISO 周(用于询问弹窗"本周不再提醒"标记)
@@ -866,6 +1141,225 @@ function dedup(arr) {
   var seen = {};
   return arr.filter(function(e){ if(!e||seen[e.n])return false; seen[e.n]=true; return true; });
 }
+
+// 动作行副标题:"肩部 · 中级"
+// 为什么必须带肌群:自重上肢推日里"俯卧撑(胸)"和"派克俯卧撑(肩)"名字都带俯卧撑,
+// 不标肌群用户会以为是重复动作(实际一个是胸一个是肩)。
+// ⚠️ 别叫 fbExMeta —— 文件后半段已有一个同名的 fbExMeta(name)(返回动作对象),
+//    函数声明会互相覆盖,叫这名字会让整段渲染拿到 null。
+function fbExMetaLine(ex) {
+  var parts = [];
+  if (ex && ex.m && typeof MUSCLE_LABELS !== 'undefined' && MUSCLE_LABELS[ex.m]) parts.push(MUSCLE_LABELS[ex.m]);
+  if (ex && ex.diff) parts.push(ex.diff);
+  return parts.join(' · ');
+}
+
+// 动作属于哪个"变式族"(俯卧撑族/引体族/深蹲族…),不在任何族里返回 null
+function getBwFamilyOf(name) {
+  if (!name || typeof BW_PROGRESSIONS === 'undefined' || !BW_PROGRESSIONS) return null;
+  for (var i = 0; i < BW_PROGRESSIONS.length; i++) {
+    var fam = BW_PROGRESSIONS[i];
+    if (fam && fam.levels && fam.levels.indexOf(name) >= 0) return fam.family;
+  }
+  return null;
+}
+window.getBwFamilyOf = getBwFamilyOf;
+
+// 同一天内:同名去重 + 同"变式族"只留一个,空出的槽位用同肌群里不同族的动作补上。
+// 为什么需要:dedup 只按名字去重,拦不住"俯卧撑 + 宽距俯卧撑"这种同族不同名。
+//   自重/弹力带下胸池几乎全是俯卧撑变式,pickExes(胸,2) 必然取出两个俯卧撑 ——
+//   用户看到的就是"同一天好几个俯卧撑"(实测 432 种参数组合里有 71 个这样的训练日)。
+// 补位而不是直接删:直接删会让当天平白少一个动作,训练量缩水。
+// 补位时的"搭档肌群"顺序:保持训练日主题,别把胸动作硬塞进拉日
+// 顺序按"训练上最常搭在一起"排:拉日先补二头/核心,推日先补三头/肩,腿日先补核心
+var PARTNER_MUSCLES = {
+  '胸': ['肩','臂','核心','背'],
+  '背': ['臂','核心','肩','胸'],
+  '肩': ['臂','胸','核心','背'],
+  '臂': ['背','肩','核心','胸'],
+  '腿': ['核心','肩','臂','背'],
+  '核心': ['腿','背','肩','臂']
+};
+var ALL_MUSCLE_ORDER = ['核心','腿','背','胸','肩','臂'];
+
+// ============ 训练日主题解析 ============
+// 天名是对用户的承诺:"上肢 B(拉:背·二头)" 就该只有背和二头。
+// 之前补位只看"已选动作的肌群",二头池取完就顺手从臂池里补个三头进来 ——
+// 用户看到的就是"这和今天的目标对不上"。所以补位前先把天名翻译成主题。
+var TOPIC_MUSCLE_WORDS = ['胸','背','肩','臂','腿','核心','有氧','跑步'];
+var ARM_PUSH_RE = /三头|臂屈伸|下压/;
+var ARM_PULL_RE = /二头|弯举/;
+
+function parseDayTopic(name) {
+  name = name || '';
+  var main = [];
+  // 别名先于词表:后链/臀/下肢/深蹲/硬拉 都算腿日
+  if (/后链|臀|下肢|下身|深蹲|硬拉|弓步/.test(name)) main.push('腿');
+  TOPIC_MUSCLE_WORDS.forEach(function(w) {
+    if (name.indexOf(w) >= 0 && main.indexOf(w) < 0) main.push(w);
+  });
+  // 推 / 拉 决定臂的细分。注意"硬拉日"含"拉"但不是拉日 —— 先按腿日排除
+  var isLegDay = main.indexOf('腿') >= 0;
+  var side = null;
+  if (/推|三头|臂屈伸|卧推/.test(name)) side = 'push';
+  else if (!isLegDay && /拉|二头|划船|引体/.test(name)) side = 'pull';
+  var armSub = null;
+  if (ARM_PULL_RE.test(name)) armSub = '二头';
+  else if (ARM_PUSH_RE.test(name)) armSub = '三头';
+  else if (side === 'push') armSub = '三头';
+  else if (side === 'pull') armSub = '二头';
+  return { main: main, side: side, armSub: armSub };
+}
+window.parseDayTopic = parseDayTopic;
+
+// 这个动作能不能进今天?只卡一条硬规则:臂动作必须贴合当天的推/拉语义。
+function dayExOk(c, topic) {
+  if (!topic || !c || !c.m) return true;
+  if (c.m === '臂' && topic.armSub) {
+    return topic.armSub === '二头' ? ARM_PULL_RE.test(c.n || '') : ARM_PUSH_RE.test(c.n || '');
+  }
+  return true;
+}
+window.dayExOk = dayExOk;
+
+// 从 muscles(按顺序尝试的肌群列表)里挑一个替补。
+//   allowSameFam=false:严格模式 —— 既避同名,也避同族
+//   allowSameFam=true :放宽模式 —— 只避同名(池子太小、严格模式补不出时的兜底)
+//   accept(可选):额外准入过滤(例如拉日不接受三头动作)
+// 命中后会写入 seenName/seenFam,连续调用可一直补到池子耗尽。
+function pickRefillExFrom(muscles, seenName, seenFam, equip, level, bwShift, bwLevel, allowSameFam, accept) {
+  if (!muscles || !muscles.length) return null;
+  var chk = (typeof accept === 'function') ? accept : null;
+  for (var mi = 0; mi < muscles.length; mi++) {
+    var pool = [];
+    try { pool = getExes(muscles[mi], equip, level) || []; } catch (err) { pool = []; }
+    for (var i = 0; i < pool.length; i++) {
+      var c = pool[i];
+      if (!c || seenName[c.n]) continue;
+      if (chk && !chk(c)) continue;
+      var cf = getBwFamilyOf(c.n);
+      if (!allowSameFam && cf && seenFam[cf]) continue;
+      // 自重路径:补进来的动作也要跟上本周档位映射,否则难度和当天其它动作不一致
+      if (bwLevel && typeof applyBwProgression === 'function') {
+        var mapped = applyBwProgression(c, bwShift || 0, bwLevel);
+        if (mapped && mapped !== c) {
+          if (seenName[mapped.n]) continue;
+          if (chk && !chk(mapped)) continue;
+          var mf = getBwFamilyOf(mapped.n);
+          if (!allowSameFam && mf && seenFam[mf]) continue;
+          c = mapped; cf = mf;
+        }
+      }
+      seenName[c.n] = true;
+      if (cf) seenFam[cf] = true;
+      return c;
+    }
+  }
+  return null;
+}
+
+// 单肌群的便捷入口(保留旧签名)
+function pickRefillEx(m, seenName, seenFam, equip, level, bwShift, bwLevel) {
+  return pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false);
+}
+
+function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName) {
+  if (!arr || !arr.length) return [];
+  var topic = parseDayTopic(dayName);
+  var accept = function(c) { return dayExOk(c, topic); };
+  var seenName = {}, seenFam = {}, slots = [];
+  arr.forEach(function(e) {
+    if (!e) return;
+    if (seenName[e.n]) { slots.push({ drop: e.m }); return; }
+    var fam = getBwFamilyOf(e.n);
+    if (fam && seenFam[fam]) { slots.push({ drop: e.m }); return; }
+    seenName[e.n] = true;
+    if (fam) seenFam[fam] = true;
+    slots.push({ keep: e });
+  });
+  // 原地补位(不是追加到末尾):打卡状态是按 day_ex序号 存的,
+  // 顺序一变,已勾选的动作就会整体错位。
+  slots.forEach(function(slot, i) {
+    if (slot.keep) return;
+    // 严格:同肌群找不同族 → 搭档肌群找不同族
+    // 放宽:同肌群里找同族但不同名的(池子太小,例如自重背池几乎全是引体族)
+    //      宁可是"引体向上 + 前水平拉背",也不要让拉日只剩 2 个动作
+    var c = pickRefillExFrom([slot.drop].concat(PARTNER_MUSCLES[slot.drop] || []),
+              seenName, seenFam, equip, level, bwShift, bwLevel, false, accept)
+         || pickRefillExFrom([slot.drop], seenName, seenFam, equip, level, bwShift, bwLevel, true, accept);
+    if (c) slots[i] = { keep: c };
+  });
+  return slots.filter(function(s) { return s.keep; }).map(function(s) { return s.keep; });
+}
+window.dedupFamilyAndRefill = dedupFamilyAndRefill;
+
+// 训练量保底:当天动作太少时,按"主题肌群 → 搭档肌群 → 全身"补齐。
+// 为什么需要:自重/弹力带下某些肌群池极小(背池只剩 2 个、二头池过滤后只剩 1 个),
+//   pickExes 取不满,再经过同族去重,分化日实际只剩 2-3 个动作 ——
+//   用户看到的就是"今天才练两个?"(实测 6096 个训练日里 2701 个动作数 <= 3)。
+// 只追加到末尾:打卡状态按 day_ex序号 存,末尾新增不会让已勾选的动作错位。
+function ensureMinExes(day, equip, level, bwShift, bwLevel) {
+  var exes = (day && day.exes) || [];
+  if (!exes.length) return exes;
+  var name = (day && day.name) || '';
+  // 纯有氧/跑步日:跑一次本身就是一次训练,不按力量日口径凑数。
+  // 注意"力量+有氧 1"这种混合日不算 —— 它的力量部分照样要保底。
+  var allCardio = exes.every(function(e) { return !e.m || e.m === '有氧' || e.m === '跑步'; });
+  if (allCardio) return exes;
+  // 新手 4 个起步,中/高级 5 个 —— 低于这个数,一次训练撑不起来
+  var min = (level === 'beginner') ? 4 : 5;
+  if (exes.length >= min) return exes;
+
+  var topic = parseDayTopic(name);
+  var accept = function(c) { return dayExOk(c, topic); };
+  var seenName = {}, seenFam = {}, coreCnt = 0;
+  exes.forEach(function(e) {
+    if (!e) return;
+    seenName[e.n] = true;
+    var f = getBwFamilyOf(e.n);
+    if (f) seenFam[f] = true;
+    if (e.m === '核心') coreCnt++;
+  });
+
+  // 当天"该练什么":天名里写了的肌群 + (推/拉日)对应的臂细分
+  var own = topic.main.filter(function(m) { return m !== '有氧' && m !== '跑步'; });
+  if (topic.armSub && own.indexOf('臂') < 0) own.push('臂');
+  var noTopic = own.length === 0; // 全身日没有主题限制,随便补
+  // 同侧肌群:推日只认胸/肩/三头,拉日只认背/二头
+  var sameSide = topic.side === 'push' ? ['胸','肩','臂']
+               : topic.side === 'pull' ? ['背','臂'] : [];
+  // 最后兜底:核心和腿在任何力量日都不算离谱,同侧其次,反侧垫底
+  var fallback = ['核心','腿'].concat(sameSide).concat(['肩','胸','背','臂']);
+  // 核心配额:主题里带核心就随便加,否则最多补 2 个 —— 别把拉日补成核心日
+  var coreCap = (topic.main.indexOf('核心') >= 0 || noTopic) ? 99
+              : ((level === 'beginner') ? 1 : 2);
+
+  var out = exes.slice();
+  function fill(order, allowCore) {
+    for (var i = 0; i < order.length && out.length < min; i++) {
+      var m = order[i];
+      if (m === '核心' && (!allowCore || coreCnt >= coreCap)) continue;
+      var c = pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false, accept);
+      if (!c) continue;
+      out.push(c);
+      if (c.m === '核心') coreCnt++;
+    }
+  }
+  // 分档补:主题内 → 核心(限额) → 同侧 → 全身兜底。多轮直到达标或补不动
+  for (var round = 0; round < 4 && out.length < min; round++) {
+    var before = out.length;
+    if (noTopic) { fill(fallback, true); }
+    else {
+      fill(own, false);
+      if (out.length < min) fill(['核心','核心'], true);
+      if (out.length < min) fill(sameSide, false);
+      if (out.length < min) fill(fallback, true);
+    }
+    if (out.length === before) break;
+  }
+  return out;
+}
+window.ensureMinExes = ensureMinExes;
 
 // ============ 日程安排 ============
 function getSchedule(days) {
@@ -1307,6 +1801,13 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     if (actualKm) goalCfg = Object.assign({}, goalCfg, {_weekKm: actualKm});
   }
   html += renderSummary(goalNames[goal], levelNames[level], equipNames[equip], days, goalCfg, cfg.sets, intensityStr, goal);
+  // 🧠 自适应提示:紧跟摘要卡 —— 用户第一眼就能看到"为什么这周是这么多组 / 档位为什么变了"
+  html += renderLevelCalibrationBanner();
+  html += renderAdaptiveVolumeBanner();
+  // 渲染后即清空:这两个 banner 只在"刚生成"时出现一次,
+  // 后续 refreshPlan / 恢复计划等复用 trainingDays 的重渲染路径不应重复弹提示。
+  _lastLevelCalibration = null;
+  _lastAdaptiveInfo = null;
   // 术语图例行（紧跟摘要，新手第一眼就能看懂强度缩写）
   html += renderLegendRow(goal);
   var isLastWeek = goal === "marathon" ? (currentWeek >= 16) : (currentWeek >= getCycleLength());
@@ -1719,8 +2220,37 @@ function doGenerate() {
       // GA4: 计划生成
       if (typeof track === 'function') track('generate_plan', { goal: goal, level: level, days: days, equip: equip, week: currentWeek });
 
+      // 🧠 P1-1 训练水平自动校准:读 trainlog 估 1RM → 体重倍数 → 档位(只升不降 / 数据不足不干预 / 可撤销)
+      // ⚠️ 顺序铁律:必须先读上周完成率,再改 level。
+      //    doneKey 前缀形如 fitbuddy_done_<goal>_<level>_<days>_c<cycle>_w<week>,
+      //    档位一改前缀就跟着变,先改档会让上周完成率读不到(自适应反馈链断裂)。
+      var lastWkRate = getLastWeekCompletionRate(); // 内部已含零打卡保护
+      _lastLevelCalibration = null;
+      try {
+        var cal = estimateLevelFromLog();
+        if (cal && LEVEL_RANK[cal.level] > LEVEL_RANK[level]) {
+          cal.from = level;
+          level = cal.level;
+          _lastLevelCalibration = cal;
+          // 同步表单 radio,避免"界面选的新手、计划按中级生成"的不一致
+          var lr = document.querySelector('input[name="level"][value="' + level + '"]');
+          if (lr) lr.checked = true;
+        }
+      } catch(e) { /* 校准失败不影响正常生成 */ }
+
       var cfg = CONFIGS[level] || CONFIGS.beginner;
       var goalCfg = cfg[goal] || cfg.muscle;
+
+      // 🧠 P1-2 自适应容量:按上周完成率调整本周组数(浅拷贝,绝不污染全局 CONFIGS)
+      // 自重路径走的是"换变式"(buildPlan 里的 applyBwProgression),这里不再叠加减组,避免双重减量过头。
+      // 心肺/马拉松的摘要卡用的是总时长而非组数,调 sets 无意义,因此也跳过。
+      _lastAdaptiveInfo = null;
+      if (lastWkRate !== null && lastWkRate !== undefined) {
+        var isBwAdaptive = (equip === 'bodyweight' && goal !== 'cardio' && goal !== 'marathon');
+        var adaptiveSets = isBwAdaptive ? cfg.sets : computeAdaptiveVolume(cfg.sets, lastWkRate);
+        _lastAdaptiveInfo = {rate: lastWkRate, baseSets: cfg.sets, sets: adaptiveSets, note: getAdaptiveIntensityNote(lastWkRate)};
+        if (adaptiveSets !== cfg.sets) cfg = Object.assign({}, cfg, {sets: adaptiveSets});
+      }
 
       var schedule = getSchedule(days);
       var weekOffset = goal === "marathon" ? (currentWeek - 1) : getWeekOffset(((currentWeek - 1) % getCycleLength()) + 1, getCycleLength());
@@ -1769,6 +2299,9 @@ function doGenerate() {
       fbRefreshRetentionUI();
     } catch(e) {
       console.error("生成计划出错:", e);
+      // 异常时重置自适应状态,避免残留的校准信息在后续重渲染(refreshPlan 等)路径上弹出陈旧提示
+      _lastLevelCalibration = null;
+      _lastAdaptiveInfo = null;
       if (btn) {
         btn.classList.remove("loading");
         btn.innerHTML = '生成计划';
@@ -1791,7 +2324,8 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   else if (goal === "cardio") trainingDays = buildCardioPlan(level, days, equip, weekOffset);
   else if (goal === "marathon") trainingDays = buildMarathonPlan(level, days, equip, weekOffset);
   // 仅自重 + 力量类目标:按本周难度档位把动作映射到变式族对应档位(周期升档/降档)
-  if (equip === "bodyweight" && goal !== "cardio" && goal !== "marathon") {
+  var isBwMap = (equip === "bodyweight" && goal !== "cardio" && goal !== "marathon");
+  if (isBwMap) {
     var cycleLen = getCycleLength();
     var wkArr = buildCycleWeekInfo(cycleLen);
     var wkNum = ((currentWeek - 1) % cycleLen) + 1;
@@ -1818,7 +2352,26 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   trainingDays.forEach(function(day){
     if (!day.exes || day.exes.length === 0) day.exes = getFullBody(equip, level, goal, weekOffset);
     day.exes = dedup(day.exes).filter(function(e){ return !!e; });
+    // 同一天同"变式族"只留一个(俯卧撑 + 宽距俯卧撑 这种实质重复),空出的槽位补不同族动作
+    day.exes = dedupFamilyAndRefill(day.exes, equip, level,
+      isBwMap ? shift : 0, isBwMap ? level : null, day.name);
+    // 训练量保底:去重后动作太少(池子小)就按主题肌群补齐,别让训练日只剩两三个动作
+    day.exes = ensureMinExes(day, equip, level,
+      isBwMap ? shift : 0, isBwMap ? level : null);
   });
+  // 兜底补标记:补位/保底进来的动作也走 applyBwProgression,挑战周同样会越级上探,
+  // 但那次映射不经过上面的标记逻辑。不补的话同一天里有的动作提示"做不动可退回上一档"、
+  // 有的不提示,用户会以为是 bug。
+  if (isBwMap) {
+    trainingDays.forEach(function(day){
+      if (!day.exes) return;
+      day.exes = day.exes.map(function(ex){
+        if (!ex || !ex.diff || ex._challengeUp) return ex;
+        if ((bwDiffRank[ex.diff] || 3) > bwMaxRank) return Object.assign({}, ex, {_challengeUp: true});
+        return ex;
+      });
+    });
+  }
   return trainingDays;
 }
 
@@ -1826,7 +2379,9 @@ function buildMusclePlan(level, days, equip, wOff) {
   var exCnt = level === "beginner" ? 3 : level === "intermediate" ? 4 : 5;
   if (days <= 3) {
     var arr = [];
-    for (var i=0; i<days; i++) arr.push({name:"全身训练 Day"+(i+1), exes:getFullBody(equip, level, "muscle", wOff)});
+    // wOff + i 错开每天的轮转起点。旧版传的是同一个 wOff → Day1/2/3 动作完全一样,
+    // 用户选 3 天全身计划却连着三天练同一套动作(与 buildShapePlan 的 wOff+i 不一致)。
+    for (var i=0; i<days; i++) arr.push({name:"全身训练 Day"+(i+1), exes:getFullBody(equip, level, "muscle", wOff + i, true)});
     return arr;
   }
   if (days === 4) {
@@ -1866,11 +2421,16 @@ function buildStrengthPlan(level, days, equip, wOff) {
   if (days <= 3) {
     var names = ["全身力量 A","全身力量 B","全身力量 C"];
     return Array.from({length:days},function(_,i){
+      // sq/core 旧版用的是同一个 wOff(只有 bp/rw 错开)→ 三天里深蹲和核心动作永远一样。
+      // 另外旧版全身力量日只有深蹲/卧推/划船/核心,肩和臂一周一次都不练 —— 补一个臂动作,
+      // 按天轮换三头/二头,保证两类都练到(力量计划靠卧推/划船覆盖肩,不必再加孤立肩推)。
+      var arm = (i % 2 === 0) ? tri : bic;
       return {name:names[i]||"全身力量 "+(i+1), exes:dedup(
-        pickExes(sq,1,wOff).concat(
+        pickExes(sq,1,wOff+i).concat(
         pickExes(bp,1,wOff+i)).concat(
         pickExes(rw,1,wOff+i)).concat(
-        pickExes(core,1,wOff))
+        pickExes(arm,1,wOff+i)).concat(
+        pickExes(core,1,wOff+i))
       )};
     });
   }
@@ -1889,13 +2449,14 @@ function buildCutPlan(level, days, equip, wOff) {
   var plan = [];
   for (var i=0; i<days; i++) {
     if (i % 2 === 0) {
-      var exes = getFullBody(equip, level, "muscle", wOff);
+      // wOff + i 错开:旧版所有力量日都用同一个 wOff → "力量+有氧 1/2/3" 内容一模一样
+      var exes = getFullBody(equip, level, "muscle", wOff + i, true);
       var cardio = getExes("有氧",equip,level);
-      exes.push(pickExes(cardio,1,wOff)[0] || {n:"跳绳",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""});
+      exes.push(pickExes(cardio,1,wOff + i)[0] || {n:"跳绳",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""});
       plan.push({name:"力量+有氧 " + (Math.floor(i/2)+1), exes: dedup(exes)});
     } else {
       var cardExes = getExes("有氧",equip,level);
-      var picked2 = pickExes(cardExes,2,wOff);
+      var picked2 = pickExes(cardExes,2,wOff + i);
       plan.push({name:"有氧专项 " + (Math.floor(i/2)+1), exes: picked2.length ? picked2 : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
     }
   }
@@ -1943,7 +2504,7 @@ function buildShapePlan(level, days, equip, wOff) {
   for (var i=0; i<days; i++) {
     if (i % 3 !== 2) {
       // 力量塑形日:全身基础动作 + 臀腿/肩背重点轮换
-      var exes = getFullBody(equip, level, "muscle", wOff + i);
+      var exes = getFullBody(equip, level, "muscle", wOff + i, true);
       var focus = [];
       if (i % 2 === 0) {
         // 臀腿线条:臀桥/深蹲/硬拉/弓步类
@@ -1960,7 +2521,8 @@ function buildShapePlan(level, days, equip, wOff) {
     } else {
       // 有氧线条日:慢速有氧控体脂
       cardioIdx++;
-      var picked = pickExes(cardioPool, 1, wOff + i);
+      // 取 2 个:只给 1 个有氧动作的话,这一天的训练量明显撑不起来
+      var picked = pickExes(cardioPool, 2, wOff + i);
       plan.push({name:"有氧线条 " + cardioIdx, exes: picked.length ? picked : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
     }
   }
@@ -2316,7 +2878,7 @@ var BW_ADJUST_TEXT = {
   "+25%": "冲击最高档（升 3 档）",
   "+30%": "冲击最高档（升 3 档）",
   "-15%": "降 1 档，巩固动作质量",
-  "-30%": "最基础变式，彻底恢复"
+  "-30%": "降 1 档 + 组数减半，彻底恢复"
 };
 // 仅自重时横幅左侧的周阶段文案(替换 weightAdjust 中"增加重量"等器械语言)
 var BW_NOTE_TEXT = {
@@ -2328,7 +2890,7 @@ var BW_NOTE_TEXT = {
   "+25%": "巅峰周 — 变式升 3 档，冲击族内最高",
   "+30%": "巅峰周 — 变式升 3 档，冲击族内最高",
   "-15%": "半减载周 — 降 1 档，巩固动作质量",
-  "-30%": "减载周 — 最基础变式，彻底恢复"
+  "-30%": "减载周 — 降 1 档 + 减量，让身体超量恢复"
 };
 // 📖 术语图例行：一次性解释强度栏里的缩写（新手不懵，老手自动忽略）
 function renderLegendRow(goal) {
@@ -2944,7 +3506,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
         '<div class="ex-left" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
-          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+ex.diff+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
+          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
         '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+'</div>'+
       '</div>';
@@ -3247,6 +3809,95 @@ function saveNote(noteId, goal, week, dayName) {
   if (val) localStorage.setItem(key, val);
   else localStorage.removeItem(key);
 }
+
+// ============ 动作类型判定(全站统一口径) ============
+// ⚠️ 为什么不能只信 BODYWEIGHT_EX_NAMES:
+//   它在 data-constants.js 顶层由静态 EXES 构建;而自定义动作要等启动时的 mergeCustomExes()
+//   才被 push 进 EXES —— 集合那时早已定型,自定义的自重动作永远进不去。
+//   后果:用户自建的「平板支撑」在进度页既没被过滤掉,趋势图又按重量轴渲染 → 显示成"0kg × 30次"。
+//   统一走这里:先查 EXES(此时已含自定义),再用静态集合兜底。
+function isBodyweightEx(name) {
+  if (!name) return false;
+  try {
+    var ex = (typeof getExByName === 'function') ? getExByName(name) : null;
+    if (ex && (ex.eq === 'bodyweight' || ex.eq === 'band')) return true;
+  } catch(e) {}
+  try {
+    if (typeof BODYWEIGHT_EX_NAMES !== 'undefined' && BODYWEIGHT_EX_NAMES &&
+        BODYWEIGHT_EX_NAMES.has && BODYWEIGHT_EX_NAMES.has(name)) return true;
+  } catch(e) {}
+  return false;
+}
+
+// 计时类动作:进步看的是"撑了多少秒",不是"做了多少个"
+var TIMED_EX_KEYWORDS = ['平板支撑', '侧撑', '静蹲', '悬挂', '死虫', '鸟狗', '靠墙'];
+function isTimedEx(name) {
+  if (!name) return false;
+  for (var i = 0; i < TIMED_EX_KEYWORDS.length; i++) {
+    if (name.indexOf(TIMED_EX_KEYWORDS[i]) >= 0) return true;
+  }
+  return false;
+}
+
+// 训练日志该按什么单位渲染: 器械→重量 / 自重→次数 / 计时→秒
+// mode='reps' 时趋势图走"数量轴",不再出现 kg
+function getLogUnit(exName) {
+  if (isTimedEx(exName))       return {mode:'reps',   unit:'秒', label:'时长'};
+  if (isBodyweightEx(exName))  return {mode:'reps',   unit:'次', label:'次数'};
+  return {mode:'weight', unit:'kg', label:'重量'};
+}
+window.isBodyweightEx = isBodyweightEx;
+window.isTimedEx = isTimedEx;
+window.getLogUnit = getLogUnit;
+
+// 同一天可能被记录多次(多组各记一次 / 反复修改重复保存)。
+// 趋势图看的是"跨天进步",X 轴每个点应当 = 一天,而不是 = 一条记录。
+// 否则横轴会出现一串重复日期(比如满屏 08-01),折线也把"组间波动"误当成"长期趋势"。
+// mode='reps' 取当日最高次数/秒数;mode='weight' 取当日最大重量。
+function aggregateLogByDate(log, mode) {
+  if (!log || !log.length) return [];
+  var buckets = {}, order = [];
+  log.forEach(function(e) {
+    if (!e) return;
+    // 兼容各种历史写法:ISO 串 / 含时间的串 / 中文斜杠日期,统一裁到 YYYY-MM-DD
+    var d = String(e.date || '').trim();
+    if (d.length > 10) d = d.slice(0, 10);
+    if (!d) d = '未知日期';
+    if (!buckets[d]) { buckets[d] = []; order.push(d); }
+    buckets[d].push(e);
+  });
+  // 按真实时间升序(不能按字典序 —— "2026-8-1" 这种未补零的历史数据会排错)
+  order.sort(function(a, b) {
+    var ta = Date.parse(a), tb = Date.parse(b);
+    if (isNaN(ta)) ta = 0;
+    if (isNaN(tb)) tb = 0;
+    return ta - tb;
+  });
+  var pick = (mode === 'reps')
+    ? function(a, b) { return (b.reps || 0) > (a.reps || 0); }
+    : function(a, b) { return (b.weight || 0) > (a.weight || 0); };
+  return order.map(function(d) {
+    var best = buckets[d][0];
+    buckets[d].forEach(function(e) { if (pick(best, e)) best = e; });
+    return {
+      date: d,
+      weight: best.weight || 0,
+      reps: best.reps || 0,
+      rpe: best.rpe || 0,
+      sets: buckets[d].length   // 当天合并了几条,给 UI 显示用
+    };
+  });
+}
+window.aggregateLogByDate = aggregateLogByDate;
+
+// 日志日期 → 短标签 "8/1"(图表横轴 / 卡片文案共用)
+function fbChartDate(d) {
+  var s = String(d || '').trim();
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return parseInt(m[2], 10) + '/' + parseInt(m[3], 10);
+  return s.length > 5 ? s.slice(5) : (s || '—');
+}
+window.fbChartDate = fbChartDate;
 
 // ============ 渐进超负荷记录 ============
 // RPE 打分指南(底部弹窗): 核心是"还能标准做几次"的 RIR 换算法
@@ -4909,21 +5560,25 @@ function migrateBodyweightLog() {
   try {
     var log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}');
     var changed = false;
+    // 用 isBodyweightEx 而非直接判 eq: 覆盖弹力带动作与用户自定义的自重动作
     Object.keys(log).forEach(function(name){
-      var ex = getExByName(name);
-      if (!ex || ex.eq !== 'bodyweight') return;
+      if (!isBodyweightEx(name)) return;
       (log[name] || []).forEach(function(e){
         if (e.weight > 0) { e.reps = e.weight; e.weight = 0; changed = true; }
       });
     });
-    if (changed) localStorage.setItem('fitbuddy_trainlog', JSON.stringify(log));
+    if (changed) {
+      localStorage.setItem('fitbuddy_trainlog', JSON.stringify(log));
+      // ⚠️ 必须同步内存:全局 trainingLog 在启动时已载入,只改 localStorage 的话
+      //    本次会话仍在用未修复的旧数据(要等刷新才生效),趋势图还会把秒数当成重量画。
+      if (typeof trainingLog !== 'undefined') trainingLog = log;
+    }
   } catch(e) {}
   try {
     var prs = JSON.parse(localStorage.getItem(PR_KEY) || '{}');
     var changed2 = false;
     Object.keys(prs).forEach(function(name){
-      var ex = getExByName(name);
-      if (ex && (ex.eq === 'bodyweight' || ex.eq === 'band')) { delete prs[name]; changed2 = true; }
+      if (isBodyweightEx(name)) { delete prs[name]; changed2 = true; }
     });
     if (changed2) localStorage.setItem(PR_KEY, JSON.stringify(prs));
   } catch(e) {}
@@ -7400,9 +8055,10 @@ function renderCycleCalendar() {
 
 // ============ 渐进超负荷趋势分析 ============
 function renderProgressionAnalysis() {
+  // 自重动作不再被排除 —— 俯卧撑/引体/平板支撑的进步恰恰最有看点。
+  // 过去"一刀切过滤"让这类动作完全没有趋势;正确做法是换轴:它们走"次数/时长",不显示 kg。
   var exNames = Object.keys(trainingLog).filter(function(k){
-    if (BODYWEIGHT_EX_NAMES.has(k)) return false;
-    return trainingLog[k].length >= 2;
+    return trainingLog[k] && trainingLog[k].length >= 2;
   });
   if (!exNames.length) return '';
 
@@ -7410,29 +8066,51 @@ function renderProgressionAnalysis() {
   html += '<div style="display:flex;flex-direction:column;gap:12px;">';
 
   exNames.slice(0, 5).forEach(function(exName) {
-    var log = trainingLog[exName];
-    if (!log || log.length < 2) return;
+    var raw = trainingLog[exName];
+    if (!raw || raw.length < 2) return;
+    var u = getLogUnit(exName);
+    var isReps = u.mode === 'reps';
+    // 同日多条先合并成"天",否则增长率的起点/终点可能取自同一天的两条记录(=0%)
+    var log = aggregateLogByDate(raw, isReps ? 'reps' : 'weight');
+    if (log.length < 2) return;   // 全是同一天记的,谈不上趋势
     var first = log[0];
     var last = log[log.length - 1];
-    var firstVol = (first.weight || 0) * (first.reps || 0);
-    var lastVol = (last.weight || 0) * (last.reps || 0);
-    var growth = firstVol > 0 ? Math.round((lastVol / firstVol - 1) * 100) : 0;
+
+    var firstVal, lastVal, startTxt, endTxt, metricLabel;
+    if (isReps) {
+      firstVal = first.reps || 0;
+      lastVal  = last.reps || 0;
+      startTxt = fbChartDate(first.date) + ' · ' + firstVal + u.unit;
+      endTxt   = fbChartDate(last.date) + ' · ' + lastVal + u.unit;
+      metricLabel = (u.unit === '秒' ? '⏱ 时长' : '🔢 次数');
+    } else {
+      firstVal = (first.weight || 0) * (first.reps || 0);
+      lastVal  = (last.weight || 0) * (last.reps || 0);
+      startTxt = fbChartDate(first.date) + ' · ' + (first.weight || 0) + 'kg×' + (first.reps || 0);
+      endTxt   = fbChartDate(last.date) + ' · ' + (last.weight || 0) + 'kg×' + (last.reps || 0);
+      metricLabel = '📊 训练量';
+    }
+    var growth = firstVal > 0 ? Math.round((lastVal / firstVal - 1) * 100) : 0;
     var growthColor = growth > 0 ? '#22C55E' : (growth < 0 ? '#EF4444' : '#999');
 
-    // Calculate estimated 1RM progression
-    var first1RM = first.weight * (1 + (first.reps || 1) / 30);
-    var last1RM = last.weight * (1 + (last.reps || 1) / 30);
-    var rmGrowth = first1RM > 0 ? Math.round((last1RM / first1RM - 1) * 100) : 0;
+    // 估算 1RM 只对有重量的动作成立 —— 自重动作展示它只会给出误导性数字
+    var rmHtml = '';
+    if (!isReps) {
+      var first1RM = first.weight * (1 + (first.reps || 1) / 30);
+      var last1RM = last.weight * (1 + (last.reps || 1) / 30);
+      var rmGrowth = first1RM > 0 ? Math.round((last1RM / first1RM - 1) * 100) : 0;
+      rmHtml = '<span style="font-size:12px;font-weight:600;color:' + (rmGrowth > 0 ? '#22C55E' : '#999') + ';">💪 估算1RM ' + (rmGrowth > 0 ? '+' : '') + rmGrowth + '%</span>';
+    }
 
     html += '<div style="background:var(--bg);border-radius:10px;padding:10px 12px;">' +
       '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">' + exName + '</div>' +
       '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);">' +
-        '<span>起点: ' + (first.weight || 0) + 'kg×' + (first.reps || 0) + '</span>' +
-        '<span>当前: ' + (last.weight || 0) + 'kg×' + (last.reps || 0) + '</span>' +
+        '<span>' + startTxt + '</span>' +
+        '<span>' + endTxt + '</span>' +
       '</div>' +
       '<div style="display:flex;justify-content:space-between;margin-top:4px;">' +
-        '<span style="font-size:12px;font-weight:600;color:' + growthColor + ';">📊 训练量 ' + (growth > 0 ? '+' : '') + growth + '%</span>' +
-        '<span style="font-size:12px;font-weight:600;color:' + (rmGrowth > 0 ? '#22C55E' : '#999') + ';">💪 估算1RM ' + (rmGrowth > 0 ? '+' : '') + rmGrowth + '%</span>' +
+        '<span style="font-size:12px;font-weight:600;color:' + growthColor + ';">' + metricLabel + ' ' + (growth > 0 ? '+' : '') + growth + '%</span>' +
+        rmHtml +
       '</div>' +
     '</div>';
   });

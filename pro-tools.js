@@ -224,7 +224,25 @@ function getRPEAdjustment(exName) {
   if (!avgRPE) return null;
 
   var last = trainingLog[exName][trainingLog[exName].length - 1];
-  if (!last || !last.weight) return null;
+  if (!last) return null;
+
+  // 自重/计时动作:重量恒为 0,上面那句 !last.weight 会让它们永远拿不到建议。
+  // 对它们而言"加量"= 多做几次/多撑几秒,而不是加 kg。
+  var u = (typeof getLogUnit === 'function') ? getLogUnit(exName) : {mode:'weight', unit:'kg', label:'重量'};
+  if (u.mode === 'reps') {
+    var reps = parseInt(last.reps) || 0;
+    if (!reps) return null;
+    if (avgRPE >= 9) {
+      return { action: 'decrease', rpe: avgRPE, text: '↓建议' + Math.max(1, reps - 2) + u.unit + '(太吃力)' };
+    } else if (avgRPE <= 6) {
+      return { action: 'increase', rpe: avgRPE, text: '↑建议' + (reps + 2) + u.unit + '(很轻松)' };
+    } else if (avgRPE >= 7.5 && avgRPE <= 8.5) {
+      return { action: 'maintain', rpe: avgRPE, text: '✓维持' + reps + u.unit + '(状态好)' };
+    }
+    return null;
+  }
+
+  if (!last.weight) return null;
 
   if (avgRPE >= 9) {
     // RPE ≥ 9:太难,建议-5%重量
@@ -314,9 +332,31 @@ var DeloadCtrl = {
 
 // ============ 5. 渐进超负荷趋势线 ============
 
-function drawProgressionChart(canvasId, exName, log) {
+// 横轴标签统一走 planner-core 的 fbChartDate("8/1" 这种月/日)
+// ⚠️ 别直接 slice(5):历史数据里有 "2026-8-1" 这种没补零的写法,slice 会切出 "-1"(看起来像负数),
+//    而 ISO 串又切出 "08-01"。统一解析后再格式化,顺带去掉前导零。
+if (typeof fbChartDate !== 'function') {
+  var fbChartDate = function(d) {
+    var s = String(d || '').trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return parseInt(m[2], 10) + '/' + parseInt(m[3], 10);
+    return s.length > 5 ? s.slice(5) : (s || '—');
+  };
+}
+
+// unitInfo: {mode:'weight'|'reps', unit:'kg'|'次'|'秒', label:'重量'|'次数'|'时长'}
+// 自重/计时动作走 reps 模式(数量轴) —— 这类动作没有重量可言,画 kg 轴毫无意义
+function drawProgressionChart(canvasId, exName, log, unitInfo) {
   var canvas = document.getElementById(canvasId);
   if (!canvas || !log || log.length < 2) return;
+
+  var u = unitInfo || {mode:'weight', unit:'kg', label:'重量'};
+  var isReps = u.mode === 'reps';
+
+  // 同一天记过多次的合并成一天一个点 —— 否则横轴会挤着一串重复日期
+  if (typeof aggregateLogByDate === 'function') log = aggregateLogByDate(log, isReps ? 'reps' : 'weight');
+  if (log.length < 2) return;
+
 
   var ctx = canvas.getContext('2d');
   var dpr = window.devicePixelRatio || 1;
@@ -336,14 +376,18 @@ function drawProgressionChart(canvasId, exName, log) {
   ctx.fillStyle = cardColor;
   ctx.fillRect(0, 0, W, H);
 
-  // 计算训练量 (weight × reps) 和 重量两条线
-  var volData = log.map(function(e) { return { v: (e.weight || 0) * (e.reps || 0), label: e.date.slice(5) }; });
-  var weightData = log.map(function(e) { return { v: e.weight || 0, label: e.date.slice(5) }; });
+  // 主指标线:器械=重量, 自重/计时=次数或秒
+  var mainData = log.map(function(e) {
+    return { v: isReps ? (e.reps || 0) : (e.weight || 0), label: fbChartDate(e.date) };
+  });
+  // 训练量柱(weight×reps)只对器械动作有意义
+  var volData = null;
+  if (!isReps) {
+    volData = log.map(function(e) { return { v: (e.weight || 0) * (e.reps || 0), label: fbChartDate(e.date) }; });
+  }
 
-  var maxVol = Math.max.apply(null, volData.map(function(d) { return d.v; }).concat([1]));
-  var maxWeight = Math.max.apply(null, weightData.map(function(d) { return d.v; }).concat([1]));
-  maxVol = Math.ceil(maxVol * 1.15);
-  maxWeight = Math.ceil(maxWeight * 1.15);
+  var maxMain = Math.ceil(Math.max.apply(null, mainData.map(function(d) { return d.v; }).concat([1])) * 1.15);
+  var maxVol = volData ? Math.ceil(Math.max.apply(null, volData.map(function(d) { return d.v; }).concat([1])) * 1.15) : 0;
 
   // 网格
   var borderColor = getComputedStyle(document.body).getPropertyValue('--border').trim() || '#EBEBEB';
@@ -358,116 +402,175 @@ function drawProgressionChart(canvasId, exName, log) {
     ctx.stroke();
   }
 
-  // Y轴标签 (训练量)
+  // Y轴标签 (主指标:器械=训练量, 自重/计时=次数或秒)
   var text3Color = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
   ctx.fillStyle = text3Color;
   ctx.font = '9px sans-serif';
   ctx.textAlign = 'right';
+  var yMax = isReps ? maxMain : maxVol;
   for (var i = 0; i <= ySteps; i++) {
-    var val = Math.round(maxVol - (maxVol / ySteps) * i);
+    var val = Math.round(yMax - (yMax / ySteps) * i);
     var y = pad.top + (ch / ySteps) * i;
     ctx.fillText(val, pad.left - 6, y + 3);
   }
 
-  // X轴标签
+  // X轴标签: 等间隔取样,并保证起点与当前(首尾)一定出现
   ctx.textAlign = 'center';
-  var maxLabels = Math.min(volData.length, Math.floor(cw / 50));
-  var step = Math.max(1, Math.ceil(volData.length / maxLabels));
-  for (var i = 0; i < volData.length; i += step) {
-    var x = pad.left + (cw / (volData.length - 1 || 1)) * i;
-    ctx.fillText(volData[i].label, x, H - pad.bottom + 16);
+  var n = mainData.length;
+  var maxLabels = Math.max(2, Math.min(n, Math.floor(cw / 46)));
+  var step = Math.max(1, Math.ceil((n - 1) / (maxLabels - 1)));
+  var labelIdx = [];
+  for (var i = 0; i < n; i += step) labelIdx.push(i);
+  if (labelIdx[labelIdx.length - 1] !== n - 1) labelIdx.push(n - 1);
+  labelIdx.forEach(function(i) {
+    var x = pad.left + (cw / (n - 1 || 1)) * i;
+    ctx.fillText(mainData[i].label, x, H - pad.bottom + 16);
+  });
+
+  var pts = mainData.map(function(d, i) {
+    var x = pad.left + (cw / (mainData.length - 1 || 1)) * i;
+    var y = pad.top + ch - (d.v / maxMain * ch);
+    return {x: x, y: y};
+  });
+
+  if (!isReps) {
+    // 训练量柱状图(仅器械动作)
+    var barW = Math.min(20, cw / volData.length * 0.6);
+    volData.forEach(function(d, i) {
+      var x = pad.left + (cw / (volData.length - 1 || 1)) * i - barW / 2;
+      var barH = (d.v / maxVol * ch);
+      var y = pad.top + ch - barH;
+      ctx.fillStyle = '#FF6B35';
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(x, y, barW, barH);
+      ctx.globalAlpha = 1;
+    });
+  } else {
+    // 数量模式:用淡色面积填充代替"训练量"柱(自重动作没有 kg×次 可言)
+    ctx.beginPath();
+    pts.forEach(function(p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.lineTo(pts[pts.length - 1].x, pad.top + ch);
+    ctx.lineTo(pts[0].x, pad.top + ch);
+    ctx.closePath();
+    ctx.fillStyle = '#FF6B35';
+    ctx.globalAlpha = 0.14;
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
-  // 训练量柱状图
-  var barW = Math.min(20, cw / volData.length * 0.6);
-  volData.forEach(function(d, i) {
-    var x = pad.left + (cw / (volData.length - 1 || 1)) * i - barW / 2;
-    var barH = (d.v / maxVol * ch);
-    var y = pad.top + ch - barH;
-    ctx.fillStyle = '#FF6B35';
-    ctx.globalAlpha = 0.25;
-    ctx.fillRect(x, y, barW, barH);
-    ctx.globalAlpha = 1;
-  });
-
-  // 重量折线
-  ctx.strokeStyle = '#3B82F6';
+  // 主指标折线
+  ctx.strokeStyle = isReps ? '#FF6B35' : '#3B82F6';
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  weightData.forEach(function(d, i) {
-    var x = pad.left + (cw / (weightData.length - 1 || 1)) * i;
-    var y = pad.top + ch - (d.v / maxWeight * ch);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
+  pts.forEach(function(p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
   ctx.stroke();
 
-  // 重量数据点
-  ctx.fillStyle = '#3B82F6';
-  weightData.forEach(function(d, i) {
-    var x = pad.left + (cw / (weightData.length - 1 || 1)) * i;
-    var y = pad.top + ch - (d.v / maxWeight * ch);
+  // 数据点
+  ctx.fillStyle = isReps ? '#FF6B35' : '#3B82F6';
+  pts.forEach(function(p) {
     ctx.beginPath();
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
     ctx.fill();
   });
 
   // 图例
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#FF6B35';
-  ctx.globalAlpha = 0.5;
-  ctx.fillRect(pad.left, 4, 10, 10);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = text3Color;
-  ctx.fillText('训练量(kg×次)', pad.left + 14, 12);
-  ctx.fillStyle = '#3B82F6';
-  ctx.beginPath();
-  ctx.arc(pad.left + 100, 9, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = text3Color;
-  ctx.fillText('重量(kg)', pad.left + 110, 12);
+  if (!isReps) {
+    ctx.fillStyle = '#FF6B35';
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(pad.left, 4, 10, 10);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = text3Color;
+    ctx.fillText('训练量(kg×次)', pad.left + 14, 12);
+    ctx.fillStyle = '#3B82F6';
+    ctx.beginPath();
+    ctx.arc(pad.left + 100, 9, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = text3Color;
+    ctx.fillText('重量(kg)', pad.left + 110, 12);
+  } else {
+    ctx.fillStyle = '#FF6B35';
+    ctx.beginPath();
+    ctx.arc(pad.left + 4, 9, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = text3Color;
+    ctx.fillText(u.label + '(' + u.unit + ')', pad.left + 14, 12);
+  }
 }
 
 function renderProgressionCharts() {
   if (!trainingLog) return '';
+  // ⚠️ 过去这里按"是否自重"把动作过滤掉,导致俯卧撑/引体/平板支撑这类动作完全没有趋势图。
+  //    自重动作恰恰是进步最直观的(20个→35个、30秒→90秒),该做的不是隐藏,而是换轴:
+  //    它们走"次数/时长",不出现 kg。
   var exNames = Object.keys(trainingLog).filter(function(k) {
-    if (typeof BODYWEIGHT_EX_NAMES !== 'undefined' && BODYWEIGHT_EX_NAMES && BODYWEIGHT_EX_NAMES.has) {
-      try { if (BODYWEIGHT_EX_NAMES.has(k)) return false; } catch(e) {}
-    }
     return trainingLog[k] && trainingLog[k].length >= 2;
   });
   if (!exNames.length) return '';
 
   var html = '';
   exNames.slice(0, 6).forEach(function(exName, idx) {
-    var log = trainingLog[exName];
-    if (!log || log.length < 2) return;
+    var raw = trainingLog[exName];
+    if (!raw || raw.length < 2) return;
+
+    var u = (typeof getLogUnit === 'function') ? getLogUnit(exName) : {mode:'weight', unit:'kg', label:'重量'};
+    // 同一天记多次 → 合并成一天一个点(文案和图表必须用同一份,否则卡片数字和图对不上)
+    var log = (typeof aggregateLogByDate === 'function')
+      ? aggregateLogByDate(raw, u.mode === 'reps' ? 'reps' : 'weight')
+      : raw;
     var first = log[0];
     var last = log[log.length - 1];
     if (!first || !last) return;
-    var firstVol = (first.weight || 0) * (first.reps || 0);
-    var lastVol = (last.weight || 0) * (last.reps || 0);
-    var growth = firstVol > 0 ? Math.round((lastVol / firstVol - 1) * 100) : 0;
+
+    var firstVal, lastVal, startTxt, endTxt;
+    if (u.mode === 'reps') {
+      firstVal = first.reps || 0;
+      lastVal  = last.reps || 0;
+      startTxt = fbChartDate(first.date) + ' · ' + firstVal + u.unit;
+      endTxt   = fbChartDate(last.date) + ' · ' + lastVal + u.unit;
+    } else {
+      firstVal = (first.weight || 0) * (first.reps || 0);
+      lastVal  = (last.weight || 0) * (last.reps || 0);
+      startTxt = fbChartDate(first.date) + ' · ' + (first.weight || 0) + 'kg×' + (first.reps || 0);
+      endTxt   = fbChartDate(last.date) + ' · ' + (last.weight || 0) + 'kg×' + (last.reps || 0);
+    }
+    var growth = firstVal > 0 ? Math.round((lastVal / firstVal - 1) * 100) : 0;
     var growthColor = growth > 0 ? '#22C55E' : (growth < 0 ? '#EF4444' : '#999');
+
+    // 合并提示:同一天记过多条时告诉用户图上为什么只有 1 个点
+    var mergedNote = '';
+    if (raw.length > log.length) {
+      mergedNote = '<span style="font-size:11px;color:var(--text3);">（' + raw.length + ' 条记录合并为 ' + log.length + ' 天）</span>';
+    }
 
     // RPE自调节建议
     var adjHtml = renderRPEAdjustmentBadge(exName);
 
     html += '<div class="progress-card">' +
       '<div class="card-title">📈 ' + exName + ' 趋势' + adjHtml + '</div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:8px;">' +
-        '<span>起点: ' + (first.weight || 0) + 'kg×' + (first.reps || 0) + '</span>' +
-        '<span>当前: ' + (last.weight || 0) + 'kg×' + (last.reps || 0) + '</span>' +
+      '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px;">' +
+        '<span>' + startTxt + '</span>' +
+        '<span>' + endTxt + '</span>' +
         '<span style="font-weight:700;color:' + growthColor + ';">' + (growth > 0 ? '+' : '') + growth + '%</span>' +
       '</div>' +
-      '<div class="chart-wrap"><canvas id="chartProg' + idx + '" style="width:100%;height:180px;"></canvas></div>' +
-    '</div>';
+      (mergedNote ? '<div style="margin-bottom:6px;">' + mergedNote + '</div>' : '');
+
+    if (log.length < 2) {
+      // 全是同一天记的:画不出趋势,给句人话而不是留一块空白画布
+      html += '<div style="background:var(--bg);border-radius:10px;padding:14px;text-align:center;font-size:12px;color:var(--text3);">' +
+        '这些记录都是 ' + fbChartDate(last.date) + ' 当天的，换个日子再练一次才有趋势线</div>';
+    } else {
+      html += '<div class="chart-wrap"><canvas id="chartProg' + idx + '" style="width:100%;height:180px;"></canvas></div>';
+    }
+    html += '</div>';
   });
 
   // 延迟绘制图表
   setTimeout(function() {
     exNames.slice(0, 6).forEach(function(exName, idx) {
-      drawProgressionChart('chartProg' + idx, exName, trainingLog[exName]);
+      var u = (typeof getLogUnit === 'function') ? getLogUnit(exName) : {mode:'weight', unit:'kg', label:'重量'};
+      drawProgressionChart('chartProg' + idx, exName, trainingLog[exName], u);
     });
   }, 50);
 
