@@ -17,6 +17,8 @@ _check.js
 _check_braces.js
 _check_fixed.js
 _find_extra_brace.js
+_gif-review.html
+data-constants.js.bak-gifmap
 tips_check.txt
 verify_result.txt
 .edge-profile/
@@ -47,4 +49,7 @@ _trim_out.txt
 _diagnose.html
 _tmp_seed2.js
 --full-page
+
+# 社媒封面素材 - 仅本地不上传
+_covers/
 
