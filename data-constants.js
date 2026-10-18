@@ -20,6 +20,7 @@ var EXES = [
   {n:"侧卧抬腿", m:"腿", eq:"bodyweight", diff:"初级", desc:"侧卧上抬，针对大腿外侧", tips:"侧躺，下腿弯曲上腿伸直向上抬，下落不碰地保持张力", vid:""},
   {n:"跨坐侧蹲", m:"腿", eq:"bodyweight", diff:"初级", desc:"宽站距左右侧蹲，臀+大腿内侧一起练", tips:"重心往一侧压，屁股往后坐，膝盖始终对准脚尖不内扣", vid:""},
   {n:"青蛙趴", m:"腿", eq:"bodyweight", diff:"初级", desc:"收工拉伸，放松髋部和腹股沟", tips:"双膝分开趴地，静态保持60-90秒，感受髋部放松，不按次数算", vid:""},
+  {n:"俯卧绳索后踢", m:"腿", eq:"gym", diff:"初级", desc:"绳索套脚踝做俯卧后踢，臀大肌全程持续受力", tips:"俯卧垫上，绳索固定低位套住脚踝，大腿缓慢后抬至臀部完全收缩，顶峰停1秒再回放，别塌腰代偿", vid:""},
   // 腿部 - 中级
   {n:"深蹲跳", m:"腿", eq:"bodyweight", diff:"中级", desc:"爆发力深蹲，增加腿部力量和心率", tips:"蹲下后爆发跳起，落地时膝盖缓冲，前脚掌着地", vid:""},
   {n:"保加利亚分腿蹲（徒手）", m:"腿", eq:"bodyweight", diff:"中级", desc:"后脚抬高单腿蹲，强化臀腿", tips:"后脚搭在椅子上，前脚踩实，保持躯干直立下蹲", vid:""},
@@ -30,6 +31,8 @@ var EXES = [
   {n:"哑铃罗马尼亚硬拉", m:"腿", eq:"dumbbell", diff:"中级", desc:"哑铃版髋铰链，重点练腘绳肌和臀", tips:"微屈膝，髋部向后推而不是下蹲，感受大腿后侧拉长再顶髋起身", vid:""},
   {n:"哑铃箭步蹲", m:"腿", eq:"dumbbell", diff:"中级", desc:"双手持铃箭步蹲，单侧臀腿+稳定", tips:"步幅适中，后膝接近地面，前脚蹬地起身，左右交替", vid:""},
   {n:"腿弯举", m:"腿", eq:"gym", diff:"中级", desc:"孤立训练腘绳肌", tips:"避免用腰部代偿，控制下放速度", vid:""},
+  {n:"仰卧滑盘腿弯举", m:"腿", eq:"bodyweight", diff:"中级", desc:"脚踩滑盘或毛巾做仰卧腿弯举，居家练腘绳肌", tips:"仰卧屈膝脚踩滑盘，顶髋让身体成一条线，脚跟缓慢滑向远端再勾回臀部，全程别塌腰", vid:""},
+  {n:"单腿靠墙静蹲", m:"腿", eq:"bodyweight", diff:"中级", desc:"背靠墙单腿支撑静蹲，强化股四头肌单腿耐力", tips:"背贴墙下蹲至膝约90°，一腿抬起悬空，保持20-40秒，膝盖对准脚尖不内扣", vid:""},
   // 腿部 - 高级
   {n:"前蹲", m:"腿", eq:"gym", diff:"高级", desc:"杠铃置于锁骨前方的深蹲，激活更多股四头肌", tips:"手肘高抬，保持上身直立，需要良好的踝关节灵活性", vid:""},
   {n:"单腿深蹲（枪式）", m:"腿", eq:"bodyweight", diff:"高级", desc:"极高难度的单腿全深蹲", tips:"悬空腿前伸，重心缓慢下降，需要强大的力量与平衡", vid:"vq5-vdgJc0Y"},
@@ -60,6 +63,7 @@ var EXES = [
   {n:"史密斯机卧推", m:"胸", eq:"gym", diff:"高级", desc:"史密斯机提供稳定轨迹，适合大重量突破", tips:"轨迹固定，注意调整位置使路径垂直于胸口", vid:""},
   {n:"哑铃下斜卧推", m:"胸", eq:"dumbbell", diff:"高级", desc:"下斜哑铃卧推，重点刺激下胸", tips:"固定双腿，哑铃下落到下胸两侧，控制下放速度", vid:""},
 
+  {n:"弓箭手俯卧撑", m:"胸", eq:"bodyweight", diff:"高级", desc:"单臂承重+另一臂伸展的俯卧撑，单臂俯卧撑的过渡动作", tips:"双手间距远宽于肩，重心压在支撑侧，伸展侧手臂全程伸直贴地只做辅助，左右交替", vid:""},
   // 背部 - 初级
   {n:"反向划船", m:"背", eq:"bodyweight", diff:"初级", desc:"躺在桌下或用单杠，自重划船练背", tips:"身体保持一条线，拉起时肩胛骨夹紧，感受背部发力", vid:""},
   {n:"超人式", m:"背", eq:"bodyweight", diff:"初级", desc:"俯卧抬手脚，激活下背和竖脊肌", tips:"俯卧同时抬起手臂和腿，顶端停留1秒，缓慢下放", vid:""},
@@ -103,6 +107,7 @@ var EXES = [
   {n:"杠铃肩推", m:"肩", eq:"gym", diff:"中级", desc:"站姿/坐姿杠铃肩推，力量进阶", tips:"不要把杆推到头后，推过头顶略微前倾，避免腰椎压迫", vid:"2yq1m98GOM"},
   {n:"哑铃前平举", m:"肩", eq:"dumbbell", diff:"中级", desc:"针对三角肌前束", tips:"手臂不超过肩高，控制下放，配合侧平举使用", vid:""},
   {n:"哑铃俯身飞鸟", m:"肩", eq:"dumbbell", diff:"中级", desc:"针对三角肌后束，改善圆肩", tips:"上身前倾约60°，手肘微弯，双臂向后外侧展开", vid:""},
+  {n:"单臂绳索前平举", m:"肩", eq:"gym", diff:"中级", desc:"单臂绳索前平举，孤立三角肌前束", tips:"侧对器械单手握把，手臂抬至肩高停1秒，身体别跟着转，缓慢回放保持张力", vid:""},
   // 肩部 - 高级
   {n:"阿诺德推举", m:"肩", eq:"dumbbell", diff:"高级", desc:"旋转动作涵盖三角肌三个头", tips:"起始手掌朝内，推举过程中旋转手腕到手掌朝外，推高后旋回", vid:""},
   {n:"宽握上拉（上斜）", m:"肩", eq:"gym", diff:"高级", desc:"宽握上拉专项训练三角肌中束", tips:"握距稍宽于肩，以肘部带动上拉，拉至下颌位置", vid:""},
@@ -137,10 +142,17 @@ var EXES = [
   {n:"平板支撑转体", m:"核心", eq:"bodyweight", diff:"初级", desc:"平板支撑位交替转体，练核心稳定+腹斜肌", tips:"肘撑位保持臀不塌，转体时手臂指向天花板，目随手动", vid:"pSHjPAE1pDo"},
   {n:"卷腹", m:"核心", eq:"bodyweight", diff:"初级", desc:"训练腹直肌上部", tips:"下背部贴地，手放头后不要拉颈，以腹肌收缩带动起身", vid:"Xyd_fgl5k8"},
   {n:"死虫式", m:"核心", eq:"bodyweight", diff:"初级", desc:"对脊柱友好的核心激活动作", tips:"下背部始终贴地，对侧手腿同时缓慢伸展", vid:""},
+  {n:"仰卧举腿", m:"核心", eq:"bodyweight", diff:"初级", desc:"仰卧抬腿练下腹，比悬挂举腿更友好", tips:"仰卧双手垫在臀下，双腿并拢缓慢举至垂直再下放，下背始终贴地不塌腰", vid:""},
   // 核心 - 中级
   {n:"俄罗斯转体", m:"核心", eq:"bodyweight", diff:"中级", desc:"训练腹斜肌和旋转力量", tips:"上身后倾约45°，双脚离地增加难度，以腹斜肌带动旋转", vid:""},
   {n:"悬挂举腿", m:"核心", eq:"gym", diff:"中级", desc:"悬挂于单杠上举腿，训练下腹", tips:"抓杠，膝盖弯曲举腿，不要借助惯性甩腿", vid:"l4S1E3q0XM"},
   {n:"健腹轮", m:"核心", eq:"gym", diff:"中级", desc:"全方位核心训练，效果极好", tips:"从膝盖跪地开始，向前滚出时保持核心收紧，不要让腰下塌", vid:""},
+  {n:"跪姿绳索卷腹", m:"核心", eq:"gym", diff:"中级", desc:"跪姿绳索下压卷腹，负重刺激腹直肌", tips:"跪于滑轮前双手握绳贴头侧，靠腹部卷曲把躯干压向地面，髋部基本不动，缓慢回弹", vid:""},
+  {n:"站姿绳索卷腹", m:"核心", eq:"gym", diff:"中级", desc:"站姿高位绳索下压卷腹，站姿练腹直肌", tips:"背对器械高位握绳，靠腹肌卷曲把上身压向地面，别用手臂硬拉，慢速回弹", vid:""},
+  {n:"绳索伐木（站姿）", m:"核心", eq:"gym", diff:"中级", desc:"站姿斜向拉绳索，练腹斜肌与旋转力量", tips:"侧对器械双手握把，从肩上方斜拉到对侧髋，靠腹斜肌发力不是手臂，两侧各做", vid:""},
+  {n:"绳索伐木（坐姿）", m:"核心", eq:"gym", diff:"中级", desc:"坐姿版绳索伐木，固定下肢更孤立腹斜肌", tips:"坐于凳上双腿踩实，双手握把从一侧斜拉到对侧，骨盆保持不动，控制回弹", vid:""},
+  {n:"绳索转体卷腹", m:"核心", eq:"gym", diff:"中级", desc:"仰卧握绳转体卷腹，腹直肌+腹斜肌同时练", tips:"仰卧脚固定，双手握绳贴胸，卷腹同时向侧转体，下背贴地，左右交替", vid:""},
+  {n:"抗旋转推举（Pallof Press）", m:"核心", eq:"gym", diff:"中级", desc:"侧向阻力下双手前推，核心抗旋转经典动作", tips:"侧对器械双手握把于胸前，缓慢向前推出并停2秒，身体别被带子拉转，两侧都做", vid:""},
   // 核心 - 高级
   {n:"悬挂直腿举", m:"核心", eq:"gym", diff:"高级", desc:"直腿举起难度更大，训练全腹", tips:"控制下放速度，不借惯性，感受腹肌全程张力", vid:""},
   {n:"龙旗", m:"核心", eq:"gym", diff:"高级", desc:"顶级核心动作，全腹激活", tips:"抓住训练椅背，身体保持一条线缓慢下放，需要强大核心力量", vid:""},
@@ -201,6 +213,8 @@ var EXES = [
   {n:"泡沫轴放松（背部）", m:"康复", eq:"bodyweight", diff:"初级", desc:"放松上背部肌肉，缓解紧张", tips:"仰卧，泡沫轴垫在肩胛骨下方，双手抱头，缓慢上下滚动。避开腰椎", vid:""},
   {n:"深呼吸放松", m:"康复", eq:"bodyweight", diff:"初级", desc:"激活副交感神经，促进恢复", tips:"仰卧，一手放胸一手放腹，吸气时腹部鼓起，呼气时腹部收缩。5-10分钟", vid:""},
 
+  {n:"站姿小腿拉伸", m:"康复", eq:"bodyweight", diff:"初级", desc:"拉伸小腿三头肌，缓解跟腱与足底紧张", tips:"面对墙双手扶墙，后腿伸直脚跟踩实，身体前倾感受小腿牵拉，保持30秒换边", vid:""},
+  {n:"坐姿体前屈拉伸", m:"康复", eq:"bodyweight", diff:"初级", desc:"坐姿体前屈，放松腘绳肌与下背", tips:"坐于垫上双腿伸直，髋部前折缓慢伸手够脚尖，背不要弓成圆，保持30秒", vid:""},
   // ============ 弹力带动作（band）============
   // 注意:弹力带靠"拉长幅度 / 双带叠加 / 单侧支撑"加难度,不靠重量。
   // 补中级与高级前,band 只有 6 个动作且全是初级 —— 中级/高级用户选弹力带时
@@ -260,7 +274,7 @@ var EXES = [
 
 // GIF动图映射（中文动作名 → GIF文件名）
 // 2026-10-17 新增 36 个动作的配图:全部复用同族相近动作的 GIF(图源无新增需求)
-var GIF_MAP = {"凳上反屈伸（抬腿）":"DQ0cqkT.gif","弹力带深蹲":"TUZLh71.gif","弹力带划船":"km0sQC0.gif","弹力带面拉":"sTfvVsG.gif","弹力带侧平举":"sTg7iys.gif","弹力带三头下压":"obe5LMq.gif","弹力带夹胸":"c16nYGA.gif","腿举（低重量）":"7zdxRTl.gif","箭步蹲":"t8iSghb.gif","臀桥":"qKBpF7I.gif","哑铃深蹲":"HsvHqgf.gif","深蹲跳":"1gFNTZV.gif","保加利亚分腿蹲（徒手）":"arsYEd3.gif","单腿臀桥":"rmEukuS.gif","罗马尼亚硬拉":"wQ2c4XD.gif","腿弯举":"C5jncD2.gif","前蹲":"zG0zs85.gif","单腿深蹲（枪式）":"H6ybluc.gif","哈克深蹲":"Qa55kX1.gif","俯卧撑":"I4hDWkc.gif","宽距俯卧撑":"JmMVpR3.gif","哑铃平板卧推":"SpYC0Kp.gif","哑铃飞鸟":"yz9nUhF.gif","下斜俯卧撑":"i5cEhka.gif","钻石俯卧撑":"soIB2rj.gif","杠铃卧推":"EIeI8Vf.gif","上斜杠铃卧推":"3TZduzM.gif","双杠臂屈伸（胸）":"9WTm7dq.gif","史密斯机卧推":"yB9SvIF.gif","反向划船":"3xK09Sk.gif","高位下拉（宽握）":"ecpY0rH.gif","坐姿绳索划船":"fUBheHs.gif","引体向上":"lBDjFxJ.gif","T杠划船":"aaXr7ld.gif","宽握引体（加重）":"HMzLjXx.gif","侧平举（水瓶/弹力带）":"goJ6ezq.gif","哑铃肩推":"84RyJf8.gif","哑铃侧平举":"DsgkuIt.gif","折刀俯卧撑":"sVvXT5J.gif","哑铃前平举":"3eGE2JC.gif","哑铃俯身飞鸟":"EAs3xL9.gif","阿诺德推举":"Xy4jlWA.gif","宽握上拉（上斜）":"cALKspW.gif","哑铃二头弯举":"uSkDMYl.gif","绳索三头下压":"qRZ5S1N.gif","锤式弯举":"slDvUAU.gif","窄距俯卧撑（三头）":"ufaxB52.gif","杠铃弯举":"25GPyDY.gif","双杠臂屈伸（三头）":"bZq4bwK.gif","牧师弯举":"P2lNrGL.gif","俯身三头臂屈伸":"vvNjDJS.gif","平板支撑转体":"CosupLu.gif","卷腹":"BMMolZ3.gif","死虫式":"iny3m5y.gif","俄罗斯转体":"XVDdcoj.gif","悬挂举腿":"QOA0FD0.gif","健腹轮":"xnInPfE.gif","骑行（户外/动感单车）":"H1PESYI.gif","波比跳":"dK9394r.gif","登山跑":"RJgzwny.gif","原地冲刺跑":"Qoujh3Q.gif","箱子跳":"iPm26QU.gif","滑雪机":"vpQaQkH.gif","踝关节泵":"uL9CsKm.gif","髋外展（侧卧）":"WL4EmxJ.gif","骨盆倾斜":"NKJ8o6x.gif","肩部外旋拉伸":"FWdVhcW.gif","门框拉伸（胸肌）":"QoHIhPl.gif","手腕屈伸（温和）":"vUTfFHw.gif","手指展开+握拳":"mtXengz.gif","提踵（温和）":"u5ESqzH.gif","硬拉":"ila4NZS.gif","慢跑/快走":"oLrKqDH.gif","开合跳":"HtfCpfi.gif","快走爬坡":"rjiM4L3.gif","战绳（双绳波浪）":"RJa4tCo.gif","泡沫轴放松（背部）":"isofgzg.gif","徒手深蹲":"75Bgtjy.gif","坐姿腿屈伸":"my33uHU.gif","俯卧腿弯举":"17lJ1kr.gif","史密斯深蹲":"NNoHCEA.gif","宽距深蹲":"dzz6BiV.gif","侧弓步":"py1HSzx.gif","跪姿后踢":"qBcKorM.gif","侧卧抬腿":"7WaDzyL.gif","跨坐侧蹲":"GWoKnIm.gif","青蛙趴":"2Dk4xQV.gif","杠铃深蹲":"qXTaZnJ.gif","上斜俯卧撑":"B1EVP9F.gif","坐姿推胸（低重量）":"T0yTjgW.gif","蝴蝶机夹胸":"v3xmPAR.gif","上斜史密斯机卧推":"5v7KYld.gif","绳索飞鸟":"Pr9Rhf4.gif","哑铃上斜卧推":"ns0SIbU.gif","哑铃下斜卧推":"DwhEmmE.gif","超人式":"zhMwOwE.gif","单臂绳索划船":"vpp9Ku2.gif","杠铃俯身划船":"eZyBC3j.gif","哑铃俯身划船（双手）":"BJ0Hz5L.gif","哑铃单臂划船（重重量）":"C0MA9bC.gif","前水平拉背":"x69MAlq.gif","绳索面拉":"ZfyAGhK.gif","器械肩推":"67n3r98.gif","器械侧平举":"dRTfGZT.gif","史密斯肩推":"903mzG8.gif","杠铃肩推":"Kyd9Rz5.gif","倒立撑（离墙）":"rQxwMxO.gif","坐姿弯举机":"q6y3OhV.gif","绳索弯举":"G08RZcQ.gif","绳索过顶臂屈伸":"2IxROQ1.gif","哑铃三头臂屈伸（颈后）":"PdmaD0N.gif","单臂反屈伸（椅子）":"VuoerH0.gif","悬挂直腿举":"4Ml7QFO.gif","哑铃摆壶":"UHJlbu3.gif","哑铃复合推":"FS63wTN.gif","哑铃抓举":"6pTkI99.gif","直腿抬高":"bbLR7fB.gif","壶铃火箭推":"yWxMvB5.gif","肩部环绕（温和）":"8coXSYU.gif","前臂旋转":"2zNKRUB.gif","泡沫轴放松（大腿）":"oMypNrz.gif","跳绳":"e1e76I2.gif","单臂俯卧撑":"MUic5zN.gif","靠墙俯卧撑":"LEH9jxP.gif"};
+var GIF_MAP = {"凳上反屈伸（抬腿）":"DQ0cqkT.gif","弹力带深蹲":"TUZLh71.gif","弹力带划船":"km0sQC0.gif","弹力带面拉":"sTfvVsG.gif","弹力带侧平举":"sTg7iys.gif","弹力带三头下压":"obe5LMq.gif","弹力带夹胸":"c16nYGA.gif","腿举（低重量）":"7zdxRTl.gif","箭步蹲":"t8iSghb.gif","臀桥":"qKBpF7I.gif","哑铃深蹲":"HsvHqgf.gif","深蹲跳":"1gFNTZV.gif","保加利亚分腿蹲（徒手）":"arsYEd3.gif","单腿臀桥":"rmEukuS.gif","罗马尼亚硬拉":"wQ2c4XD.gif","腿弯举":"C5jncD2.gif","前蹲":"zG0zs85.gif","单腿深蹲（枪式）":"H6ybluc.gif","哈克深蹲":"Qa55kX1.gif","俯卧撑":"I4hDWkc.gif","宽距俯卧撑":"JmMVpR3.gif","哑铃平板卧推":"SpYC0Kp.gif","哑铃飞鸟":"yz9nUhF.gif","下斜俯卧撑":"i5cEhka.gif","钻石俯卧撑":"soIB2rj.gif","杠铃卧推":"EIeI8Vf.gif","上斜杠铃卧推":"3TZduzM.gif","双杠臂屈伸（胸）":"9WTm7dq.gif","史密斯机卧推":"yB9SvIF.gif","反向划船":"3xK09Sk.gif","高位下拉（宽握）":"ecpY0rH.gif","坐姿绳索划船":"fUBheHs.gif","引体向上":"lBDjFxJ.gif","T杠划船":"aaXr7ld.gif","宽握引体（加重）":"HMzLjXx.gif","侧平举（水瓶/弹力带）":"goJ6ezq.gif","哑铃肩推":"84RyJf8.gif","哑铃侧平举":"DsgkuIt.gif","折刀俯卧撑":"sVvXT5J.gif","哑铃前平举":"3eGE2JC.gif","哑铃俯身飞鸟":"EAs3xL9.gif","阿诺德推举":"Xy4jlWA.gif","宽握上拉（上斜）":"cALKspW.gif","哑铃二头弯举":"uSkDMYl.gif","绳索三头下压":"qRZ5S1N.gif","锤式弯举":"slDvUAU.gif","窄距俯卧撑（三头）":"ufaxB52.gif","杠铃弯举":"25GPyDY.gif","双杠臂屈伸（三头）":"bZq4bwK.gif","牧师弯举":"P2lNrGL.gif","俯身三头臂屈伸":"vvNjDJS.gif","平板支撑转体":"CosupLu.gif","卷腹":"BMMolZ3.gif","死虫式":"iny3m5y.gif","俄罗斯转体":"XVDdcoj.gif","悬挂举腿":"QOA0FD0.gif","健腹轮":"xnInPfE.gif","骑行（户外/动感单车）":"H1PESYI.gif","波比跳":"dK9394r.gif","登山跑":"RJgzwny.gif","原地冲刺跑":"Qoujh3Q.gif","箱子跳":"iPm26QU.gif","滑雪机":"vpQaQkH.gif","踝关节泵":"uL9CsKm.gif","髋外展（侧卧）":"WL4EmxJ.gif","骨盆倾斜":"NKJ8o6x.gif","肩部外旋拉伸":"FWdVhcW.gif","门框拉伸（胸肌）":"QoHIhPl.gif","手腕屈伸（温和）":"vUTfFHw.gif","手指展开+握拳":"mtXengz.gif","提踵（温和）":"u5ESqzH.gif","硬拉":"ila4NZS.gif","慢跑/快走":"oLrKqDH.gif","开合跳":"HtfCpfi.gif","快走爬坡":"rjiM4L3.gif","战绳（双绳波浪）":"RJa4tCo.gif","泡沫轴放松（背部）":"isofgzg.gif","徒手深蹲":"75Bgtjy.gif","坐姿腿屈伸":"my33uHU.gif","俯卧腿弯举":"17lJ1kr.gif","史密斯深蹲":"NNoHCEA.gif","宽距深蹲":"dzz6BiV.gif","侧弓步":"py1HSzx.gif","跪姿后踢":"qBcKorM.gif","侧卧抬腿":"7WaDzyL.gif","跨坐侧蹲":"GWoKnIm.gif","青蛙趴":"2Dk4xQV.gif","杠铃深蹲":"qXTaZnJ.gif","上斜俯卧撑":"B1EVP9F.gif","坐姿推胸（低重量）":"T0yTjgW.gif","蝴蝶机夹胸":"v3xmPAR.gif","上斜史密斯机卧推":"5v7KYld.gif","绳索飞鸟":"Pr9Rhf4.gif","哑铃上斜卧推":"ns0SIbU.gif","哑铃下斜卧推":"DwhEmmE.gif","超人式":"zhMwOwE.gif","单臂绳索划船":"vpp9Ku2.gif","杠铃俯身划船":"eZyBC3j.gif","哑铃俯身划船（双手）":"BJ0Hz5L.gif","哑铃单臂划船（重重量）":"C0MA9bC.gif","前水平拉背":"x69MAlq.gif","绳索面拉":"ZfyAGhK.gif","器械肩推":"67n3r98.gif","器械侧平举":"dRTfGZT.gif","史密斯肩推":"903mzG8.gif","杠铃肩推":"Kyd9Rz5.gif","倒立撑（离墙）":"rQxwMxO.gif","坐姿弯举机":"q6y3OhV.gif","绳索弯举":"G08RZcQ.gif","绳索过顶臂屈伸":"2IxROQ1.gif","哑铃三头臂屈伸（颈后）":"PdmaD0N.gif","单臂反屈伸（椅子）":"VuoerH0.gif","悬挂直腿举":"4Ml7QFO.gif","哑铃摆壶":"UHJlbu3.gif","哑铃复合推":"FS63wTN.gif","哑铃抓举":"6pTkI99.gif","直腿抬高":"bbLR7fB.gif","壶铃火箭推":"yWxMvB5.gif","肩部环绕（温和）":"8coXSYU.gif","前臂旋转":"2zNKRUB.gif","泡沫轴放松（大腿）":"oMypNrz.gif","跳绳":"e1e76I2.gif","单臂俯卧撑":"MUic5zN.gif","靠墙俯卧撑":"LEH9jxP.gif","毛巾弯举（二头）":"3omWx6P.gif","俯卧绳索后踢":"vIICElP.gif","仰卧滑盘腿弯举":"E4R8Hz1.gif","单腿靠墙静蹲":"sVQCCeG.gif","弓箭手俯卧撑":"A9qxk2F.gif","单臂绳索前平举":"UNAB8ak.gif","仰卧举腿":"KCBKjma.gif","跪姿绳索卷腹":"225x2Vd.gif","站姿绳索卷腹":"euq4pwp.gif","绳索伐木（站姿）":"G7PXMlT.gif","绳索伐木（坐姿）":"S1JXDAG.gif","绳索转体卷腹":"tZkGYZ9.gif","抗旋转推举（Pallof Press）":"9pa4H5m.gif","站姿小腿拉伸":"9JprnPh.gif","坐姿体前屈拉伸":"Hgs6Nl1.gif"};
 
 // 纯自重动作名集合（进度页不为其绘制重量趋势）
 var BODYWEIGHT_EX_NAMES = new Set();
