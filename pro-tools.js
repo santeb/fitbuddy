@@ -981,8 +981,9 @@ var RescheduleCtrl = {
 // ============ 8. 部位疲劳监控 ============
 
 function checkMuscleFatigue() {
-  var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
-  if (!hist.length) return null;
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]'); } catch (e) { return null; }
+  if (!hist || !hist.length) return null;
 
   // 构建动作名→部位映射
   var exMuscleMap = {};
@@ -1053,11 +1054,21 @@ function renderFatigueWarning() {
   var html = '<div id="fatigueWarning" style="background:linear-gradient(135deg,#FEE2E2,#FECACA);border:1px solid #EF4444;border-radius:12px;padding:12px 14px;margin-bottom:14px;">' +
     '<div style="font-size:13px;font-weight:700;color:#DC2626;display:flex;align-items:center;gap:6px;">⚠️ 部位疲劳警告</div>';
 
+  var rows = 0;
   warnings.forEach(function(w) {
+    // 兜底:兼容 {muscle,days}(本文件实现) 与 {muscle,count}(历史实现),
+    // 拿不到合法天数就跳过这一条 —— 宁可不显示,也不能渲染出 undefined
+    var d = (w && typeof w.days === 'number' && isFinite(w.days)) ? w.days
+          : ((w && typeof w.count === 'number' && isFinite(w.count)) ? w.count : 0);
+    if (d < 1) return;
     var label = muscleLabels[w.muscle] || w.muscle;
     var emoji = muscleEmoji[w.muscle] || '⚠️';
-    html += '<div style="font-size:12px;color:#991B1B;margin-top:6px;">' + emoji + ' <b>' + label + '</b>已连续训练 ' + w.days + ' 天,建议今天换其他部位,让肌肉充分恢复(48-72h)</div>';
+    rows++;
+    html += '<div style="font-size:12px;color:#991B1B;margin-top:6px;">' + emoji + ' <b>' + label + '</b>已连续训练 ' + d + ' 天,建议今天换其他部位,让肌肉充分恢复(48-72h)</div>';
   });
+
+  // 一条都没渲染出来时不返回空警告框
+  if (!rows) return '';
 
   html += '</div>';
   return html;

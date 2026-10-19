@@ -5424,6 +5424,14 @@ function fbTodayLoadLines(day) {
 // ⚠️ 疲劳告警 —— 这条是 Keep 结构性地做不了的:
 // Keep 2026 H1 消费品 4.83 亿占营收 58%,靠 DAU 和复购活着,"建议你今天别练"等于自伤,
 // 它最多只会说"来练个轻松的"。FitBuddy 没有商业包袱,可以直说。这不是功能差异,是商业模式差异。
+// 疲劳告警条目的连续天数:兼容 {muscle,days}(pro-tools 实现) 与 {muscle,count}(旧实现)
+function fbFatigueDays(w) {
+  if (!w) return 0;
+  if (typeof w.days === 'number' && isFinite(w.days)) return w.days;
+  if (typeof w.count === 'number' && isFinite(w.count)) return w.count;
+  return 0;
+}
+
 function fbTodayFatigueLine(day) {
   if (typeof checkMuscleFatigue !== 'function') return '';
   var warns;
@@ -5431,11 +5439,16 @@ function fbTodayFatigueLine(day) {
   if (!warns || !warns.length) return '';
   var todayM = {};
   (day && day.exes ? day.exes : []).forEach(function(e) { if (e && e.m) todayM[e.m] = 1; });
-  var hit = warns.filter(function(w) { return todayM[w.muscle]; });
+  // 兜底:历史上存在两份同名 checkMuscleFatigue(pro-tools 返回 {muscle,days},
+  // planner-core 旧实现返回 {muscle,count}),字段名不一致会让文案渲染出 undefined。
+  // 这里统一取值,取不到合法天数就不渲染这一条。
+  var hit = warns.filter(function(w) {
+    return w && todayM[w.muscle] && fbFatigueDays(w) >= 1;
+  });
   if (!hit.length) return '';
   var names = hit.map(function(w) {
     var label = (typeof MUSCLE_LABELS !== 'undefined' && MUSCLE_LABELS[w.muscle]) ? MUSCLE_LABELS[w.muscle] : w.muscle;
-    return label + ' 已连练 ' + w.days + ' 天';
+    return label + ' 已连练 ' + fbFatigueDays(w) + ' 天';
   }).join('、');
   return '<div style="background:rgba(239,68,68,0.28);border:1px solid rgba(255,255,255,0.35);'
     + 'border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;">'
@@ -8527,63 +8540,6 @@ function rescheduleMissedDay(missedIdx) {
   localStorage.setItem('fitbuddy_lastplan', JSON.stringify(lastPlan));
   showToast('✅ 已将昨日动作顺延到今天');
   setTimeout(function(){ doGenerate(); }, 800);
-}
-
-// ============ 部位疲劳监控 ============
-function checkMuscleFatigue() {
-  var hist = [];
-  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]'); } catch(e) { return null; }
-  if (!hist.length) return null;
-
-  var today = new Date();
-  var muscleByDay = {};
-
-  for (var d = 0; d < 3; d++) {
-    var checkDate = new Date(today);
-    checkDate.setDate(checkDate.getDate() - d);
-    var dateStr = checkDate.toISOString().slice(0, 10);
-    var h = hist.find(function(x){ return x.date === dateStr; });
-    if (h && h.exercises && h.exercises.length) {
-      h.exercises.forEach(function(exName) {
-        var ex = (typeof EXES !== 'undefined' && EXES) ? EXES.find(function(e){ return e.n === exName; }) : null;
-        var m = ex ? ex.m : '';
-        if (m && m !== '有氧') {
-          if (!muscleByDay[m]) muscleByDay[m] = 0;
-          muscleByDay[m]++;
-        }
-      });
-      // Mark which days had this muscle
-      // If trained 3 consecutive days, it's fatigue
-      if (d < 3) {
-        // Count consecutive days
-      }
-    }
-  }
-
-  // Check for muscles trained 2+ of last 3 days
-  var warnings = [];
-  Object.keys(muscleByDay).forEach(function(m) {
-    if (muscleByDay[m] >= 2) {
-      warnings.push({ muscle: m, count: muscleByDay[m] });
-    }
-  });
-
-  if (!warnings.length) return null;
-  return warnings;
-}
-
-function renderFatigueWarning() {
-  var warnings = checkMuscleFatigue();
-  if (!warnings) return '';
-  var html = '<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:12px;padding:10px 14px;margin-bottom:10px;">' +
-    '<div style="font-size:13px;font-weight:700;color:#D97706;">⚠️ 部位疲劳提醒</div>';
-  warnings.forEach(function(w) {
-    html += '<div style="font-size:12px;color:var(--text2);margin-top:4px;">' +
-      (MUSCLE_LABELS[w.muscle] || w.muscle) + ' 近3天训练 ' + w.count + ' 次，建议今天换部位' +
-    '</div>';
-  });
-  html += '</div>';
-  return html;
 }
 
 // ============ 周期化日历视图 ============
