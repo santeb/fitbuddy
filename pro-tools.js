@@ -1102,6 +1102,14 @@ window.initProToolsProgress = function() {
         // 🏆 个人纪录
         proHtml += renderPRCards();
 
+        // 📤 力量档案导出 —— Keep 结构性地不会做:数据锁定就是它的护城河,
+        // 让用户把训练数据打包成一张图带走,等于帮用户往外迁移。
+        // HTML 与计划页顶部那条共用 fbStrengthCardEntryHtml('card'/'bar'),
+        // 不在这里单独写一份,否则改样式要改两处。
+        if (typeof fbStrengthCardEntryHtml === 'function') {
+          proHtml += fbStrengthCardEntryHtml('card');
+        }
+
         // 周期化日历视图
         proHtml += renderPeriodizationCalendar();
 
@@ -1129,7 +1137,16 @@ window.initProToolsProgress = function() {
         }
 
         proHtml += '</div>';
-        progContent.insertAdjacentHTML('beforeend', proHtml);
+        // ⚠️ 这里原本是 insertAdjacentHTML('beforeend') = 挂在进度页最末尾,
+        // 用户要滑过 9 张卡(热力图/本周进度/频次/热量/部位/超负荷/跑鞋/记录/统计)才能看到
+        // PR卡/周期化日历/超负荷趋势线/RPE自调节这批真正有差异化的能力 —— 等于白写。
+        // 改为插到「训练频次趋势」之前,即紧跟"本周进度"之后,进度页的黄金位置。
+        // 注意:collapsibleCard 只把 id 给了 -icon / -body,外层卡片本身没有 id,
+        // 必须按 data-pc-id 选;用 getElementById('pc-volume-trend') 会拿到 null 从而静默退回页尾。
+        var anchor = progContent.querySelector('[data-pc-id="pc-volume-trend"]')
+          || progContent.querySelector('[data-pc-id="pc-muscle-dist"]');
+        if (anchor) anchor.insertAdjacentHTML('beforebegin', proHtml);
+        else progContent.insertAdjacentHTML('beforeend', proHtml);
       } catch(e) {
         console.warn('Pro Tools 进度页增强失败(不影响主功能):', e);
       }

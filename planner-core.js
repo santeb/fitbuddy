@@ -897,6 +897,39 @@ function _completionRateByLevel(level, lastWk) {
   return {rate: doneExes / totalExes, doneExes: doneExes, totalExes: totalExes};
 }
 
+// 前缀松匹配统计上周完成率(goal / days / level 任一变化后的兜底)
+// doneKey 前缀形如 fitbuddy_done_<goal>_<level>_<days>_c<cycle>_w<week>,逐项枚举回退会组合爆炸,
+// 且 goal 取值来自配置表。这里直接扫 localStorage:凡是落在「上周」的 day/ex 打卡记录都纳入,
+// 按"同一前缀下打卡数最多的那份"计算完成率,与 goal/days/level 怎么变都无关。
+// 只统计当前计划结构内的动作位(di/ei 越界即丢弃),避免旧计划天数更多时虚高完成率。
+function _completionRateLoose(lastWk) {
+  if (!lastPlan || !lastPlan.trainingDays) return null;
+  var totalExes = 0;
+  lastPlan.trainingDays.forEach(function(day){ if (day && day.exes) totalExes += day.exes.length; });
+  if (totalExes === 0) return null;
+  var cyc = lastPlan.cycle || currentCycle || 1;
+  var tag = '_c' + cyc + '_w' + lastWk + '_';
+  var counts = {}, best = 0;
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (!k || k.indexOf('fitbuddy_done_') !== 0) continue;
+      var at = k.indexOf(tag);
+      if (at < 0) continue;
+      var m = /^day_(\d+)_ex(\d+)$/.exec(k.substring(at + tag.length));
+      if (!m) continue;
+      var d = lastPlan.trainingDays[parseInt(m[1], 10)];
+      if (!d || !d.exes || parseInt(m[2], 10) >= d.exes.length) continue;
+      var pfx = k.substring(0, at + tag.length);
+      if (localStorage.getItem(k) !== '1') { if (!counts[pfx]) counts[pfx] = 0; continue; }
+      counts[pfx] = (counts[pfx] || 0) + 1;
+      if (counts[pfx] > best) best = counts[pfx];
+    }
+  } catch(e) { return null; }
+  if (best === 0) return null;
+  return {rate: Math.min(1, best / totalExes), doneExes: best, totalExes: totalExes};
+}
+
 // 核心:读取上周完成情况(含 level 回退)
 // ⚠️ level 回退: doneKey 前缀里含 level。若水平被自动校准改过档,旧前缀就读不到上周数据,
 //    这里回退扫描其它 level 前缀取"打卡数最多"的那份,保证自适应反馈链不断裂。
@@ -915,6 +948,14 @@ function _lastWeekCompletion() {
       var rr = _completionRateByLevel(l, lastWk);
       if (rr && (!r || rr.doneExes > r.doneExes)) r = rr;
     });
+  }
+  // ⚠️ 二级兜底:上面只回退了 level,但前缀里还含 goal 和 days。用户改了目标
+  // (增肌→减脂)或改了天数(4天→3天)再生成时,精确前缀和 level 回退会一起落空 →
+  // getLastWeekCompletionRate 返回 null → 自适应整周不工作(不降档也不减量),且不报错。
+  // 松匹配不依赖前缀里的 goal/days/level,保证反馈链不断。
+  if (!r || r.doneExes === 0) {
+    var loose = _completionRateLoose(lastWk);
+    if (loose && (!r || loose.doneExes > r.doneExes)) r = loose;
   }
   return r || null;
 }
@@ -2315,6 +2356,27 @@ function doGenerate() {
   initReminderUI();
   }
 
+// ⚠️ 训练日数量保底: buildMusclePlan / buildStrengthPlan 的模板最多只铺到 6 天,
+// buildMarathonPlan 更是写死 4/5/6 三档。days=7 时末尾就会出现"空白训练日"
+// (渲染层取不到 day 对象)。这里统一补齐,补给动作按 goal 主题取,并用 wOff + 已有天数
+// 错开轮转起点,避免补出来的这天和前面几天撞动作。跑步类补恢复跑,不塞力量动作。
+function _padPlanToDays(plan, goal, level, days, equip, wOff) {
+  if (!plan || !days || plan.length >= days) return plan;
+  var isRun = (goal === "marathon" || goal === "cardio");
+  while (plan.length < days) {
+    var i = plan.length;
+    if (isRun) {
+      var pool = getExes("有氧", equip, level);
+      var runPool = pool.filter(function(e){ return e.n && e.n.indexOf("跑") >= 0; });
+      var picked = pickExes(runPool.length ? runPool : pool, 1, wOff + i);
+      plan.push({name:"恢复跑 " + (i + 1), exes: picked.length ? picked : pool.slice(0, 1)});
+    } else {
+      plan.push({name:"全身综合 " + (i + 1), exes: getFullBody(equip, level, "muscle", wOff + i, true)});
+    }
+  }
+  return plan;
+}
+
 function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   var trainingDays = [];
   if (goal === "muscle") trainingDays = buildMusclePlan(level, days, equip, weekOffset);
@@ -2323,6 +2385,7 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   else if (goal === "shape") trainingDays = buildShapePlan(level, days, equip, weekOffset);
   else if (goal === "cardio") trainingDays = buildCardioPlan(level, days, equip, weekOffset);
   else if (goal === "marathon") trainingDays = buildMarathonPlan(level, days, equip, weekOffset);
+  trainingDays = _padPlanToDays(trainingDays, goal, level, days, equip, weekOffset);
   // 仅自重 + 力量类目标:按本周难度档位把动作映射到变式族对应档位(周期升档/降档)
   var isBwMap = (equip === "bodyweight" && goal !== "cardio" && goal !== "marathon");
   if (isBwMap) {
@@ -2502,7 +2565,11 @@ function buildShapePlan(level, days, equip, wOff) {
   var strIdx = 0, cardioIdx = 0;
   var cardioPool = getExes("有氧", equip, level);
   for (var i=0; i<days; i++) {
-    if (i % 3 !== 2) {
+    // ⚠️ 旧版固定 i%3===2 才有氧:days<=2 时 i 只取 0/1,永远够不到有氧日 →
+    // 选 2 天拿到的是"两天纯力量",与 getSplitInfo 宣传的"力量塑形+有氧线条"不符。
+    // 低天数改用 i%2===1,保证 2 天计划至少各有一次力量与有氧。
+    var isCardioDay = days <= 2 ? (i % 2 === 1) : (i % 3 === 2);
+    if (!isCardioDay) {
       // 力量塑形日:全身基础动作 + 臀腿/肩背重点轮换
       var exes = getFullBody(equip, level, "muscle", wOff + i, true);
       var focus = [];
@@ -2538,8 +2605,7 @@ function buildCardioPlan(level, days, equip, wOff) {
   var hiit = allCardio.filter(function(e){return e.diff==="中级"||e.diff==="高级";});
   // 初级水平:HIIT 从中级里选(降级使用),避免空列表
   if (level === "beginner" && hiit.length > 3) hiit = hiit.filter(function(e){return e.diff==="中级";});
-  var str = getFullBody(equip,level,"cardio",wOff);
-  var plan = [];
+  var plan = [], strCnt = 0;
   for (var i=0; i<days; i++) {
     var mod = i % 3;
     if (mod === 0) {
@@ -2555,7 +2621,23 @@ function buildCardioPlan(level, days, equip, wOff) {
       if (!hiitExes.length) hiitExes = [{n:"波比跳",m:"有氧",eq:"bodyweight",diff:"中级",desc:"",tips:"",vid:""}];
       plan.push({name:"HIIT 有氧", exes: hiitExes});
     } else {
-      // 力量+有氧日:全身力量 + 1个LISS收尾
+      // 力量+有氧日:力量 + 1个LISS收尾
+      // ⚠️ 旧版在循环外用固定 wOff 取一次 str → 6 天计划里 i=2 和 i=5 两天动作一字不差,
+      // 只有收尾的 LISS 不同。
+      // 改成按天取(wOff+i)后实测仍有 4/6 动作重合:getFullBody 每个肌群只取"最优先"那一个,
+      // 动作池短时轮换根本轮不动,换 offset 也没用。所以两个力量日直接做上下肢分化 ——
+      // 心肺计划里力量本来就是配菜,分化既能彻底避免重复,也不会让用户连着两天吃同样的
+      // 全身疲劳。(名称沿用"力量+有氧",避免影响按 day.name 判断主题的 ensureMinExes。)
+      var upper = (strCnt % 2 === 1);
+      var parts = upper ? [["胸",2],["背",2],["臂",1]] : [["腿",2],["核心",2]];
+      var str = [];
+      parts.forEach(function(p){
+        str = str.concat(pickExes(getExes(p[0], equip, level), p[1], wOff + i));
+      });
+      str = dedup(str);
+      // 池子异常(如某肌群无可用动作)时退回全身,保证这一天不会空
+      if (!str.length) str = getFullBody(equip, level, "cardio", wOff + i);
+      strCnt++;
       plan.push({name:"力量+有氧", exes: dedup(str.concat(pickExes(liss,1,wOff + i)))});
     }
   }
@@ -4192,6 +4274,251 @@ function generateShareImage() {
   }, 'image/png');
 }
 
+// ===================== 📤 力量档案导出图 =====================
+// 和 generateShareImage 的区别:那张展示"我做了多少"(训练天数/总组数/streak),
+// 这张只展示"我变强了多少"(每个动作首末对比 + 估算 1RM 增长率)。
+// 后者才是对外传播有价值的成果卡,也是 Keep 结构性地不会做的 —— 数据锁定就是它的护城河,
+// 让用户把训练数据打包成一张图带走,等于帮用户往外迁移。
+// 汇总力量档案数据 —— 导出图、计划页入口条、进度页入口卡三处共用,避免各写一套。
+// 返回 null = 数据不足(没有任何动作记录 ≥2 次,或算不出增长),此时入口不显示,不打扰新用户。
+function fbStrengthCardData() {
+  var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : {};
+  var names = Object.keys(log).filter(function(n){ return (log[n] || []).length >= 2; });
+  if (!names.length) return null;
+
+  // 每个动作:首末对比 + 估算 1RM 增长率
+  var rows = [];
+  names.forEach(function(n) {
+    var es = (log[n] || []).slice().sort(function(a, b){
+      return String(a.date || '') < String(b.date || '') ? -1 : 1;
+    });
+    if (es.length < 2) return;
+    var f = es[0], l = es[es.length - 1];
+    if (!f || !l) return;
+    var u = (typeof getLogUnit === 'function') ? getLogUnit(n) : { mode: 'weight', unit: 'kg' };
+    var rec = { name: n, growth: 0, vol: 0 };
+
+    if (u.mode === 'reps') {
+      // 自重/计时动作:用次数做轴,绝不能显示 kg
+      var fr = parseInt(f.reps, 10) || 0, lr = parseInt(l.reps, 10) || 0;
+      if (!fr || !lr) return;
+      rec.firstTxt = fr + (u.unit || '次');
+      rec.lastTxt = lr + (u.unit || '次');
+      rec.growth = (lr - fr) / fr * 100;
+    } else {
+      var fw = parseFloat(f.weight) || 0, lw = parseFloat(l.weight) || 0;
+      if (!fw || !lw) return;
+      var e1f = (typeof computeE1RM === 'function') ? computeE1RM(fw, parseInt(f.reps, 10) || 1) : fw;
+      var e1l = (typeof computeE1RM === 'function') ? computeE1RM(lw, parseInt(l.reps, 10) || 1) : lw;
+      rec.firstTxt = fw + 'kg x ' + (f.reps || '-');
+      rec.lastTxt = lw + 'kg x ' + (l.reps || '-');
+      rec.growth = e1f > 0 ? (e1l - e1f) / e1f * 100 : 0;
+      rec.vol = es.reduce(function(s, e){
+        return s + (parseFloat(e.weight) || 0) * (parseInt(e.reps, 10) || 0);
+      }, 0);
+    }
+    rows.push(rec);
+  });
+
+  if (!rows.length) return null;
+  rows.sort(function(a, b){ return b.growth - a.growth; });
+
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]') || []; } catch (e) { hist = []; }
+  var sessions = 0;
+  try {
+    sessions = new Set(hist.map(function(h){ return h && h.date; }).filter(Boolean)).size;
+  } catch (e) { sessions = hist.length; }
+  var streak = 0;
+  try { streak = (typeof getStreakData === 'function') ? (getStreakData() || 0) : 0; } catch (e) { streak = 0; }
+
+  return {
+    rows: rows,
+    totalVol: rows.reduce(function(s, r){ return s + r.vol; }, 0), // kg
+    sessions: sessions,
+    streak: streak,
+    hist: hist
+  };
+}
+
+// 入口 HTML —— 计划页(bar 紧凑横条)与进度页(card 整块卡)共用同一份数据与样式来源。
+// mode: 'bar'(默认) | 'card'。数据不足时返回 '',即整块不出现。
+function fbStrengthCardEntryHtml(mode) {
+  if (typeof fbStrengthCardData !== 'function') return '';
+  var d = fbStrengthCardData();
+  if (!d || !d.rows.length) return '';
+  var best = d.rows[0];
+  var up = best.growth >= 0;
+  var pct = (up ? '+' : '') + Math.round(best.growth * 10) / 10 + '%';
+  var sub = '最快进步 ' + best.name + ' ' + pct + ' · 共 ' + d.rows.length + ' 个动作';
+  var col = up ? 'var(--green)' : '#EF4444';
+
+  if (mode === 'card') {
+    // 进度页:整块卡 + 全宽按钮(和 PR 卡同层级)
+    return '<div class="progress-card"><div class="card-title">📤 我的力量档案</div>'
+      + '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5;">'
+      + '把每个动作的首末对比与估算 1RM 增长打包成一张图,可保存、可分享。'
+      + '数据是你自己的,随时能带走。</div>'
+      + '<div style="font-size:12px;margin-bottom:10px;">最快进步 <b>' + best.name + '</b> '
+      + '<b style="color:' + col + ';">' + pct + '</b></div>'
+      + '<button onclick="fbExportStrengthCard()" style="width:100%;padding:12px;border-radius:12px;'
+      + 'background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:14px;'
+      + 'font-weight:700;cursor:pointer;">生成力量档案图片</button></div>';
+  }
+
+  // 计划页:紧凑横条,放在 hero/banner 之下。默认打开的就是计划页,
+  // 传播入口离用户越近越好 —— 原来只有进度页有,等于多一步流失。
+  return '<div id="fbStrengthEntry" style="display:flex;align-items:center;gap:10px;padding:11px 14px;'
+    + 'margin-bottom:12px;border-radius:14px;background:var(--card);border:1px solid var(--border);'
+    + 'box-shadow:var(--shadow);">'
+    + '<span style="font-size:19px;flex-shrink:0;">📤</span>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<div style="font-size:13px;font-weight:700;color:var(--text);">我的力量档案</div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;'
+    + 'text-overflow:ellipsis;white-space:nowrap;">' + sub + '</div>'
+    + '</div>'
+    + '<button onclick="fbExportStrengthCard()" style="flex-shrink:0;padding:7px 14px;border-radius:14px;'
+    + 'background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:12px;'
+    + 'font-weight:700;cursor:pointer;">生成图片</button></div>';
+}
+
+function fbExportStrengthCard() {
+  var d = fbStrengthCardData();
+  if (!d) {
+    alert('还没有足够的训练记录～某个动作至少记录 2 次,才能看出进步曲线。');
+    return;
+  }
+  var rows = d.rows, totalVol = d.totalVol, sessions = d.sessions, streak = d.streak, hist = d.hist;
+  var top = rows.slice(0, 5);
+  var maxG = Math.max.apply(null, top.map(function(r){ return Math.abs(r.growth); }).concat([1]));
+
+
+  var canvas = document.createElement('canvas');
+  canvas.width = 1080; canvas.height = 1920;
+  var ctx = canvas.getContext('2d');
+  var W = 1080, H = 1920;
+
+  // 背景(与 generateShareImage 同画风,保持品牌一致)
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1A1A2E'); grad.addColorStop(0.5, '#16213E'); grad.addColorStop(1, '#0F3460');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  ctx.globalAlpha = 0.06; ctx.fillStyle = '#FF6B35';
+  ctx.beginPath(); ctx.arc(W * 0.85, H * 0.05, 250, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W * 0.1, H * 0.2, 180, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8B5CF6';
+  ctx.beginPath(); ctx.arc(W * 0.9, H * 0.55, 200, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // 顶部
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 900 64px sans-serif';
+  ctx.fillText('🏋️ 我的力量档案', W / 2, 130);
+  ctx.font = 'bold 700 34px sans-serif'; ctx.globalAlpha = 0.9;
+  ctx.fillText('我变强了多少', W / 2, 192);
+  ctx.globalAlpha = 1;
+
+  var dates = hist.map(function(h){ return h.date; }).sort();
+  if (dates.length) {
+    ctx.font = '400 24px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillText(dates[0] + ' ~ ' + dates[dates.length - 1], W / 2, 240);
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(80, 285); ctx.lineTo(W - 80, 285); ctx.stroke();
+
+  // 动作进步列表
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 700 32px sans-serif';
+  ctx.fillText('📈 进步最快的动作', 80, 355);
+
+  top.forEach(function(r, i) {
+    var y = 410 + i * 158;
+    // 卡片底
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.roundRect(80, y - 20, W - 160, 132, 20); ctx.fill();
+
+    var up = r.growth >= 0;
+    var col = up ? '#22C55E' : '#EF4444';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff'; ctx.font = '600 30px sans-serif';
+    ctx.fillText(r.name, 112, y + 24);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = col; ctx.font = 'bold 800 40px sans-serif';
+    ctx.fillText((up ? '+' : '') + Math.round(r.growth * 10) / 10 + '%', W - 112, y + 26);
+
+    ctx.textAlign = 'left';
+    ctx.font = '500 24px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText(r.firstTxt + '  →  ' + r.lastTxt, 112, y + 62);
+
+    // 进步条
+    var bx = 112, bw = W - 224, bh = 12, by = y + 84;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 6); ctx.fill();
+    var fw2 = Math.max(6, Math.min(bw, Math.abs(r.growth) / maxG * bw));
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.roundRect(bx, by, fw2, bh, 6); ctx.fill();
+  });
+
+  // 汇总三宫格
+  var sy = 410 + top.length * 158 + 30;
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath(); ctx.moveTo(80, sy); ctx.lineTo(W - 80, sy); ctx.stroke();
+
+  var cells = [
+    { v: totalVol >= 1000 ? (Math.round(totalVol / 100) / 10) + ' 吨' : Math.round(totalVol) + ' kg', l: '累计训练容量' },
+    { v: sessions + ' 次', l: '训练次数' },
+    { v: (streak > 0 ? '🔥 ' + streak + ' 天' : streak + ' 天'), l: '连续打卡' }
+  ];
+  cells.forEach(function(c, i) {
+    var cx = W / 2 + (i - 1) * 300;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FF6B35'; ctx.font = 'bold 800 40px sans-serif';
+    ctx.fillText(c.v, cx, sy + 75);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '500 22px sans-serif';
+    ctx.fillText(c.l, cx, sy + 112);
+  });
+
+  // 品牌区 + 二维码
+  var bottomY = sy + 170;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 700 34px sans-serif'; ctx.fillStyle = '#fff';
+  ctx.fillText('你的训练,你的节奏 💪', W / 2, bottomY);
+  ctx.font = '500 24px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fillText('FitBuddy · 免费健身计划生成器', W / 2, bottomY + 46);
+
+  try {
+    if (typeof qrcode === 'function') {
+      var _qr = qrcode(0, 'M');
+      _qr.addData('https://santeb.github.io/fitbuddy/?utm_source=strengthcard');
+      _qr.make();
+      var _n = _qr.getModuleCount();
+      var _box = 260, _cell = Math.floor((_box - 32) / _n);
+      var _sz = _cell * _n;
+      var _qx = W / 2 - _box / 2, _qy = bottomY + 80;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.roundRect(_qx, _qy, _box, _box, 24); ctx.fill();
+      ctx.fillStyle = '#1A1A2E';
+      var _mx = _qx + (_box - _sz) / 2, _my = _qy + (_box - _sz) / 2;
+      for (var _r = 0; _r < _n; _r++) {
+        for (var _c = 0; _c < _n; _c++) {
+          if (_qr.isDark(_r, _c)) ctx.fillRect(_mx + _c * _cell, _my + _r * _cell, _cell, _cell);
+        }
+      }
+    }
+  } catch (e) {}
+
+  ctx.textAlign = 'center'; ctx.font = '400 18px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillText('fitbuddy.app', W / 2, H - 40);
+
+  canvas.toBlob(function(blob){
+    var url = URL.createObjectURL(blob);
+    showSharePreview(url, blob);
+  }, 'image/png');
+}
+
 // 分享预览弹窗(支持下载/复制/WebShare)
 function showSharePreview(imageUrl, blob) {
   var overlay = document.createElement('div');
@@ -4832,10 +5159,17 @@ function fbProgressBannerHtml() {
       hasContent = true;
       if (p.done >= p.total) {
         // 完成态:正向反馈 + 当场生成海报(社交货币)
+        // 练完那一刻是传播意愿最高的时刻,所以这里把「力量档案」和「分享图」并排放,
+        // 前者讲"我变强了多少"(对外有信息量),后者讲"我练了多少"(打卡感)。
+        var hasStrength = (typeof fbStrengthCardData === 'function') ? !!fbStrengthCardData() : false;
         html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'
           + '<div style="font-size:14px;font-weight:700;color:var(--green);">✅ 今日训练全部完成！</div>'
-          + '<button onclick="generateShareImage()" style="padding:7px 14px;border-radius:14px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">📸 生成分享图</button>'
-          + '</div>';
+          + '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">'
+          + (hasStrength
+              ? '<button onclick="fbExportStrengthCard()" style="padding:7px 14px;border-radius:14px;background:var(--card);color:var(--primary);border:1px solid var(--primary);font-size:12px;font-weight:700;cursor:pointer;">📤 力量档案</button>'
+              : '')
+          + '<button onclick="generateShareImage()" style="padding:7px 14px;border-radius:14px;background:linear-gradient(90deg,#FF6B35,#FF3E7F);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;">📸 生成分享图</button>'
+          + '</div></div>';
       } else if (p.done > 0) {
         // 蔡格尼克: 已开始未闭合 → "还剩 X 个"
         html += '<div style="font-size:14px;font-weight:700;color:var(--text);">🔥 今天还剩 <span style="color:var(--primary);font-size:19px;">' + (p.total - p.done) + '</span> 个动作</div>'
@@ -4878,6 +5212,112 @@ function fbNextStreakAch(streak) {
 }
 
 // 🎯 首页大按钮 (今日训练 hero): plan tab 顶部、banner 之前
+// ===================== 🎯 今日决策:这个动作今天该举多重 =====================
+// 用上次实际重量/次数/RPE 推算本次目标。RPE(自评用力程度)是自由重量训练才有的维度,
+// Keep 这类"跟练视频"产品里压根没有"重量"概念,所以它结构上做不出这条 ——
+// 这是 FitBuddy 真正不可复制的差异点之一(不是技术差距,是产品形态决定的)。
+// 返回 null = 没有历史数据(首次练),此时不显示目标,让用户自己找感觉,别瞎编重量。
+function fbCalcNextLoad(exName) {
+  var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog[exName] : null;
+  if (!log || !log.length) return null;
+  var last = log[log.length - 1];
+  if (!last) return null;
+
+  var u = (typeof getLogUnit === 'function') ? getLogUnit(exName)
+        : { mode: 'weight', unit: 'kg', label: '重量' };
+  var rpe = parseFloat(last.rpe) || 0;
+
+  // 减载周统一降 15%(与 pro-tools 的半减载口径一致);pro-tools 未加载时跳过,不能让它炸主流程
+  var deload = false;
+  try {
+    if (typeof isDeloadWeekActive === 'function' && typeof currentWeek !== 'undefined') {
+      deload = !!isDeloadWeekActive(currentWeek, (typeof currentCycle !== 'undefined' ? currentCycle : 3));
+    }
+  } catch (e) { deload = false; }
+
+  // ---- 自重/计时动作:加量 = 多做几次,而不是加 kg ----
+  if (u.mode === 'reps') {
+    var reps = parseInt(last.reps, 10) || 0;
+    if (!reps) return null;
+    var nr = reps;
+    if (rpe && rpe <= 6) nr = reps + 2;
+    else if (rpe && rpe >= 9) nr = Math.max(1, reps - 2);
+    if (deload) nr = Math.max(1, Math.round(nr * 0.85));
+    return {
+      mode: 'reps', unit: u.unit || '次', target: nr, lastVal: reps, rpe: rpe,
+      delta: nr - reps, deload: deload,
+      reason: deload ? '减载周' : (!rpe ? '上次没记 RPE,先按上次次数做'
+        : (rpe <= 6 ? '上次很轻松,加量' : (rpe >= 9 ? '上次太吃力,减量' : '上次强度合适,维持')))
+    };
+  }
+
+  // ---- 重量动作 ----
+  var w = parseFloat(last.weight) || 0;
+  if (!w) return null;
+  var nw = w;
+  if (rpe && rpe <= 6) nw = w + 2.5;
+  else if (rpe && rpe >= 9) nw = Math.max(0, w - 2.5);
+  if (deload) nw = Math.round(nw * 0.85 / 2.5) * 2.5;
+  return {
+    mode: 'weight', unit: 'kg', target: Math.round(nw * 10) / 10, lastVal: w, rpe: rpe,
+    delta: Math.round((nw - w) * 10) / 10, deload: deload, reps: parseInt(last.reps, 10) || 0,
+    reason: deload ? '减载周 -15%' : (!rpe ? '上次没记 RPE,先维持'
+      : (rpe <= 6 ? '上次很轻松,加 2.5kg' : (rpe >= 9 ? '上次太吃力,降 2.5kg' : '上次强度合适,维持')))
+  };
+}
+
+// 今日重量指令:只取今天计划里前 3 个"有历史数据"的动作,避免刷屏
+function fbTodayLoadLines(day) {
+  if (!day || !day.exes || !day.exes.length) return '';
+  var rows = [];
+  for (var i = 0; i < day.exes.length && rows.length < 3; i++) {
+    var ex = day.exes[i];
+    if (!ex || !ex.n) continue;
+    var r = fbCalcNextLoad(ex.n);
+    if (!r) continue;
+    var lastTxt = r.mode === 'weight'
+      ? ('上次 ' + r.lastVal + 'kg' + (r.reps ? ' × ' + r.reps : '') + (r.rpe ? ' @RPE' + r.rpe : ''))
+      : ('上次 ' + r.lastVal + (r.unit || '次') + (r.rpe ? ' @RPE' + r.rpe : ''));
+    var tgtTxt = r.mode === 'weight'
+      ? ('<b>' + r.target + 'kg</b>' + (r.reps ? ' × ' + r.reps : ''))
+      : ('<b>' + r.target + (r.unit || '次') + '</b>');
+    var dTxt = r.delta > 0 ? ('+' + r.delta + (r.mode === 'weight' ? 'kg' : ''))
+             : (r.delta < 0 ? (r.delta + (r.mode === 'weight' ? 'kg' : '')) : '维持');
+    rows.push(
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:2px 0;">'
+      + '<span style="font-size:12px;opacity:0.95;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + ex.n + '</span>'
+      + '<span style="font-size:12px;white-space:nowrap;">' + tgtTxt
+      + ' <span style="opacity:0.8;font-size:11px;">' + dTxt + '</span></span></div>'
+      + '<div style="font-size:10px;opacity:0.68;margin:-1px 0 5px;">' + lastTxt + ' · ' + r.reason + '</div>');
+  }
+  if (!rows.length) return '';
+  return '<div style="background:rgba(0,0,0,0.16);border-radius:12px;padding:9px 12px;margin-bottom:10px;">'
+    + '<div style="font-size:11px;opacity:0.85;margin-bottom:3px;">🎯 今日目标 · 按上次 RPE 推算</div>'
+    + rows.join('') + '</div>';
+}
+
+// ⚠️ 疲劳告警 —— 这条是 Keep 结构性地做不了的:
+// Keep 2026 H1 消费品 4.83 亿占营收 58%,靠 DAU 和复购活着,"建议你今天别练"等于自伤,
+// 它最多只会说"来练个轻松的"。FitBuddy 没有商业包袱,可以直说。这不是功能差异,是商业模式差异。
+function fbTodayFatigueLine(day) {
+  if (typeof checkMuscleFatigue !== 'function') return '';
+  var warns;
+  try { warns = checkMuscleFatigue(); } catch (e) { return ''; }
+  if (!warns || !warns.length) return '';
+  var todayM = {};
+  (day && day.exes ? day.exes : []).forEach(function(e) { if (e && e.m) todayM[e.m] = 1; });
+  var hit = warns.filter(function(w) { return todayM[w.muscle]; });
+  if (!hit.length) return '';
+  var names = hit.map(function(w) {
+    var label = (typeof MUSCLE_LABELS !== 'undefined' && MUSCLE_LABELS[w.muscle]) ? MUSCLE_LABELS[w.muscle] : w.muscle;
+    return label + ' 已连练 ' + w.days + ' 天';
+  }).join('、');
+  return '<div style="background:rgba(239,68,68,0.28);border:1px solid rgba(255,255,255,0.35);'
+    + 'border-radius:12px;padding:9px 12px;margin-bottom:10px;font-size:12px;line-height:1.5;">'
+    + '⚠️ ' + names
+    + '<br><span style="opacity:0.9;">建议今天休息,或换成不涉及的部位。恢复也是训练的一部分。</span></div>';
+}
+
 function fbTodayHeroHtml() {
   if (!lastPlan || !lastPlan.trainingDays) return '';
   var ti = fbGetTodayDayIdx();
@@ -4896,7 +5336,9 @@ function fbTodayHeroHtml() {
     } else {
       html += '<div style="font-size:12px;opacity:0.85;">今日训练 · Day '+(ti+1)+'</div>'
         + '<div style="font-size:26px;font-weight:800;margin:4px 0 8px;line-height:1.2;">🎯 '+(muscleNames||'休息调整')+'</div>'
-        + '<div style="font-size:13px;opacity:0.9;margin-bottom:14px;">'+p.total+' 个动作 · 约 '+estMin+' 分钟</div>'
+        + '<div style="font-size:13px;opacity:0.9;margin-bottom:10px;">'+p.total+' 个动作 · 约 '+estMin+' 分钟</div>'
+        + fbTodayFatigueLine(day)
+        + fbTodayLoadLines(day)
         + '<button onclick="document.getElementById(\'planResult\').scrollIntoView({behavior:\'smooth\',block:\'start\'})" style="width:100%;padding:12px;border-radius:14px;background:#fff;color:var(--primary);border:none;font-size:15px;font-weight:700;cursor:pointer;">'
         + (p.done > 0 ? '继续训练 ('+(p.total-p.done)+' 个待完成)' : '开始训练') + '</button>';
     }
@@ -4928,16 +5370,23 @@ function fbRefreshRetentionUI() {
   if (!top && !planRes) return;
   var hero = fbTodayHeroHtml();
   var ban = fbProgressBannerHtml();
-  if (!hero && !ban) return;
-  // 旧的 hero/banner 移除
+  // 📤 力量档案入口条:默认打开的是计划页,入口离用户越近越好。
+  // 数据不足时 fbStrengthCardEntryHtml 返回 '',整条不出现 —— 不给新用户看空按钮。
+  var entry = (typeof fbStrengthCardEntryHtml === 'function') ? fbStrengthCardEntryHtml('bar') : '';
+  if (!hero && !ban && !entry) return;
+  // 旧的 hero/banner/入口移除(避免切 tab 重渲染时叠加重复)
   var oldHero = document.getElementById('fbTodayHero');
   var oldBan = document.getElementById('fbProgressBanner');
+  var oldEntry = document.getElementById('fbStrengthEntry');
   if (oldHero) oldHero.remove();
   if (oldBan) oldBan.remove();
+  if (oldEntry) oldEntry.remove();
   // 优先注入 page-plan 顶部; 不存在则 fallback 到 planResult
   if (top) {
-    top.innerHTML = (hero || '') + (ban || '');
+    top.innerHTML = (hero || '') + (ban || '') + (entry || '');
   } else if (planRes) {
+    // ⚠️ afterbegin 是前插,必须倒序插入才能呈现 hero → banner → 入口条的顺序
+    if (entry) planRes.insertAdjacentHTML('afterbegin', entry);
     if (ban) planRes.insertAdjacentHTML('afterbegin', ban);
     if (hero) planRes.insertAdjacentHTML('afterbegin', hero);
   }
@@ -6045,6 +6494,14 @@ function renderProgress() {
       '</div>';
     html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
   }
+
+  // 📈 渐进超负荷分析
+  // ⚠️ 上面这些卡全是"做了多少"(热力图/频次/跑量/热量/部位),唯独缺"变强了多少"。
+  // 体重围度要 4~8 周才动,而力量进步 2~3 周就能看到 —— 这是唯一能覆盖第 2~3 周流失
+  // 窗口期的早期正反馈。renderProgressionAnalysis() 之前已写好但全项目零调用(死代码),
+  // 这里接上。默认展开,别把它藏起来。
+  var progBody = renderProgressionAnalysis();
+  if (progBody) html += collapsibleCard('pc-progression', '📈 渐进超负荷分析', progBody, true);
 
   // 跑鞋里程
   var activeShoes = shoeList.filter(function(s){ return !s.retired; });
@@ -8062,8 +8519,10 @@ function renderProgressionAnalysis() {
   });
   if (!exNames.length) return '';
 
-  var html = '<div class="progress-card"><div class="card-title">📈 渐进超负荷分析</div>';
-  html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+  // ⚠️ 只返回内容体,外层卡片/标题由调用方用 collapsibleCard 统一包,避免双层标题。
+  // 另外必须保证"一个动作都没凑出趋势"时返回空串:调用方是 if(progBody) 判断,
+  // 若这里返回空壳 div(非 ''),进度页就会多出一个只有标题没有内容的空卡片。
+  var html = '', rendered = 0;
 
   exNames.slice(0, 5).forEach(function(exName) {
     var raw = trainingLog[exName];
@@ -8113,8 +8572,9 @@ function renderProgressionAnalysis() {
         rmHtml +
       '</div>' +
     '</div>';
+    rendered++;
   });
 
-  html += '</div></div>';
-  return html;
+  if (!rendered) return '';
+  return '<div style="display:flex;flex-direction:column;gap:12px;">' + html + '</div>';
 }
