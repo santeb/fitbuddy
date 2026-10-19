@@ -803,6 +803,33 @@ function getExByName(n) {
   return null;
 }
 
+// 动作名模糊匹配 —— 只当精确匹配失败时才用。
+// ⚠️ 为什么要这个:日志里的 key 常常是简写名("毛巾弯举"),库里却是全名("毛巾弯举（二头）")。
+//    精确匹配一失败,getExByName 返回 null → isBodyweightEx 判 false → 自重动作被当成重量动作,
+//    于是 UI 给它弹出「重量/次数/RPE」三个框,用户随手在重量框填个 1,
+//    力量档案与趋势图就把次数当成 kg 渲染 —— 画面上出现「1kg × 14」这种假数据。
+//    匹配顺序:去括号后全等 → 去括号后互为前缀(均需 ≥3 字,避免"弯举"乱匹配)。
+function getExByNameFuzzy(n) {
+  if (!n) return null;
+  if (getExByName(n)) return getExByName(n);
+  var strip = function (s) { return String(s || '').replace(/[（(][^）)]*[）)]/g, '').trim(); };
+  var base = strip(n);
+  if (!base) return null;
+  var i, ex;
+  for (i = 0; i < EXES.length; i++) {
+    if (strip(EXES[i].n) === base) return EXES[i];
+  }
+  if (base.length >= 3) {
+    for (i = 0; i < EXES.length; i++) {
+      ex = EXES[i];
+      var b2 = strip(ex.n);
+      if (b2.length >= 3 && (b2.indexOf(base) === 0 || base.indexOf(b2) === 0)) return ex;
+    }
+  }
+  return null;
+}
+window.getExByNameFuzzy = getExByNameFuzzy;
+
 // 周难度 → 变式档位偏移: +10%升1档/+15%升2档/+20%升3档(封顶)/-15%降1档/-30%最低档
 function getBwShift(weightAdjust) {
   var v = parseInt(weightAdjust, 10);
@@ -3902,6 +3929,7 @@ function isBodyweightEx(name) {
   if (!name) return false;
   try {
     var ex = (typeof getExByName === 'function') ? getExByName(name) : null;
+    if (!ex && typeof getExByNameFuzzy === 'function') ex = getExByNameFuzzy(name);
     if (ex && (ex.eq === 'bodyweight' || ex.eq === 'band')) return true;
   } catch(e) {}
   try {
@@ -4024,11 +4052,11 @@ function logProg(exName, progId) {
   if (!row) return;
   var inputs = row.querySelectorAll('input');
   // 自重动作输入框顺序为[次数, RPE],无重量;器械动作为[重量, 次数, RPE]
+  // ⚠️ 用统一的 isBodyweightEx(含模糊匹配): 直接查 getExByName 的话,
+  //    简写名("毛巾弯举")匹配不到库里的全名 → 自重动作弹出重量框 → 次数被存进 weight 字段。
   var isBw = false;
-  try {
-    var bwEx = getExByName(exName);
-    isBw = !!(bwEx && (bwEx.eq === 'bodyweight' || bwEx.eq === 'band'));
-  } catch(e) { isBw = false; }
+  try { isBw = (typeof isBodyweightEx === 'function') ? isBodyweightEx(exName) : false; }
+  catch(e) { isBw = false; }
   var weight = '', reps = '', rpe = '';
   if (isBw) {
     reps = inputs[0] ? inputs[0].value : '';
@@ -4283,19 +4311,33 @@ function generateShareImage() {
 // 返回 null = 数据不足(没有任何动作记录 ≥2 次,或算不出增长),此时入口不显示,不打扰新用户。
 function fbStrengthCardData() {
   var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : {};
-  var names = Object.keys(log).filter(function(n){ return (log[n] || []).length >= 2; });
+  var names = Object.keys(log).filter(function(n){ return (log[n] || []).length >= 1; });
   if (!names.length) return null;
 
   // 每个动作:首末对比 + 估算 1RM 增长率
   var rows = [];
   names.forEach(function(n) {
-    var es = (log[n] || []).slice().sort(function(a, b){
-      return String(a.date || '') < String(b.date || '') ? -1 : 1;
-    });
+    var raw = (log[n] || []).filter(function(e){ return !!e; });
+    if (!raw.length) return;
+    var u = (typeof getLogUnit === 'function') ? getLogUnit(n) : { mode: 'weight', unit: 'kg' };
+
+    // 兜底:动作名没匹配上动作库(自定义/简写)而被判成重量动作,但一条重量都没填过 ——
+    // 那就别按 kg 渲染(否则变成"0kg × 14"这种没有意义的数字),改走次数轴。
+    var anyW = false;
+    raw.forEach(function(e){ if (parseFloat(e.weight) > 0) anyW = true; });
+    if (u.mode === 'weight' && !anyW) u = { mode: 'reps', unit: '次', label: '次数' };
+
+    // ⚠️ 必须按天聚合再取首末。同一天会被记录多组,直接拿"第一条 / 最后一条"当首末,
+    //    等于把组间波动当成长期趋势:最后一组往往力竭、次数最少(显示成退步),
+    //    热身组或试做组只有 1 次(显示成"1次 → 14次"这种离谱的进步)。
+    //    趋势图与 PR 早就走 aggregateLogByDate,这里此前没走,两处口径不一致 —— 统一。
+    var es = (typeof aggregateLogByDate === 'function')
+      ? aggregateLogByDate(raw, u.mode === 'reps' ? 'reps' : 'weight')
+      : raw.slice();
+    // 至少两个「不同的训练日」才能谈进步;同一天记了几组不算。
     if (es.length < 2) return;
     var f = es[0], l = es[es.length - 1];
     if (!f || !l) return;
-    var u = (typeof getLogUnit === 'function') ? getLogUnit(n) : { mode: 'weight', unit: 'kg' };
     var rec = { name: n, growth: 0, vol: 0 };
 
     if (u.mode === 'reps') {
@@ -4313,7 +4355,8 @@ function fbStrengthCardData() {
       rec.firstTxt = fw + 'kg x ' + (f.reps || '-');
       rec.lastTxt = lw + 'kg x ' + (l.reps || '-');
       rec.growth = e1f > 0 ? (e1l - e1f) / e1f * 100 : 0;
-      rec.vol = es.reduce(function(s, e){
+      // 容量按「全部组」累计(es 已按天聚合,只有一天一条,拿它算会漏掉当天的其余组)
+      rec.vol = raw.reduce(function(s, e){
         return s + (parseFloat(e.weight) || 0) * (parseInt(e.reps, 10) || 0);
       }, 0);
     }
@@ -4385,7 +4428,7 @@ function fbStrengthCardEntryHtml(mode) {
 function fbExportStrengthCard() {
   var d = fbStrengthCardData();
   if (!d) {
-    alert('还没有足够的训练记录～某个动作至少记录 2 次,才能看出进步曲线。');
+    alert('还没有足够的训练记录～同一个动作至少在 2 个不同的训练日各记一次,才能看出进步曲线。');
     return;
   }
   var rows = d.rows, totalVol = d.totalVol, sessions = d.sessions, streak = d.streak, hist = d.hist;
@@ -6013,7 +6056,10 @@ function migrateBodyweightLog() {
     Object.keys(log).forEach(function(name){
       if (!isBodyweightEx(name)) return;
       (log[name] || []).forEach(function(e){
-        if (e.weight > 0) { e.reps = e.weight; e.weight = 0; changed = true; }
+        // ⚠️ 只在「次数为空、重量却有值」时才还原 —— 这正是旧 bug 的指纹(次数被存进了 weight)。
+        //    若 reps 本来就有值(例如用户在新版 UI 里重量框随手填了个 1、次数填了 14),
+        //    绝不能拿 weight 覆盖 reps:那会把真实的 14 次毁掉。宁可留着脏重量,渲染层已会忽略它。
+        if (e.weight > 0 && !(parseInt(e.reps, 10) > 0)) { e.reps = e.weight; e.weight = 0; changed = true; }
       });
     });
     if (changed) {
