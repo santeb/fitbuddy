@@ -7899,7 +7899,9 @@ var SUPPS_DATA = [
     timing: "训练前20~30分钟",
     dose: "按产品说明，新手半份试耐受",
     cycle: "避免每天使用，建议4周停1周防耐受",
-    note: "含咖啡因+β-丙氨酸+精氨酸等。下午6点后训练不建议用（影响睡眠）。咖啡因敏感者慎用。心率异常时停用。"
+    note: "含咖啡因+β-丙氨酸+精氨酸等。下午6点后训练不建议用（影响睡眠）。咖啡因敏感者慎用。心率异常时停用。",
+    link: "https://union-click.jd.com/jdc?e=618%7Cpc%7C&p=JF8BAVAJK1olWAUEXVlUDE8SB18IGloWXg8CXFlfD04nRzBQRQQlBENHFRxWFlVPRjtUBABAQlRcCEBdCUoUAGYIE1wXWgMdDRsBVUVTXDdWRCdBCF5SMQ4LBEh5AgEIKwhCIWdGUlZZa08NaDdSRyZvFlxRARhRBHsWM2wJGVISWQYGVFxtOEsQMz1mE1MdXgMAUlZUCU0nAl8IHVMWWAQCUVpaD04RM2gIEmtOCGhKCiIjYxtlfTd3eT8lbTYBZFldAV8RcS5aD11nbTYCZF1tCEoXAmoPE1IWXgIeVF1bD0wfH28OE1gQXwYHUF1UCEMnAW4JH1IlbdiP5DoqaAh0Bip1RVlKX2NKNR2DhfsGcR8BHFIUTDZlDAErakxTRxduUzljH218FB85SClhQQQJGxxNIFlsVjcvQBZBCwp2bQdjHHRZDCAZOE4nAGkAElklXDY",
+    linkLabel: "京东看同款氮泵"
   },
   {
     emoji: "🐟",
