@@ -124,10 +124,10 @@
       try { track('onboarding_' + (finished ? 'finish' : 'skip'), { step: STEP + 1 }); } catch (e) {}
     }
     if (finished) {
-      // 落地: 滚到目标选择处, 让用户直接开始第 1 步
+      // 落地: 回到首屏顶部(快速模板区), 那里现在才是主路径。
+      // 旧行为是滚到 goalGroup —— 但 planCard 冷启动改造后默认收起, 滚过去是一片空。
       setTimeout(function () {
-        var g = document.getElementById('goalGroup');
-        if (g) g.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
       }, 250);
     }
   }
@@ -147,12 +147,27 @@
   };
 
   // 首访且没有老计划才自动弹 (深链用户 deeplink.js 已标记 _deepLinked, 不弹)
+  //
+  // 🎯 冷启动第4刀: 不再抢在用户看到产品之前弹。
+  // 旧行为 600ms 弹出全屏遮罩 —— 用户还没看见产品长什么样, 先被要求读 3 屏说明书。
+  // 现在延后到 12 秒: 这段时间足够他点「快速模板」自己生成一个计划出来,
+  // 已经动手成功了的人不需要说明书, hasPlan() 会拦掉他。
+  // 剩下 12 秒还没动的人才是真正迷茫、需要被拉一把的那批。
   if (!seen() && !hasPlan()) {
+    // 12 秒内用户有任何动作(滚动/点击/触摸/按键)都视为"正在自己探索", 不弹。
+    // 只有整整 12 秒一动没动的用户才是真迷茫、需要被拉一把的那批。
+    var _interacted = false;
+    ['touchstart', 'scroll', 'click', 'keydown'].forEach(function (evt) {
+      window.addEventListener(evt, function once() {
+        _interacted = true;
+        window.removeEventListener(evt, once);
+      }, { passive: true, once: true });
+    });
     setTimeout(function () {
-      // defer 脚本按文档顺序执行, deeplink.js 在 onboarding.js 之后跑,
-      // 600ms 后它早已设好 _deepLinked, 此处再确认一次
       if (window._deepLinked) return;
+      if (hasPlan()) return;      // 已经自己生成了计划 → 说明他玩明白了, 别打断
+      if (_interacted) return;    // 12 秒内有动作 → 正在探索, 不弹
       window.showOnboarding(true);
-    }, 600);
+    }, 12000);
   }
 })();

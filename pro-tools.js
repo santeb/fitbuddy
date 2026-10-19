@@ -838,6 +838,18 @@ function checkMissedDays() {
     var isToday = dayNum === dayOfWeek;
     var isFuture = dayNum > dayOfWeek;
 
+    // 🎯 冷启动修复(2026-10-20): 计划生成之前的训练日不算"漏课"。
+    // 旧逻辑只看"周几过了没有": 周五生成的计划、周二凌晨打开,
+    // 会被提示"周一(0/N)未完成" —— 用户刚拿到计划 30 秒就背上一笔从未存在的欠账,
+    // 首屏第一眼是黄色警告条, 直接劝退。
+    var planAt = plan.date || 0;
+    if (planAt && isPast) {
+      var _missedDate = new Date(today);
+      _missedDate.setDate(_missedDate.getDate() - (dayOfWeek - dayNum)); // 该训练日的具体日期
+      _missedDate.setHours(23, 59, 59, 999);                            // 当天结束时刻
+      if (_missedDate.getTime() < planAt) return;                       // 生成计划前就过完的日子: 不欠
+    }
+
     // 检查是否完成 (用与 renderDayCard 一致的 dayId 格式)
     var dayData = plan.trainingDays[idx];
     if (!dayData) return;

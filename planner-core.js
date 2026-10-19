@@ -354,12 +354,17 @@ function applyTemplate(i) {
   cards.forEach(function(c){ c.classList.remove('active'); });
   if (cards[i]) cards[i].classList.add('active');
   savePrefs();
-  // 自动展开定制表单(可能被用户收起)
-  var planCard = document.getElementById('planCard');
-  if (planCard) planCard.classList.remove('collapsed');
-  showToast('已填入「' + t.name + '」参数，可微调后点生成 ✨');
-  var goalGroup = document.getElementById('goalGroup');
-  if (goalGroup) goalGroup.scrollIntoView({ behavior:'smooth', block:'center' });
+  // 🎯 冷启动第1刀:模板一键直达。
+  // 旧行为:填完表单 → 强行展开整张表单 → 让用户再点一次「生成」。
+  // 用户点模板的预期是"出计划",不是"回到一张更大的表单"。这里直接生成。
+  if (typeof track === 'function') { try { track('template_click', { idx: i, name: t.name }); } catch (e) {} }
+  if (typeof doGenerate === 'function') {
+    doGenerate();
+    showToast('已按「' + t.name + '」生成 ↓');
+  } else {
+    showToast('已填入「' + t.name + '」参数，可微调后点生成 ✨');
+  }
+  // 不再展开 planCard、不再滚到表单:表单已经从"必经之路"降级为"可选设置"
 }
 (function initTheme(){
   var saved = localStorage.getItem("fitbuddy_theme");
@@ -2365,6 +2370,8 @@ function doGenerate() {
       doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cfg, goalCfg);
       // 🆕 生成后立即刷新今日训练 hero + banner(否则 hero 挂旧计划内容)
       fbRefreshRetentionUI();
+      // 🎯 冷启动:用户主动发起的一次成功生成 —— 把"看得见的成果"和"回得来的路"同时落地
+      fbAfterPlanRendered();
     } catch(e) {
       console.error("生成计划出错:", e);
       // 异常时重置自适应状态,避免残留的校准信息在后续重渲染(refreshPlan 等)路径上弹出陈旧提示
@@ -2382,6 +2389,81 @@ function doGenerate() {
     }
   initReminderUI();
   }
+
+/* ==========================================================================
+ * 🎯 冷启动三件套（2026-10-20）
+ * 背景: 生成计划那一秒是用户获得感的顶点。旧代码在这里什么都没做 ——
+ *       结果渲在表单下方、用户不知道已经好了; 装到桌面的引导只在角落一个
+ *       小按钮里等着, 而 web 产品失去了标签页就等于永久失联。
+ * 这里一次性落地: ① 自动滚到结果  ② 首次渲染埋点  ③ 价值峰值卡安装引导
+ * 只在 doGenerate() 这条"用户主动发起"的路径上调用,
+ * restoreLastPlan(刷新恢复) 不触发 —— 否则老用户每次刷新都会被骚扰。
+ * ========================================================================== */
+function fbAfterPlanRendered() {
+  // ① 结果渲出来了但还在表单下方, 用户会有"点了没反应"的错觉
+  try {
+    var pr = document.getElementById('planResult');
+    if (pr) pr.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {}
+  // ② 首次成功出计划的埋点: 全生命周期只记一次, 代表"这个人真的用起来了"
+  try {
+    if (typeof track === 'function' && !localStorage.getItem('fitbuddy_first_plan_rendered')) {
+      localStorage.setItem('fitbuddy_first_plan_rendered', '1');
+      track('first_plan_render', { goal: lastPlan && lastPlan.goal, days: lastPlan && lastPlan.days });
+    }
+  } catch (e) {}
+  // ③ 安装钩子
+  fbMaybePromptInstall();
+}
+
+/* 🎯 冷启动第2刀: 把安装引导卡在价值峰值
+ * 节流策略: 30 天内最多一次(不管多少次重生成), 同一会话最多一次。
+ * 平台分支: iOS Safari 只能手动"添加到主屏幕" → 复用 install-banner.js 的横幅;
+ *           Android/桌面 → 用 beforeinstallprompt 存的 handle 触发原生弹窗。
+ * ⚠️ showIOSBanner(force=true) 会跳过它自己的平台检测, 所以平台判断必须在这里做,
+ *    否则桌面浏览器也会弹出 iOS 引导横幅。
+ */
+function fbIsIOSDevice() {
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return true;
+  // iPadOS 13+ UA 伪装成 Mac, 用触点数区分
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+}
+function fbIsAppWebview() {
+  // 微信/Chrome iOS/Firefox iOS 等无法"添加到主屏幕"为 App, 引导了也是白引导
+  return /FxiOS|CriOS|EdgiOS|MetaService|MicroMessenger|QQ\/|Weibo|DingTalk/.test(navigator.userAgent);
+}
+function fbMaybePromptInstall() {
+  try {
+    // 已经装到桌面了就别烦人
+    if (window.navigator.standalone === true) return;
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
+    if (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) return;
+    if (sessionStorage.getItem('fitbuddy_install_prompted')) return;      // 同会话一次
+    var now = Date.now();
+    var last = parseInt(localStorage.getItem('fitbuddy_install_prompt_at') || '0', 10);
+    if (last && now - last < 30 * 864e5) return;                          // 30 天一次
+    // 走到这里才落节流标记, 避免被上面任何一条提前 return 的场景白白消耗掉配额
+    sessionStorage.setItem('fitbuddy_install_prompted', '1');
+    localStorage.setItem('fitbuddy_install_prompt_at', String(now));
+    if (typeof track === 'function') { try { track('install_prompt_shown', { via: 'plan_generated' }); } catch (e) {} }
+
+    if (fbIsIOSDevice() && !fbIsAppWebview()) {
+      if (typeof window.showIOSBanner === 'function') window.showIOSBanner(true);
+      return;
+    }
+    if (window._deferredPrompt && typeof window._deferredPrompt.prompt === 'function') {
+      window._deferredPrompt.prompt();
+      if (window._deferredPrompt.userChoice) {
+        window._deferredPrompt.userChoice.then(function (r) {
+          if (typeof track === 'function') { try { track('install_prompt_result', { outcome: (r && r.outcome) || 'unknown' }); } catch (e) {} }
+          window._deferredPrompt = null;
+        });
+      } else {
+        window._deferredPrompt = null;
+      }
+    }
+  } catch (e) { /* 安装引导失败不影响主流程 */ }
+}
 
 // ⚠️ 训练日数量保底: buildMusclePlan / buildStrengthPlan 的模板最多只铺到 6 天,
 // buildMarathonPlan 更是写死 4/5/6 三档。days=7 时末尾就会出现"空白训练日"
@@ -7017,7 +7099,7 @@ window.addEventListener('load', function() {
   syncVoiceBtn();
   var planResult = document.getElementById("planResult");
   if (planResult && !planResult.innerHTML.trim()) {
-    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">选择目标、水平和天数,点击「生成我的计划」开始训练!</div></div>';
+    planResult.innerHTML = '<div class="loading-overlay"><div style="font-size:48px;margin-bottom:12px;">🥚</div><div class="loading-text">点上方任意模板，30 秒出完整计划！</div></div>';
   }
   updateHeaderStreak();
   // 初始化补给页面

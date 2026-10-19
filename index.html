@@ -820,11 +820,11 @@ input,select{font-family:inherit;}
     <!-- 🎯 今日训练 Hero + 未完成感 Banner (2026-10-09 上瘾机制) -->
     <div id="fbRetentionTop"></div>
 
-    <!-- ⚡ 快速模板 -->
-    <div class="card collapsible-card collapsed" style="margin-bottom:14px;">
+    <!-- ⚡ 快速模板（2026-10-20 冷启动改造：默认展开，成为首屏主路径） -->
+    <div class="card collapsible-card" style="margin-bottom:14px;">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
-        <span style="display:flex;align-items:baseline;gap:8px;min-width:0;">⚡ 快速模板
-          <span style="font-weight:400;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">点一下自动填好参数，可微调后生成</span>
+        <span style="display:flex;align-items:baseline;gap:8px;min-width:0;">⚡ 选一个，直接出计划
+          <span style="font-weight:400;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">点一下就行，30 秒不用填表</span>
         </span>
         <span class="collapse-arrow" style="flex-shrink:0;">▼</span>
       </div>
@@ -885,9 +885,10 @@ input,select{font-family:inherit;}
       </div>
     </div>
 
-    <div class="card collapsible-card" id="planCard">
+    <!-- 🎯 定制你的计划（2026-10-20 冷启动改造：默认收起，新手首屏不再是一整屏表单） -->
+    <div class="card collapsible-card collapsed" id="planCard">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
-        <span>🎯 定制你的计划</span>
+        <span>🎯 手动调参数 <span style="font-weight:400;font-size:11px;color:var(--text3);">（想自己配就展开，不填也能生成）</span></span>
         <span class="collapse-arrow">▼</span>
       </div>
       <div class="collapse-body">
@@ -1215,13 +1216,13 @@ input,select{font-family:inherit;}
 
 
 <script src="analytics.js?v=5" defer></script>
-<script src="onboarding.js?v=1" defer></script>
+<script src="onboarding.js?v=2" defer></script>
 <script src="data-constants.js?v=35" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=80" defer></script>
-<script src="pro-tools.js?v=9" defer></script>
+<script src="planner-core.js?v=81" defer></script>
+<script src="pro-tools.js?v=10" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>
