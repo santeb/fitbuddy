@@ -6676,7 +6676,7 @@ function renderProgress() {
   // 窗口期的早期正反馈。renderProgressionAnalysis() 之前已写好但全项目零调用(死代码),
   // 这里接上。默认展开,别把它藏起来。
   var progBody = renderProgressionAnalysis();
-  if (progBody) html += collapsibleCard('pc-progression', '📈 渐进超负荷分析', progBody, true);
+  if (progBody) html += collapsibleCard('pc-progression', '📈 动作趋势', progBody, true);
 
   // 跑鞋里程
   var activeShoes = shoeList.filter(function(s){ return !s.retired; });
@@ -8631,73 +8631,323 @@ function renderCycleCalendar() {
 }
 
 // ============ 渐进超负荷趋势分析 ============
+// ===================== 📈 动作趋势 =====================
+// ⚠️ 过去这里有两张卡讲同一件事: 本卡(文字版, 最多 5 个动作) 和 Pro 区块末尾
+//    的趋势图(6 张 296px 大图 = 1776px)。同一份数据渲染两遍, 光趋势就吃掉 2300px。
+//    现在合成一张: 默认只给一行(动作名 + 涨幅 + 迷你走势线), 点开才画完整大图。
+//    省下的不是排版, 是那 1776px 的重复渲染。
+var FB_PROG_ROW_LIMIT = 6;
+var _fbProgRowMeta = {};   // 行号 -> {name, raw, unit}, 点开大图时要用的原始数据
+var _fbProgRowOpen = {};   // 行号 -> true
+
+// 动作最后一次记录的时间戳(用于排序)
+function fbProgLastTime(k) {
+  var arr = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog[k] : null;
+  if (!arr || !arr.length) return 0;
+  var last = arr[arr.length - 1];
+  var t = (typeof fbParseLocalDate === 'function')
+    ? fbParseLocalDate(last && last.date)
+    : Date.parse(String((last && last.date) || '').slice(0, 10));
+  return isNaN(t) ? 0 : t;
+}
+
+// 60×30 迷你走势线。
+// 用 SVG 而不是 canvas: 卡片折叠时 canvas 的 getBoundingClientRect().width 是 0,
+// 画出来一片空白(进度页的卡默认是折叠的), 得等到卡片展开才能补画。
+// SVG 用 viewBox 定坐标, 什么时候生成都有内容, 也不用处理 dpr。
+function fbProgSparkSvg(log, isReps, color) {
+  if (!log || log.length < 2) return '';
+  var vals = log.map(function (e) {
+    return isReps ? (e.reps || 0) : (e.weight || 0) * (e.reps || 0);
+  });
+  var mx = -Infinity, mn = Infinity;
+  vals.forEach(function (v) { if (v > mx) mx = v; if (v < mn) mn = v; });
+  var rng = (mx - mn) || 1;
+  var W = 60, H = 30, pad = 3;
+  var pts = vals.map(function (v, i) {
+    return {
+      x: pad + i * (W - pad * 2) / (vals.length - 1),
+      y: H - pad - (v - mn) / rng * (H - pad * 2)
+    };
+  });
+  var poly = pts.map(function (p) {
+    return p.x.toFixed(1) + ',' + p.y.toFixed(1);
+  }).join(' ');
+  var last = pts[pts.length - 1];
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" ' +
+      'preserveAspectRatio="none" style="display:block;flex:none;">' +
+    '<polyline points="' + poly + '" fill="none" stroke="' + color + '" stroke-width="1.6" ' +
+      'stroke-linejoin="round" stroke-linecap="round"/>' +
+    '<circle cx="' + last.x.toFixed(1) + '" cy="' + last.y.toFixed(1) + '" r="2" fill="' + color + '"/>' +
+    '</svg>';
+}
+
 function renderProgressionAnalysis() {
-  // 自重动作不再被排除 —— 俯卧撑/引体/平板支撑的进步恰恰最有看点。
-  // 过去"一刀切过滤"让这类动作完全没有趋势;正确做法是换轴:它们走"次数/时长",不显示 kg。
-  var exNames = Object.keys(trainingLog).filter(function(k){
+  if (typeof trainingLog === 'undefined' || !trainingLog) return '';
+
+  var names = Object.keys(trainingLog).filter(function (k) {
     return trainingLog[k] && trainingLog[k].length >= 2;
   });
-  if (!exNames.length) return '';
+  if (!names.length) return '';
 
-  // ⚠️ 只返回内容体,外层卡片/标题由调用方用 collapsibleCard 统一包,避免双层标题。
-  // 另外必须保证"一个动作都没凑出趋势"时返回空串:调用方是 if(progBody) 判断,
-  // 若这里返回空壳 div(非 ''),进度页就会多出一个只有标题没有内容的空卡片。
-  var html = '', rendered = 0;
+  // 按"最后练的日期"倒序 —— 天天在练的动作排最上面。
+  // 直接用 Object.keys 是插入顺序: 三个月前练过一次的动作会永远占着首屏。
+  names.sort(function (a, b) { return fbProgLastTime(b) - fbProgLastTime(a); });
+  var total = names.length;
+  // 兜底: 若顶层 var 那条语句没执行到(别的脚本报错会中断后续顶层语句),
+  // 这里会变成 slice(0, undefined) = 全部动作, 卡片又长回去了 —— 宁可写死 6。
+  var limit = (typeof FB_PROG_ROW_LIMIT === 'number' && FB_PROG_ROW_LIMIT > 0) ? FB_PROG_ROW_LIMIT : 6;
 
-  exNames.slice(0, 5).forEach(function(exName) {
+  _fbProgRowMeta = {};
+  _fbProgRowOpen = {};
+  var rows = '';
+  var rendered = 0;
+
+  names.slice(0, limit).forEach(function (exName) {
     var raw = trainingLog[exName];
     if (!raw || raw.length < 2) return;
-    var u = getLogUnit(exName);
+    var u = (typeof getLogUnit === 'function')
+      ? getLogUnit(exName)
+      : { mode: 'weight', unit: 'kg', label: '重量' };
     var isReps = u.mode === 'reps';
-    // 同日多条先合并成"天",否则增长率的起点/终点可能取自同一天的两条记录(=0%)
-    var log = aggregateLogByDate(raw, isReps ? 'reps' : 'weight');
-    if (log.length < 2) return;   // 全是同一天记的,谈不上趋势
+    // 同日多条先合并成"天", 否则涨幅的起点终点可能取自同一天的两条(=0%)
+    var log = (typeof aggregateLogByDate === 'function')
+      ? aggregateLogByDate(raw, isReps ? 'reps' : 'weight')
+      : raw;
+    if (log.length < 2) return;   // 全是同一天记的, 谈不上趋势
     var first = log[0];
     var last = log[log.length - 1];
 
-    var firstVal, lastVal, startTxt, endTxt, metricLabel;
+    var firstVal, lastVal, arrowTxt;
     if (isReps) {
       firstVal = first.reps || 0;
       lastVal  = last.reps || 0;
-      startTxt = fbChartDate(first.date) + ' · ' + firstVal + u.unit;
-      endTxt   = fbChartDate(last.date) + ' · ' + lastVal + u.unit;
-      metricLabel = (u.unit === '秒' ? '⏱ 时长' : '🔢 次数');
+      arrowTxt = firstVal + u.unit + ' → ' + lastVal + u.unit;
     } else {
       firstVal = (first.weight || 0) * (first.reps || 0);
       lastVal  = (last.weight || 0) * (last.reps || 0);
-      startTxt = fbChartDate(first.date) + ' · ' + (first.weight || 0) + 'kg×' + (first.reps || 0);
-      endTxt   = fbChartDate(last.date) + ' · ' + (last.weight || 0) + 'kg×' + (last.reps || 0);
-      metricLabel = '📊 训练量';
+      arrowTxt = (first.weight || 0) + 'kg×' + (first.reps || 0) + ' → ' +
+                 (last.weight || 0) + 'kg×' + (last.reps || 0);
     }
     var growth = firstVal > 0 ? Math.round((lastVal / firstVal - 1) * 100) : 0;
-    var growthColor = growth > 0 ? '#22C55E' : (growth < 0 ? '#EF4444' : '#999');
+    var color = growth > 0 ? '#22C55E' : (growth < 0 ? '#EF4444' : '#999');
 
     // 估算 1RM 只对有重量的动作成立 —— 自重动作展示它只会给出误导性数字
-    var rmHtml = '';
+    var rmTxt = '';
     if (!isReps) {
-      var first1RM = first.weight * (1 + (first.reps || 1) / 30);
-      var last1RM = last.weight * (1 + (last.reps || 1) / 30);
-      var rmGrowth = first1RM > 0 ? Math.round((last1RM / first1RM - 1) * 100) : 0;
-      rmHtml = '<span style="font-size:12px;font-weight:600;color:' + (rmGrowth > 0 ? '#22C55E' : '#999') + ';">💪 估算1RM ' + (rmGrowth > 0 ? '+' : '') + rmGrowth + '%</span>';
+      var f1 = (first.weight || 0) * (1 + (first.reps || 1) / 30);
+      var l1 = (last.weight || 0) * (1 + (last.reps || 1) / 30);
+      if (f1 > 0) {
+        var rg = Math.round((l1 / f1 - 1) * 100);
+        rmTxt = ' · 1RM ' + (rg > 0 ? '+' : '') + rg + '%';
+      }
     }
 
-    html += '<div style="background:var(--bg);border-radius:10px;padding:10px 12px;">' +
-      '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">' + exName + '</div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);">' +
-        '<span>' + startTxt + '</span>' +
-        '<span>' + endTxt + '</span>' +
+    var idx = rendered;
+    _fbProgRowMeta[idx] = { name: exName, raw: raw, unit: u };
+    var badge = (typeof renderRPEAdjustmentBadge === 'function')
+      ? renderRPEAdjustmentBadge(exName) : '';
+
+    rows += '<div onclick="toggleProgRow(' + idx + ')" style="display:flex;align-items:center;gap:8px;' +
+        'padding:8px 10px;background:var(--bg);border-radius:10px;cursor:pointer;">' +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;' +
+            'text-overflow:ellipsis;">' + exName + badge + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;' +
+            'overflow:hidden;text-overflow:ellipsis;">' +
+          // 不放起点日期: 390px 屏减去走势线和涨幅后, 副行只剩 ~240px,
+          // 带日期会把最有价值的 1RM 涨幅挤成 "1RM +…"
+          arrowTxt + rmTxt + '</div>' +
       '</div>' +
-      '<div style="display:flex;justify-content:space-between;margin-top:4px;">' +
-        '<span style="font-size:12px;font-weight:600;color:' + growthColor + ';">' + metricLabel + ' ' + (growth > 0 ? '+' : '') + growth + '%</span>' +
-        rmHtml +
-      '</div>' +
-    '</div>';
+      fbProgSparkSvg(log, isReps, color) +
+      '<span style="flex:none;min-width:46px;text-align:right;font-size:14px;font-weight:700;' +
+          'color:' + color + ';">' + (growth > 0 ? '+' : '') + growth + '%</span>' +
+      '<span id="progArrow' + idx + '" style="flex:none;font-size:10px;color:var(--text3);">▾</span>' +
+    '</div>' +
+    '<div id="progBig' + idx + '" style="display:none;margin-top:6px;"></div>';
     rendered++;
   });
 
   if (!rendered) return '';
-  return '<div style="display:flex;flex-direction:column;gap:12px;">' + html + '</div>';
+
+  var tip = '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">' +
+    '按最近练过排序 · 点一行看完整走势' +
+    (total > rendered ? '（共 ' + total + ' 个动作，显示最近 ' + rendered + ' 个）' : '') +
+    '</div>';
+
+  return tip + '<div style="display:flex;flex-direction:column;gap:6px;">' + rows + '</div>';
 }
+
+// 展开/收起某一行的大图
+function toggleProgRow(idx) {
+  if (!_fbProgRowOpen) _fbProgRowOpen = {};
+  if (!_fbProgRowMeta) _fbProgRowMeta = {};
+  var box = document.getElementById('progBig' + idx);
+  var info = _fbProgRowMeta[idx];
+  if (!box || !info) return;
+
+  if (_fbProgRowOpen[idx]) {
+    _fbProgRowOpen[idx] = false;
+    box.style.display = 'none';
+    box.innerHTML = '';
+  } else {
+    _fbProgRowOpen[idx] = true;
+    box.style.display = '';
+    box.innerHTML = '<div class="chart-wrap"><canvas id="chartProg' + idx +
+      '" style="width:100%;height:180px;"></canvas></div>';
+    // 只有真被点开时才画: 卡片折叠状态下 canvas 宽度是 0, 画了也是一片空白
+    if (typeof drawProgressionChart === 'function') {
+      drawProgressionChart('chartProg' + idx, info.name, info.raw, info.unit);
+    }
+  }
+  var arrow = document.getElementById('progArrow' + idx);
+  if (arrow) arrow.textContent = _fbProgRowOpen[idx] ? '▴' : '▾';
+}
+
+// 完整走势图(点开才用): 器械动作画 重量折线 + 训练量柱, 自重/计时动作走数量轴。
+// 从 pro-tools.js 搬过来的 —— 它现在跟着紧凑卡一起住在本文件, 免得一张卡跨两个文件维护。
+function drawProgressionChart(canvasId, exName, log, unitInfo) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas || !log || log.length < 2) return;
+
+  var u = unitInfo || {mode:'weight', unit:'kg', label:'重量'};
+  var isReps = u.mode === 'reps';
+
+  // 同一天记过多次的合并成一天一个点 —— 否则横轴会挤着一串重复日期
+  if (typeof aggregateLogByDate === 'function') log = aggregateLogByDate(log, isReps ? 'reps' : 'weight');
+  if (log.length < 2) return;
+
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+  var rect = canvas.getBoundingClientRect();
+  if (!rect.width) return;   // 折叠态宽度为 0, 别画
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  var W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+
+  var pad = { top: 20, right: 20, bottom: 40, left: 50 };
+  var cw = W - pad.left - pad.right;
+  var ch = H - pad.top - pad.bottom;
+
+  var cardColor = getComputedStyle(document.body).getPropertyValue('--card').trim() || '#fff';
+  ctx.fillStyle = cardColor;
+  ctx.fillRect(0, 0, W, H);
+
+  var mainData = log.map(function(e) {
+    return { v: isReps ? (e.reps || 0) : (e.weight || 0), label: fbChartDate(e.date) };
+  });
+  var volData = null;
+  if (!isReps) {
+    volData = log.map(function(e) { return { v: (e.weight || 0) * (e.reps || 0), label: fbChartDate(e.date) }; });
+  }
+
+  var maxMain = Math.ceil(Math.max.apply(null, mainData.map(function(d) { return d.v; }).concat([1])) * 1.15);
+  var maxVol = volData ? Math.ceil(Math.max.apply(null, volData.map(function(d) { return d.v; }).concat([1])) * 1.15) : 0;
+
+  var borderColor = getComputedStyle(document.body).getPropertyValue('--border').trim() || '#EBEBEB';
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 0.5;
+  var ySteps = 4;
+  for (var i = 0; i <= ySteps; i++) {
+    var y = pad.top + (ch / ySteps) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(W - pad.right, y);
+    ctx.stroke();
+  }
+
+  var text3Color = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
+  ctx.fillStyle = text3Color;
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  var yMax = isReps ? maxMain : maxVol;
+  for (var i = 0; i <= ySteps; i++) {
+    var val = Math.round(yMax - (yMax / ySteps) * i);
+    var y = pad.top + (ch / ySteps) * i;
+    ctx.fillText(val, pad.left - 6, y + 3);
+  }
+
+  ctx.textAlign = 'center';
+  var n = mainData.length;
+  var maxLabels = Math.max(2, Math.min(n, Math.floor(cw / 46)));
+  var step = Math.max(1, Math.ceil((n - 1) / (maxLabels - 1)));
+  var labelIdx = [];
+  for (var i = 0; i < n; i += step) labelIdx.push(i);
+  if (labelIdx[labelIdx.length - 1] !== n - 1) labelIdx.push(n - 1);
+  labelIdx.forEach(function(i) {
+    var x = pad.left + (cw / (n - 1 || 1)) * i;
+    ctx.fillText(mainData[i].label, x, H - pad.bottom + 16);
+  });
+
+  var pts = mainData.map(function(d, i) {
+    var x = pad.left + (cw / (mainData.length - 1 || 1)) * i;
+    var y = pad.top + ch - (d.v / maxMain * ch);
+    return {x: x, y: y};
+  });
+
+  if (!isReps) {
+    var barW = Math.min(20, cw / volData.length * 0.6);
+    volData.forEach(function(d, i) {
+      var x = pad.left + (cw / (volData.length - 1 || 1)) * i - barW / 2;
+      var barH = (d.v / maxVol * ch);
+      var y = pad.top + ch - barH;
+      ctx.fillStyle = '#FF6B35';
+      ctx.globalAlpha = 0.25;
+      ctx.fillRect(x, y, barW, barH);
+      ctx.globalAlpha = 1;
+    });
+  } else {
+    ctx.beginPath();
+    pts.forEach(function(p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.lineTo(pts[pts.length - 1].x, pad.top + ch);
+    ctx.lineTo(pts[0].x, pad.top + ch);
+    ctx.closePath();
+    ctx.fillStyle = '#FF6B35';
+    ctx.globalAlpha = 0.14;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.strokeStyle = isReps ? '#FF6B35' : '#3B82F6';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  pts.forEach(function(p, i) { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+  ctx.stroke();
+
+  ctx.fillStyle = isReps ? '#FF6B35' : '#3B82F6';
+  pts.forEach(function(p) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  if (!isReps) {
+    ctx.fillStyle = '#FF6B35';
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(pad.left, 4, 10, 10);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = text3Color;
+    ctx.fillText('训练量(kg×次)', pad.left + 14, 12);
+    ctx.fillStyle = '#3B82F6';
+    ctx.beginPath();
+    ctx.arc(pad.left + 100, 9, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = text3Color;
+    ctx.fillText('重量(kg)', pad.left + 110, 12);
+  } else {
+    ctx.fillStyle = '#FF6B35';
+    ctx.beginPath();
+    ctx.arc(pad.left + 4, 9, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = text3Color;
+    ctx.fillText(u.label + '(' + u.unit + ')', pad.left + 14, 12);
+  }
+}
+
 
 // ===================== 🔍 卡点诊断 (Pro · P0) =====================
 // 定位: 免费版回答"这周练什么"，卡点诊断回答"我为什么卡住"。
