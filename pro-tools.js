@@ -1119,8 +1119,39 @@ window.initProToolsProgress = function() {
         var progContent = document.getElementById('progContent');
         if (!progContent) return;
 
+        // 🎯 RPE自调节建议汇总
+        // ⚠️ 这张卡原先排在 Pro 区块最后一位(y≈2400,手机要滑 2.6 屏),等于白写。
+        //    提到第一位,理由有两条:
+        //    1) 它是下面那 3 张趋势图卡(每张 296px,共 888px)的紧凑版 ——
+        //       同样的"下次用多重"信息,213px 就装完,而趋势图得展开看。
+        //       先给结论(一屏读完三个动作),想看趋势再往下翻,顺序才对。
+        //    2) 它是进度页里唯一一条"打开就能执行"的指令(下次卧推用 57.5kg),
+        //       而 PR 卡/日历/趋势线都是回顾类 —— 行动指令不该排在回顾后面。
+        var rpeSummaryHtml = '';
+        if (trainingLog) {
+          var rpeAdjustments = Object.keys(trainingLog).filter(function(k) {
+            return getRPEAdjustment(k);
+          });
+          if (rpeAdjustments.length) {
+            rpeSummaryHtml = '<div class="progress-card"><div class="card-title">🎯 RPE自调节建议 <span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></div>' +
+              '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">基于最近3次训练的RPE评分,自动建议下周调整</div>';
+            rpeAdjustments.forEach(function(exName) {
+              var adj = getRPEAdjustment(exName);
+              var color = adj.action === 'increase' ? '#22C55E' : adj.action === 'decrease' ? '#EF4444' : '#3B82F6';
+              rpeSummaryHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">' +
+                '<span style="font-size:13px;font-weight:600;">' + exName + '</span>' +
+                '<span style="font-size:12px;font-weight:700;color:' + color + ';">' + adj.text + ' (RPE ' + adj.rpe + ')</span>' +
+              '</div>';
+            });
+            rpeSummaryHtml += '</div>';
+          }
+        }
+
         // 追加Pro模块HTML
         var proHtml = '<div id="proToolsSection">';
+
+        // 🎯 行动指令优先:先看"下次练多重",再看成就和趋势
+        proHtml += rpeSummaryHtml;
 
         // 🏆 个人纪录
         proHtml += renderPRCards();
@@ -1138,26 +1169,6 @@ window.initProToolsProgress = function() {
 
         // 渐进超负荷趋势线
         proHtml += renderProgressionCharts();
-
-        // RPE自调节建议汇总
-        if (trainingLog) {
-          var rpeAdjustments = Object.keys(trainingLog).filter(function(k) {
-            return getRPEAdjustment(k);
-          });
-          if (rpeAdjustments.length) {
-            proHtml += '<div class="progress-card"><div class="card-title">🎯 RPE自调节建议 <span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></div>' +
-              '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">基于最近3次训练的RPE评分,自动建议下周调整</div>';
-            rpeAdjustments.forEach(function(exName) {
-              var adj = getRPEAdjustment(exName);
-              var color = adj.action === 'increase' ? '#22C55E' : adj.action === 'decrease' ? '#EF4444' : '#3B82F6';
-              proHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">' +
-                '<span style="font-size:13px;font-weight:600;">' + exName + '</span>' +
-                '<span style="font-size:12px;font-weight:700;color:' + color + ';">' + adj.text + ' (RPE ' + adj.rpe + ')</span>' +
-              '</div>';
-            });
-            proHtml += '</div>';
-          }
-        }
 
         proHtml += '</div>';
         // ⚠️ 这里原本是 insertAdjacentHTML('beforeend') = 挂在进度页最末尾,

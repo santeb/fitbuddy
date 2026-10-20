@@ -6597,6 +6597,24 @@ function renderProgress() {
     html += collapsibleCard('pc-week-progress', '📊 本周进度', wkBody2, true);
   }
 
+  // 🔍 卡点诊断(Pro P0)
+  // 位置:紧跟"本周进度",排在全部趋势图/图表之前。
+  // ⚠️ 原先它排在部位分布之后(实测 y≈2883,手机要滑 3 屏),被一堆"做了多少"的
+  //    图表挡在后面。但进度页的信息层级应该是 结论/处方 > 证据/图表 > 记录:
+  //    卡点诊断给的是"为什么卡住 + 未来 4 周怎么改",是整页最重的一张卡,
+  //    把它塞在一堆折叠着的趋势图后面,等于让它跟那些卡片争曝光 —— 而那些卡默认还是折叠的。
+  //    Pro 区块(PR卡/趋势线/RPE建议)由 pro-tools.js 插在 pc-volume-trend 之前,
+  //    所以落在它后面,形成 卡点诊断(战略) → RPE自调节(战术) 的连续块。默认展开。
+  var stallBody = '';
+  try { stallBody = (typeof fbStallCardBody === 'function') ? fbStallCardBody() : ''; } catch (e) { stallBody = ''; }
+  if (stallBody) {
+    var stallTitle = '<span>🔍 卡点诊断</span>'
+      + '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:6px;'
+      + 'background:linear-gradient(135deg,#FF6B35,#F59E0B);color:#fff;">PRO</span>'
+      + (FB_PRO_FREE_BETA ? '<span style="font-size:10px;color:var(--text3);font-weight:500;margin-left:5px;">内测期免费</span>' : '');
+    html += collapsibleCard('pc-stall', stallTitle, stallBody, true);
+  }
+
   // 图表:跑量趋势(跑步目标)或训练频次(举铁目标)
   if (hist.length >= 2) {
     html += collapsibleCard('pc-volume-trend', '📈 '+(isRunning?'跑量趋势':'训练频次趋势'),
@@ -6637,19 +6655,6 @@ function renderProgress() {
       }).join('')+
       '</div>';
     html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
-  }
-
-  // 🔍 卡点诊断(Pro P0)
-  // ⚠️ 上面这些卡全是"做了多少",渐进分析是"变强了多少",只有这张回答"为什么卡住"。
-  //    排在渐进分析之前:先给结论(卡在哪),再给证据(趋势)。默认展开 —— 这是 Pro 的门面。
-  var stallBody = '';
-  try { stallBody = (typeof fbStallCardBody === 'function') ? fbStallCardBody() : ''; } catch (e) { stallBody = ''; }
-  if (stallBody) {
-    var stallTitle = '<span>🔍 卡点诊断</span>'
-      + '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:6px;'
-      + 'background:linear-gradient(135deg,#FF6B35,#F59E0B);color:#fff;">PRO</span>'
-      + (FB_PRO_FREE_BETA ? '<span style="font-size:10px;color:var(--text3);font-weight:500;margin-left:5px;">内测期免费</span>' : '');
-    html += collapsibleCard('pc-stall', stallTitle, stallBody, true);
   }
 
   // 📈 渐进超负荷分析
