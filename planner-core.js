@@ -4897,7 +4897,10 @@ function drawDonutChart(canvasId, segments) {
   if (total === 0) return;
 
   var cx = W / 2, cy = H / 2;
-  var outerR = Math.min(W, H) / 2 - 10;
+  var outerR = Math.max(0, Math.min(W, H) / 2 - 10);
+  // 卡片折叠/首屏未布局完时 canvas 宽高可能是 0, 半径会算成负数 → arc() 直接抛
+  // IndexSizeError, 整段渲染中断(后面的图表全都不画了)。这里直接跳过, 等 resize 重绘。
+  if (outerR < 2) return;
   var innerR = outerR * 0.5;
 
   var startAngle = -Math.PI / 2;
@@ -6634,6 +6637,19 @@ function renderProgress() {
       }).join('')+
       '</div>';
     html += collapsibleCard('pc-muscle-dist', '🎯 部位训练分布', muscleBody, false);
+  }
+
+  // 🔍 卡点诊断(Pro P0)
+  // ⚠️ 上面这些卡全是"做了多少",渐进分析是"变强了多少",只有这张回答"为什么卡住"。
+  //    排在渐进分析之前:先给结论(卡在哪),再给证据(趋势)。默认展开 —— 这是 Pro 的门面。
+  var stallBody = '';
+  try { stallBody = (typeof fbStallCardBody === 'function') ? fbStallCardBody() : ''; } catch (e) { stallBody = ''; }
+  if (stallBody) {
+    var stallTitle = '<span>🔍 卡点诊断</span>'
+      + '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:6px;'
+      + 'background:linear-gradient(135deg,#FF6B35,#F59E0B);color:#fff;">PRO</span>'
+      + (FB_PRO_FREE_BETA ? '<span style="font-size:10px;color:var(--text3);font-weight:500;margin-left:5px;">内测期免费</span>' : '');
+    html += collapsibleCard('pc-stall', stallTitle, stallBody, true);
   }
 
   // 📈 渐进超负荷分析
@@ -8663,4 +8679,423 @@ function renderProgressionAnalysis() {
 
   if (!rendered) return '';
   return '<div style="display:flex;flex-direction:column;gap:12px;">' + html + '</div>';
+}
+
+// ===================== 🔍 卡点诊断 (Pro · P0) =====================
+// 定位: 免费版回答"这周练什么"，卡点诊断回答"我为什么卡住"。
+// 为什么它天然该收费: 至少 4 个训练日 + 跨 14 天才有输出，新用户本来就没东西可算 ——
+//   免费不影响新用户，老用户数据越多越准，而那正是付费意愿最强的时刻。
+// 为什么用规则引擎而不是模型: 归因必须能解释（"因为你的胸部每周只有 8 组"），
+//   黑盒给不出理由，而"给理由"恰恰是教练的价值所在 —— 用户买的不是结论，是可信的结论。
+// 全部只读 trainingLog + history，不写任何状态，随时可重算。
+
+// 内测期开关: 现在日均个位数 UV，上付费墙 = 0 收入 + 杀死传播。
+// 先全量开放换可触达用户，真要收费时只改这一个常量(配合 premium-test/unlock.js)。
+var FB_PRO_FREE_BETA = true;
+function fbProHas(featureId) {
+  if (FB_PRO_FREE_BETA) return true;
+  // 预留: 接 unlock.js 后按 featureId 判断，逻辑不变
+  return false;
+}
+
+// 部位 → 每周有效组数推荐区间(接近力竭的组才算)。取自主流容量阶梯的保守区间。
+var FB_VOLUME_TARGET = {
+  '腿': [12, 20], '胸': [12, 20], '背': [12, 20],
+  '肩': [8, 16], '臂': [8, 16], '核心': [6, 12]
+};
+// 部位 → 补强动作候选。挑选标准是"换个角度补弱点"，不是随便同部位凑一个。
+// ⚠️ 名字必须来自 EXES(否则推荐个不存在的动作)，verify-stall.js 有断言守着。
+var FB_AID_EXES = {
+  '胸': ['上斜杠铃卧推', '哑铃上斜卧推', '绳索飞鸟', '双杠臂屈伸（胸）'],
+  '背': ['杠铃俯身划船', '高位下拉（宽握）', '坐姿绳索划船', '哑铃单臂划船（撑凳）'],
+  '腿': ['杠铃深蹲', '罗马尼亚硬拉', '保加利亚深蹲', '腿弯举'],
+  '肩': ['杠铃肩推', '哑铃侧平举', '哑铃俯身飞鸟', '绳索面拉'],
+  '臂': ['杠铃弯举', '绳索三头下压', '锤式弯举', '哑铃集中弯举'],
+  '核心': ['悬挂举腿', '跪姿绳索卷腹', '俄罗斯转体', '健腹轮']
+};
+
+function fbMuscleOfName(n) {
+  try {
+    var ex = (typeof getExByNameFuzzy === 'function') ? getExByNameFuzzy(n) : null;
+    return (ex && ex.m) ? ex.m : '';
+  } catch (e) { return ''; }
+}
+
+// 单次训练的成绩: 重量动作看估算1RM(重量涨次数掉、次数涨重量掉都算进步)，
+// 自重/计时动作看次数或秒数。
+function fbPerfValue(e, mode) {
+  if (!e) return 0;
+  if (mode === 'reps') return parseInt(e.reps, 10) || 0;
+  var w = parseFloat(e.weight) || 0, r = parseInt(e.reps, 10) || 0;
+  if (w <= 0) return 0;
+  if (r <= 0) return w;
+  return (typeof computeE1RM === 'function') ? computeE1RM(w, r) : w;
+}
+
+// 按天聚合并取"当天最好的一次成绩"。
+// ⚠️ 不能直接复用 aggregateLogByDate: 它按"最大重量"挑当天那条，
+//    于是 65kg×3 会盖掉 60kg×10 —— 而后者估算1RM(80kg)其实更高。
+//    用它算趋势会得出"重量涨了、成绩反而掉了"的假退步，诊断会误判成恢复不足。
+function fbBestByDate(raw, mode) {
+  if (!raw || !raw.length) return [];
+  var buckets = {}, order = [];
+  raw.forEach(function (e) {
+    if (!e) return;
+    var d = String(e.date || '').trim();
+    if (d.length > 10) d = d.slice(0, 10);
+    if (!d) d = '未知日期';
+    if (!buckets[d]) { buckets[d] = []; order.push(d); }
+    buckets[d].push(e);
+  });
+  order.sort(function (a, b) {
+    var ta = Date.parse(a), tb = Date.parse(b);
+    if (isNaN(ta)) ta = 0;
+    if (isNaN(tb)) tb = 0;
+    return ta - tb;
+  });
+  var out = [];
+  order.forEach(function (d) {
+    var best = null, bestV = 0;
+    buckets[d].forEach(function (e) {
+      var v = fbPerfValue(e, mode);
+      if (v > bestV) { bestV = v; best = e; }
+    });
+    if (best && bestV > 0) {
+      out.push({
+        date: d, perf: bestV,
+        weight: parseFloat(best.weight) || 0,
+        reps: parseInt(best.reps, 10) || 0,
+        rpe: parseInt(best.rpe, 10) || 0
+      });
+    }
+  });
+  return out;
+}
+
+// 最近 14 天某部位的容量与频率。
+// ⚠️ history 只有"当天总组数"(h.count)没有逐动作组数，只能按动作数占比摊到部位 ——
+//    是估算，所以处方里一律写"约 N 组"，不编精确到个位的假精度。
+function fbMuscleLoad14d(muscle) {
+  var out = { daysPerWeek: 0, setsPerWeek: 0, days14: 0, sets14: 0, hasData: false };
+  if (!muscle) return out;
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]') || []; } catch (e) { hist = []; }
+  if (!hist.length) return out;
+  var map = {};
+  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var from = today.getTime() - 13 * 86400000;
+  var counted = 0;
+  hist.forEach(function (h) {
+    if (!h || !h.date) return;
+    var names = h.exercises || [];
+    if (!names.length) return;
+    var t = Date.parse(String(h.date).slice(0, 10));
+    if (!isNaN(t) && (t < from || t > today.getTime() + 86400000)) return;
+    counted++;
+    var hit = 0;
+    names.forEach(function (n) {
+      var m = map[n] || fbMuscleOfName(n);
+      if (m === muscle) hit++;
+    });
+    if (!hit) return;
+    out.days14++;
+    var total = parseInt(h.count, 10) || names.length;
+    out.sets14 += total * hit / names.length;
+  });
+  out.hasData = counted > 0;
+  out.daysPerWeek = out.days14 / 2;
+  out.setsPerWeek = out.sets14 / 2;
+  out.sets14 = Math.round(out.sets14);
+  return out;
+}
+
+// 选一个"用户没在练"的补强动作 —— 已经在计划里/日志里的推给他等于没说。
+function fbPickAidEx(muscle, used) {
+  var cands = FB_AID_EXES[muscle] || [], i;
+  for (i = 0; i < cands.length; i++) {
+    if (!used[cands[i]]) return cands[i];
+  }
+  try {
+    for (i = 0; i < EXES.length; i++) {
+      if (EXES[i].m === muscle && !used[EXES[i].n]) return EXES[i].n;
+    }
+  } catch (e) {}
+  return cands.length ? cands[0] : '';
+}
+
+function fbRound25(x) {
+  var v = Math.round((parseFloat(x) || 0) / 2.5) * 2.5;
+  return v < 2.5 ? 2.5 : v;
+}
+
+// 成绩怎么写成一句话: 重量动作带估算1RM，自重/计时动作带单位
+function fbPerfTxt(pt, mode, unit) {
+  if (!pt) return '—';
+  if (mode === 'reps') return pt.reps + (unit || '次');
+  return pt.weight + 'kg×' + pt.reps + '（估算1RM ' + pt.perf + 'kg）';
+}
+
+// 归因 + 处方。四种归因按"先排除会加重的因素"排序:
+// 恢复不足 > 频率不足 > 容量不足 > 强度分布错 > 无渐进 > 兜底容量。
+// 顺序本身就是逻辑: 一个没恢复的人你让他加容量，只会更快练废。
+function fbStallPrescription(it) {
+  var mLabel = MUSCLE_LABELS[it.muscle] || it.muscle || '该部位';
+  var isReps = it.mode === 'reps';
+  var unit = it.unit || '次';
+  var lo = it.target[0], hi = it.target[1];
+  var rpeTxt = it.rpeAvg > 0 ? it.rpeAvg.toFixed(1) : '未记录';
+  var out = { tag: '', color: '#F59E0B', why: '', plan: [] };
+
+  if (it.cause === 'recovery') {
+    out.tag = '恢复不足';
+    out.color = '#EF4444';
+    var w60 = isReps ? Math.max(1, Math.round(it.lastPt.reps * 0.6)) : fbRound25(it.lastPt.weight * 0.6);
+    var w90 = isReps ? Math.max(1, Math.round(it.lastPt.reps * 0.9)) : fbRound25(it.lastPt.weight * 0.9);
+    out.why = '最近 3 次 ' + it.name + ' 的最好成绩是 ' + fbPerfTxt(it.lastBestPt, it.mode, unit) +
+      '，比起之前的 ' + fbPerfTxt(it.prevBestPt, it.mode, unit) + ' 不升反降，平均 RPE ' + rpeTxt +
+      '。这不是练得不够，是恢复跟不上。';
+    if (it.fatigueDays >= 3) out.why += '而且 ' + mLabel + '已经连练 ' + it.fatigueDays + ' 天。';
+    out.plan = [
+      '本周先减载：' + it.name + ' 降到 ' + (isReps ? w60 + unit : w60 + 'kg') + '（当前的 60%），只做 2 组，动作找感觉就行',
+      '减载周不加任何新动作，' + mLabel + ' 本周最多练 1 次',
+      '下周从 ' + (isReps ? w90 + unit : w90 + 'kg') + '（减载前的 90%）起步，之后每周加 ' + (isReps ? '1~2' + unit : '2.5kg'),
+      it.fatigueDays >= 3 ? (mLabel + ' 两次训练之间至少隔 48 小时，别再连着练')
+        : '保证 7 小时睡眠，睡眠不够的日子别冲重量'
+    ];
+  } else if (it.cause === 'frequency') {
+    out.tag = '频率不足';
+    out.color = '#F59E0B';
+    var r2 = Math.max(1, (isReps ? it.lastPt.reps : 8) + 2);
+    out.why = mLabel + ' 最近两周平均每周只练 ' + it.load.daysPerWeek.toFixed(1) + ' 次。' +
+      '一次刺激撑不到第 7 天 —— 力量增长最稳的节奏是每部位每周 2 次。';
+    out.plan = [
+      '拆成 2 次：第 1 次 ' + it.name + ' 3 组冲' + (isReps ? '次数' : '重量') +
+        '，第 2 次 3 组做 ' + r2 + (isReps ? unit : ' 次') + '（' + (isReps ? '组数减 1' : '重量降 10%') + '，拼次数）',
+      '两次之间至少隔 48 小时，别连着两天练同一个部位',
+      '总容量不变，只是摊到两天 —— 不会更累，但刺激次数翻倍',
+      '4 周后对照：' + it.name + ' 的' + (isReps ? '次数' : '估算1RM') + '应该能往上走一档'
+    ];
+  } else if (it.cause === 'volume') {
+    out.tag = '容量不足';
+    out.color = '#3B82F6';
+    var cur = Math.round(it.load.setsPerWeek);
+    var aid = it.aid ? ('补一个辅助动作：' + it.aid + ' 3 组 × 10 次，主项之后做')
+      : ('把主项组数从 3 组提到 4 组');
+    out.why = mLabel + ' 每周约 ' + (it.load.hasData ? cur + ' 组' : '不足') +
+      '（建议 ' + lo + '-' + hi + ' 组）。容量不够，肌肉没有理由变强 —— 这是最常见的卡点原因。';
+    out.plan = [
+      it.load.hasData
+        ? (it.name + ' 每周加 2 组，4 周内从约 ' + cur + ' 组提到 ' + lo + ' 组（分到两次训练里，别一次加完）')
+        : ('把 ' + it.name + ' 稳定做到每周 3 次 × 3-4 组，先攒够 ' + lo + ' 组基线'),
+      aid,
+      '每周总组数涨幅控制在 20% 以内 —— 加太快，下个月就得减载',
+      '第 3 周检查：' + it.name + ' 能比现在多做 1 次，说明容量到位了'
+    ];
+  } else if (it.cause === 'intensity') {
+    out.tag = '强度分布错';
+    out.color = '#8B5CF6';
+    out.why = '平均 RPE ' + rpeTxt + ' —— 每组都顶到力竭，中枢疲劳一直攒着，重量反而上不去。' +
+      '增肌增力的甜蜜区是 RPE 7~8，是"还能再做 2 次"，不是"一个都做不动"。';
+    out.plan = [
+      '主力组改 RPE 7~8（每组留 2 次余力），只在最后 1 组冲到 RPE 9',
+      isReps
+        ? (it.name + ' 每组少做 2' + unit + '，但多留 1 组 —— 总量不变，质量更高')
+        : (it.name + ' 用 ' + it.lastPt.weight + 'kg 做 ' + it.lastPt.reps + ' 次 × 3 组，而不是用更重的重量做力竭 1 组'),
+      '同一重量能标准做完目标次数、且 RPE ≤8，下次才加 ' + (isReps ? '1~2' + unit : '2.5kg'),
+      '每周留 1 天轻重量日：60% 重量 × 2 组，专门打磨动作质量'
+    ];
+  } else if (it.cause === 'progression') {
+    out.tag = '没有渐进';
+    out.color = '#22C55E';
+    var step = isReps ? ('1~2' + unit) : '2.5kg';
+    out.why = '过去 ' + it.spanDays + ' 天里 ' + it.name + ' 一直停在 ' +
+      (isReps ? (it.lastPt.reps + unit) : (it.lastPt.weight + 'kg')) + ' 附近（最大变化 ' + it.driftTxt +
+      '）。身体只在被迫适应时才会变强 —— 同样的重量做同样的组数，等于每周都在维持。';
+    out.plan = [
+      '定一条死规则：能标准完成目标次数且 RPE ≤8，下次就 +' + step,
+      '重量加不上去就先加次数：把 ' + it.lastPt.reps + (isReps ? unit : ' 次') + ' 稳定做到 ' + (it.lastPt.reps + 2) + (isReps ? unit : ' 次') + '，再回到加重量',
+      isReps
+        ? ('本周试 ' + (it.lastPt.reps + 1) + unit + ' × 3 组，最后一组允许掉回 ' + it.lastPt.reps + unit)
+        : ('本周试 ' + (it.lastPt.weight + 2.5) + 'kg × 3 组，第一组做 ' + it.lastPt.reps + ' 次，后两组允许掉 1 次'),
+      '每 4 周安排 1 周减载（60% 重量），否则 6~8 周后必然撞墙'
+    ];
+  } else {
+    out.tag = '容量不足';
+    out.color = '#3B82F6';
+    out.why = '各项指标都没有明显异常，但 ' + it.name + ' ' + it.spanDays + ' 天没涨 —— ' +
+      '这种情况下最稳的解法还是往上加容量。';
+    out.plan = [
+      it.name + ' 每周加 2 组，4 周内提到 ' + lo + ' 组',
+      it.aid ? ('加 ' + it.aid + ' 3 组 × 10 次') : '把主项组数从 3 组提到 4 组',
+      '每 4 周回顾一次：涨了就继续，没涨就安排减载周'
+    ];
+  }
+  return out;
+}
+
+// 扫描全部动作，返回卡住的那些(按严重度排序)。
+// 判定卡住: 最近 3 个训练日的最好成绩 ≤ 之前的最好成绩 ×1.01，且跨度 ≥14 天。
+// 只加 1% 容差，是因为杠铃片最小 2.5kg、次数波动 1 次，卡住和平移之间要有缓冲。
+function fbDiagnoseStalls() {
+  var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : {};
+  var names = Object.keys(log);
+  if (!names.length) return [];
+  var nowT = new Date().setHours(0, 0, 0, 0);
+  var used = {}, i;
+  names.forEach(function (n) { used[n] = 1; });
+  try {
+    var plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+    if (plan && plan.trainingDays) {
+      plan.trainingDays.forEach(function (d) {
+        (d.exes || []).forEach(function (e) { if (e && e.n) used[e.n] = 1; });
+      });
+    }
+  } catch (e) {}
+
+  var items = [];
+  names.forEach(function (name) {
+    var raw = (log[name] || []).filter(function (e) { return !!e; });
+    if (raw.length < 4) return;                       // 少于 4 条谈不上趋势
+    var u = (typeof getLogUnit === 'function') ? getLogUnit(name) : { mode: 'weight', unit: 'kg' };
+    var mode = (u && u.mode === 'reps') ? 'reps' : 'weight';
+    if (mode === 'weight') {
+      var anyW = false;
+      raw.forEach(function (e) { if (parseFloat(e.weight) > 0) anyW = true; });
+      // 动作名没匹配上库、被误判成重量动作却一条重量都没填过 → 走次数轴
+      if (!anyW) { mode = 'reps'; u = { mode: 'reps', unit: '次', label: '次数' }; }
+    }
+
+    var pts = fbBestByDate(raw, mode);
+    if (pts.length < 4) return;
+    // 只看最近 8 周: 三个月前的数据对"现在为什么卡住"没有意义
+    var win = [];
+    for (i = 0; i < pts.length; i++) {
+      var t = Date.parse(String(pts[i].date || '').slice(0, 10));
+      if (isNaN(t) || (nowT - t) <= 56 * 86400000) win.push(pts[i]);
+    }
+    if (win.length < 4) return;
+    var ta = Date.parse(String(win[0].date).slice(0, 10));
+    var tb = Date.parse(String(win[win.length - 1].date).slice(0, 10));
+    var spanDays = (!isNaN(ta) && !isNaN(tb)) ? Math.round((tb - ta) / 86400000) : 0;
+    if (spanDays < 14) return;                        // 才练两周没涨是正常的，不算卡住
+
+    var recentPts = win.slice(-3), prevPts = win.slice(0, win.length - 3);
+    var recentPeak = 0, prevPeak = 0, peakAll = 0, lastBestPt = null, prevBestPt = null;
+    recentPts.forEach(function (p) { if (p.perf > recentPeak) { recentPeak = p.perf; lastBestPt = p; } });
+    prevPts.forEach(function (p) { if (p.perf > prevPeak) { prevPeak = p.perf; prevBestPt = p; } });
+    win.forEach(function (p) { if (p.perf > peakAll) peakAll = p.perf; });
+    if (!(prevPeak > 0) || !(recentPeak > 0)) return;
+    var growth = (recentPeak - prevPeak) / prevPeak * 100;
+    if (growth > 1) return;                           // 还在涨，不诊断
+
+    var lastPt = win[win.length - 1];
+    var dropped = lastPt.perf < peakAll * 0.97;
+
+    // RPE 取最近 10 条而不是最近 3 天: 3 天样本太少，容易把"某天状态差"当成趋势
+    var rpeSum = 0, rpeN = 0;
+    raw.slice(-10).forEach(function (e) {
+      var r = parseInt(e.rpe, 10) || 0;
+      if (r > 0) { rpeSum += r; rpeN++; }
+    });
+    var rpeAvg = rpeN ? rpeSum / rpeN : 0;
+
+    var muscle = fbMuscleOfName(name);
+    var load = fbMuscleLoad14d(muscle);
+    var fatigueDays = 0;
+    try {
+      if (typeof checkMuscleFatigue === 'function') {
+        var fw = checkMuscleFatigue() || [];
+        for (i = 0; i < fw.length; i++) {
+          if (fw[i] && fw[i].muscle === muscle) {
+            fatigueDays = (typeof fbFatigueDays === 'function')
+              ? fbFatigueDays(fw[i]) : (parseInt(fw[i].days, 10) || 0);
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+
+    // "没有渐进"看的是重量的波动幅度: 8 周里只在 2.5kg 内来回, 等于一直在维持。
+    // ⚠️ 必须用 weight 比 weight —— peakAll 是估算1RM(60kg×8 = 76), 拿它减最低重量(60)
+    //    会得到 16kg 的假波动, 于是永远判不出"重量没变"。
+    var wArr = win.map(function (p) { return p.weight; });
+    var pArr = win.map(function (p) { return p.perf; });
+    var wDrift = Math.max.apply(null, wArr) - Math.min.apply(null, wArr);
+    var pDrift = Math.max.apply(null, pArr) - Math.min.apply(null, pArr);
+
+    var cause;
+    if (fatigueDays >= 3 || (dropped && rpeAvg >= 8.5)) cause = 'recovery';
+    else if (load.hasData && load.daysPerWeek > 0 && load.daysPerWeek <= 1.2) cause = 'frequency';
+    else if (load.hasData && load.setsPerWeek < (FB_VOLUME_TARGET[muscle] || [10, 16])[0]) cause = 'volume';
+    else if (rpeAvg >= 8.8) cause = 'intensity';
+    else if (mode === 'weight' && wDrift <= 2.5) cause = 'progression';
+    else if (mode === 'reps' && pDrift <= 1) cause = 'progression';
+    else cause = 'volume';
+
+    items.push({
+      name: name, muscle: muscle, mode: mode, unit: u.unit || '次',
+      cause: cause, growth: growth, dropped: dropped, spanDays: spanDays,
+      lastPt: lastPt, lastBestPt: lastBestPt, prevBestPt: prevBestPt,
+      recentPeak: recentPeak, prevPeak: prevPeak, peakAll: peakAll,
+      rpeAvg: rpeAvg, load: load, fatigueDays: fatigueDays,
+      target: FB_VOLUME_TARGET[muscle] || [10, 16],
+      aid: fbPickAidEx(muscle, used),
+      driftTxt: (mode === 'weight' ? wDrift.toFixed(1) + 'kg' : pDrift + (u.unit || '次')),
+      score: (dropped ? 100 : 0) + Math.max(0, -growth) + Math.min(20, win.length)
+    });
+  });
+
+  items.sort(function (a, b) { return b.score - a.score; });
+  items.forEach(function (it) { it.rx = fbStallPrescription(it); });
+  return items;
+}
+
+function fbEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 进度页的卡点诊断卡片。没有卡点就返回空串 —— 进度页已经够长，别再塞"一切正常"。
+function fbStallCardBody() {
+  var items = [];
+  try { items = fbDiagnoseStalls() || []; } catch (e) { return ''; }
+  if (!items.length) return '';
+
+  var html = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">'
+    + '根据你最近 8 周的记录，找出<b style="color:var(--text);">成绩连续 3 次没涨</b>的动作，'
+    + '判断卡在哪一环，并给出未来 4 周怎么改。<br>'
+    + '<span style="color:var(--text3);">判据全部来自你自己的数据，规则公开可查，不是拍脑袋。</span></div>';
+
+  items.slice(0, 3).forEach(function (it) {
+    var rx = it.rx || fbStallPrescription(it);
+    var evidence = [];
+    if (it.load.hasData) {
+      evidence.push(MUSCLE_LABELS[it.muscle] || it.muscle || '—');
+      evidence.push('约 ' + Math.round(it.load.setsPerWeek) + ' 组/周' +
+        (it.target ? '（建议 ' + it.target[0] + '-' + it.target[1] + '）' : ''));
+      evidence.push(it.load.daysPerWeek.toFixed(1) + ' 次/周');
+    }
+    if (it.rpeAvg > 0) evidence.push('平均 RPE ' + it.rpeAvg.toFixed(1));
+    if (it.fatigueDays >= 3) evidence.push('连练 ' + it.fatigueDays + ' 天');
+
+    html += '<div style="background:var(--bg);border-radius:12px;padding:12px;margin-bottom:10px;border-left:3px solid ' + rx.color + ';">'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">'
+      + '<span style="font-size:13px;font-weight:800;color:var(--text);">' + fbEsc(it.name) + '</span>'
+      + '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:' + rx.color + '1A;color:' + rx.color + ';">' + rx.tag + '</span>'
+      + '<span style="font-size:11px;color:var(--text3);">' + it.spanDays + ' 天没涨</span>'
+      + '</div>'
+      + '<div style="font-size:12px;color:var(--text2);line-height:1.65;margin-bottom:8px;">' + fbEsc(rx.why) + '</div>'
+      + (evidence.length ? '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;">📊 依据：' + fbEsc(evidence.join(' · ')) + '</div>' : '')
+      + '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">🧭 未来 4 周怎么改</div>'
+      + '<div style="display:flex;flex-direction:column;gap:6px;">'
+      + rx.plan.map(function (p, i) {
+        return '<div style="display:flex;gap:7px;font-size:12px;color:var(--text2);line-height:1.6;">'
+          + '<span style="flex:none;width:16px;height:16px;border-radius:50%;background:' + rx.color + '1A;color:' + rx.color + ';font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:2px;">' + (i + 1) + '</span>'
+          + '<span style="flex:1;">' + fbEsc(p) + '</span></div>';
+      }).join('')
+      + '</div></div>';
+  });
+
+  return html;
 }
