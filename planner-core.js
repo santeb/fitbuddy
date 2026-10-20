@@ -445,7 +445,19 @@ function isInjured(exName) {
 
 // ============ 周期管理 ============
 // 获取当前周期长度（周数）：马拉松固定16周，其余读取用户自定义（默认4周，范围3-12）
+// 上面这句"马拉松固定16周"以前是一句假话 —— 实现只读 prefs.cycleLength, 根本没有 marathon
+// 分支。于是 16 周的马拉松计划跑下来, 每一周是按 (w-1)%cycleLength 去取周期表的:
+//   · 用户先用别的周期生成过计划再切马拉松(prefs.cycleLength 会残留 6 或 12)
+//     → N=6: 第6/12周大减载, 第16周取到 idx3 = "+15%" 冲击周
+//     → N=12: 第12周大减载, 第16周同样是 "+15%"
+//   赛前最后一周本该 taper, App 却让他加重量 —— 这是最不该错的那一周。
+// 同一个文件里 checkAutoAdvanceWeek / renderWeekBar / renderCycleCalendar 早就各自写了一遍
+// goal==="marathon" ? 16 : getCycleLength(), 唯独源头没兑现, 等于每次都要下游自己打补丁。
+// 现在在源头一次性兑现: 那三处的结果不变(16), 取模类调用也终于拿到同一个数。
 function getCycleLength() {
+  try {
+    if (typeof lastPlan !== 'undefined' && lastPlan && lastPlan.goal === 'marathon') return 16;
+  } catch (e) {}
   try {
     var p = JSON.parse(localStorage.getItem("fitbuddy_prefs") || "{}");
     var len = parseInt(p.cycleLength) || 4;
@@ -1818,7 +1830,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   var levelNames = {beginner:"新手 🌱",intermediate:"中级 ⚡",advanced:"进阶 🔥"};
   var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",band:"自重+弹力带 🎀",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var cycleLen = getCycleLength();
-  var wkInfo = buildCycleWeekInfo(cycleLen)[(currentWeek - 1) % cycleLen];
+  // goal 必须传进去: 马拉松按自己的四期分期排周, 不能套力量的波浪周期
+  var wkInfo = buildCycleWeekInfo(cycleLen, goal)[(currentWeek - 1) % cycleLen];
   // 心肺目标:使用心肺专用周期化配置覆盖 wkInfo 和 goalCfg
   var cardioWeekCfg = null;
   if (goal === 'cardio' && typeof CARDIO_WEEK_CONFIG !== 'undefined') {
@@ -5355,13 +5368,19 @@ function fbCalcNextLoad(exName) {
         : { mode: 'weight', unit: 'kg', label: '重量' };
   var rpe = parseFloat(last.rpe) || 0;
 
-  // 减载周统一降 15%(与 pro-tools 的半减载口径一致);pro-tools 未加载时跳过,不能让它炸主流程
   var deload = false;
   try {
     if (typeof isDeloadWeekActive === 'function' && typeof currentWeek !== 'undefined') {
       deload = !!isDeloadWeekActive(currentWeek, (typeof currentCycle !== 'undefined' ? currentCycle : 3));
     }
   } catch (e) { deload = false; }
+
+  // 减载周降多少: 读唯一真源。这里曾经写死 0.85(=只降 15%), 和周期表的 -15%/-30% 完全脱钩 ——
+  // 大减载周 wkInfo 白纸黑字写着「重量降至70%」, 而这里照旧只降 15%, 同一周两个说法。
+  var sevPct = 15;
+  if (deload) {
+    try { sevPct = fbDeloadSeverity(currentWeek).weight; } catch (e) { sevPct = 15; }
+  }
 
   // ---- 自重/计时动作:加量 = 多做几次,而不是加 kg ----
   if (u.mode === 'reps') {
@@ -5370,11 +5389,11 @@ function fbCalcNextLoad(exName) {
     var nr = reps;
     if (rpe && rpe <= 6) nr = reps + 2;
     else if (rpe && rpe >= 9) nr = Math.max(1, reps - 2);
-    if (deload) nr = Math.max(1, Math.round(nr * 0.85));
+    if (deload) nr = Math.max(1, Math.round(nr * (1 - sevPct / 100)));
     return {
       mode: 'reps', unit: u.unit || '次', target: nr, lastVal: reps, rpe: rpe,
       delta: nr - reps, deload: deload,
-      reason: deload ? '减载周' : (!rpe ? '上次没记 RPE,先按上次次数做'
+      reason: deload ? '减载周 -' + sevPct + '%' : (!rpe ? '上次没记 RPE,先按上次次数做'
         : (rpe <= 6 ? '上次很轻松,加量' : (rpe >= 9 ? '上次太吃力,减量' : '上次强度合适,维持')))
     };
   }
@@ -5385,11 +5404,11 @@ function fbCalcNextLoad(exName) {
   var nw = w;
   if (rpe && rpe <= 6) nw = w + 2.5;
   else if (rpe && rpe >= 9) nw = Math.max(0, w - 2.5);
-  if (deload) nw = Math.round(nw * 0.85 / 2.5) * 2.5;
+  if (deload) nw = Math.round(nw * (1 - sevPct / 100) / 2.5) * 2.5;
   return {
     mode: 'weight', unit: 'kg', target: Math.round(nw * 10) / 10, lastVal: w, rpe: rpe,
     delta: Math.round((nw - w) * 10) / 10, deload: deload, reps: parseInt(last.reps, 10) || 0,
-    reason: deload ? '减载周 -15%' : (!rpe ? '上次没记 RPE,先维持'
+    reason: deload ? '减载周 -' + sevPct + '%' : (!rpe ? '上次没记 RPE,先维持'
       : (rpe <= 6 ? '上次很轻松,加 2.5kg' : (rpe >= 9 ? '上次太吃力,降 2.5kg' : '上次强度合适,维持')))
   };
 }
@@ -8448,24 +8467,37 @@ function getRPEBadgeHtml(exName) {
 }
 
 // ============ 减载周自动化 ============
+// ⚠️ 哪一周算减载周, 全项目只有一处定义: fbPeriodIsDeloadWeek() → buildCycleWeekInfo(N)。
+//    这里曾经写死 currentWeek % 4 === 0, 成了独立于用户周期的第二套判定 —— 结果是
+//    紫色横幅说"本周减载", 而同一页的周期化卡片上这周是最高的一根柱子(+15% 冲击周)。
+//    两套 UI 同时出现在首页, 用户只会认为 App 在乱说。现在统一读主计划的 deload 标记。
 function isDeloadWeek() {
   if (!lastPlan) return false;
   var prefs = {};
   try { prefs = JSON.parse(localStorage.getItem('fitbuddy_prefs') || '{}'); } catch(e) {}
   if (prefs.deload === false) return false; // user disabled
-  // Every 4th week in a cycle
+  if (typeof fbPeriodIsDeloadWeek === 'function') {
+    try { return !!fbPeriodIsDeloadWeek(currentWeek); } catch (e) {}
+  }
   return currentWeek > 0 && currentWeek % 4 === 0;
 }
 
-function getDeloadMultiplier() {
-  return isDeloadWeek() ? 0.6 : 1.0;
-}
-
+// ⚠️ 这里删掉了 getDeloadMultiplier()(返回写死的 0.6): 它定义之后从未被调用、也没导出,
+// 又是一套独立的降幅口径。留着只会让下一个接手的人以为"减载倍率是 0.6"并拿它去接 logic。
 function renderDeloadBanner() {
   if (!isDeloadWeek()) return '';
+  // 降多少也说主计划的数字: 周期里有半减载(-15%)和大减载(-30%)两档, 写死 40% 会
+  // 跟同一张周期化图上的柱子对不上。
+  var cut = 30;
+  if (typeof fbPeriodWeekPct === 'function') {
+    try {
+      var p = fbPeriodWeekPct(currentWeek);
+      if (p < 0) cut = Math.round(Math.abs(p));
+    } catch (e) {}
+  }
   return '<div style="background:linear-gradient(135deg,#8B5CF6 0%,#6366F1 100%);color:#fff;border-radius:12px;padding:12px 16px;margin-bottom:12px;text-align:center;">' +
     '<div style="font-size:15px;font-weight:700;">🧘 减载周 · 第' + currentWeek + '周</div>' +
-    '<div style="font-size:12px;opacity:0.9;margin-top:4px;">训练量降低 40%，让身体恢复 · 这是变强的关键</div>' +
+    '<div style="font-size:12px;opacity:0.9;margin-top:4px;">训练量降低 ' + cut + '%，让身体恢复 · 这是变强的关键</div>' +
     '</div>';
 }
 
@@ -9530,12 +9562,21 @@ function fbDeloadSignals() {
 
 // 减载周具体怎么练。给的是可执行的一周安排, 不是"注意休息"这种废话。
 function fbDeloadPlan() {
-  var settings = {};
-  try { settings = JSON.parse(localStorage.getItem('fitbuddy_deload') || '{}') || {}; } catch (e) {}
-  var pct = Math.round(100 - (settings.reduction || 40));
+  // 文案也必须读同一真源: 以前这里写死「重量降到平时的 60%」(=降 40%) 和「组数砍一半」,
+  // 而同期执行的代码实际只降了 25% 的组数和 15% 的重量。用户照着 60% 去调重量, 练完才发现
+  // App 给他的就是 85kg —— 建议和指令不是一回事, 这条建议就成了废话。
+  var sev = { sets: 40, weight: 15 };
+  try {
+    sev = fbDeloadSeverity((typeof currentWeek !== 'undefined' ? currentWeek : 1));
+  } catch (e) {}
+  var keepW = Math.round(100 - sev.weight);
+  // 4 组按 40% 削减是 2.4 组 → 实际落到 2 组; 用「约 2 组」而不是精确百分比, 避免
+  // 用户拿秤重的数字去对 "-40%" 这种取过整的百分比然后对不上。
+  var fromSets = 4;
+  var toSets = Math.max(1, Math.round(fromSets * (1 - sev.sets / 100)));
   return [
-    '重量降到平时的 ' + pct + '%：能轻松做完 10 次的重量，别再冲组',
-    '组数砍一半：主项从 4 组降到 2 组，辅助动作能不做就不做',
+    '重量降到平时的 ' + keepW + '%：能轻松做完 10 次的重量，别再冲组',
+    '组数降到约 ' + toSets + ' 组（主项按 ' + fromSets + ' 组算）：辅助动作能不做就不做',
     '频率别降：原来一周练几次还是几次，只降强度不降次数，动作感觉才不会丢',
     '这一周的目标不是练爽，是走的时候比来的时候轻松',
     '下周回到 ' + Math.round(90) + '% 起步（减载前水平的 90%），之后每周加 2.5kg'
@@ -9685,38 +9726,135 @@ function fbMonthlyReport(offset) {
 }
 
 // ============ Pro P1 · 周期化全透明 + 可编辑 ============
-// 免费版告诉你"这周练什么", 这张卡把未来 16 周的容量/强度波浪直接摊开, 并且让你改。
+// 免费版告诉你"这周练什么", 这张卡把整个周期的容量/强度波浪直接摊开, 并且让你改。
 // 为什么这值得收费: Keep/各种 AI 计划是黑盒, 它不敢画出来 —— 一画用户就发现是模板。
 // 敢摊开 + 允许改, 是商业模式上的差异, 不是技术差异。
 //
-// 强度是 0.25~1.0 的系数, 直接乘到当周的计划组数上。
+// 强度是 0.25~1.0 的系数, 乘到当周的计划组数上。FB_PERIOD_BASE 是中位, 等于"不增不减"。
+//
+// ⚠️ 周期长度与小周期排布必须跟随主计划, 这张卡不许自己再写一套。
+//    曾经这里写死 16 周 + 固定"每 4 周减载", 而主计划用的是用户自选周期(3-12 周) +
+//    buildCycleWeekInfo() 的排布规则 —— 只有用户选了 4 周时两套才重合。选 6/12 周的用户
+//    在卡上看到的减载周跟自己那天实际练的完全错位(爬坡周被标成减载、减载周反而加量),
+//    而快速模板里绝大多数不是 4 周。
+//    现在整条曲线的唯一来源是 buildCycleWeekInfo(): 周期长度、减载周位置、每周强度
+//    全部从主计划读出来, 这里只做"百分比 → 系数"的换算, 不重排任何东西。
 var FB_PERIOD_KEY = 'fitbuddy_period_plan';
-var FB_PERIOD_WEEKS = 16;
-var FB_PERIOD_CYCLE = 4;                       // 4 周一个小周期, 第 4 周减载
-var FB_PERIOD_DELOAD_I = 0.5;
-var FB_PERIOD_RAMP = [0.63, 0.74, 0.85];       // 周期第1/2/3周
+var FB_PERIOD_BASE = 0.74;                     // 中位: 主计划 +0% 那一周, 也是组数缩放基准
+
+// 当前计划的目标。getCycleLength() 已经用它把马拉松锁成 16 周, 周期表的选择也需要同一个判断:
+// 否则长度对了(16 根柱子)但形状还是力量的波浪 —— 长度和形状必须来自同一处, 不然又是一次错位。
+function fbCurrentGoal() {
+  try {
+    if (typeof lastPlan !== 'undefined' && lastPlan && lastPlan.goal) return lastPlan.goal;
+  } catch (e) {}
+  return '';
+}
+
+// 周期长度 = 用户的计划周期, 和主计划 buildCycleWeekInfo(cycleLen) 用的是同一个值。
+function fbPeriodTotalWeeks() {
+  if (typeof getCycleLength === 'function') {
+    try {
+      var n = parseInt(getCycleLength(), 10);
+      // 上限 16(r 而不是 12): getCycleLength() 对马拉松返回 16, 夹到 12 会被兜底成默认的 4,
+      // P1 卡就会用 4 周曲线去描述一个 16 周的计划 —— 又是同一类"两处说法不一致"。
+      if (n >= 3 && n <= 16) return n;
+    } catch (e) {}
+  }
+  return 4;
+}
+
+// 主计划在这一周的定义(note / deload / weightAdjust)。
+// 取模方式和主计划保持一致: 计划生成处是 buildCycleWeekInfo(cycleLen)[(currentWeek-1)%cycleLen]。
+function fbPeriodWeekInfo(week) {
+  var N = fbPeriodTotalWeeks();
+  var w = parseInt(week, 10);
+  if (isNaN(w) || w < 1) w = 1;
+  var idx = (w - 1) % N;
+  if (typeof buildCycleWeekInfo === 'function') {
+    try {
+      // 第二个参数不能省: 省了马拉松就拿到力量的波浪表, 第15周会是 +25%(实际那周跑量 -59%)
+      var list = buildCycleWeekInfo(N, fbCurrentGoal());
+      if (list && list[idx]) return list[idx];
+    } catch (e) {}
+  }
+  return { note: '', deload: false, weightAdjust: '+0%' };
+}
+
+// 从主计划的 weightAdjust("+15%" / "-30%" / "总量 +10%") 里取出数字部分。
+// 用正则而不是 parseInt: "总量 +10%" 这种心肺口径第一个字符不是数字。
+function fbPeriodWeekPct(week) {
+  var info = fbPeriodWeekInfo(week);
+  var m = String((info && info.weightAdjust) || '').match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : 0;
+}
 
 function fbPeriodIsDeloadWeek(week) {
-  return (((week - 1) % FB_PERIOD_CYCLE) + 1) === FB_PERIOD_CYCLE;
+  var info = fbPeriodWeekInfo(week);
+  return !!(info && info.deload);
 }
 
-// 默认波浪: 每 4 周一循环, 前 3 周爬坡, 第 4 周减载。
-// 这是全项目唯一的周期强度定义: 老的 canvas 日历卡已经删掉, 不存在第二份。
-// 曾经的两份实现(日历卡 4 周 / 这张 16 周)就是典型的"改了这边忘了那边"。
+// ============ 减载「降多少」的唯一真源 ============
+// 以前全项目有五处各算一套: 组数走 reduction*0.5 / *0.4 的两层衰减、今日重量指令写死 *0.85、
+// Pro 开关卡写死「降量40%」、P3 建议写死「降到60% / 组数砍一半」、首页横幅写死「降低40%」。
+// 同一屏五个数字互相打架, 而且用户改 reduction 几乎没效果 —— 4 组的动作设 40% 和设 60%
+// 都得到 3 组, 设 20% 干脆一组不减。设计调节阀却拧不动, 比没有这个阀门更伤信任。
+//
+// 现在对齐两处「本来就预设好的」口径, 一个数字也不新造:
+//   组数(容量) = 用户设置的 reduction(默认 40) —— 这是 getDeloadSettings 的默认值, 也是
+//                Pro 开关卡上写着给用户的那个数字
+//   重量(强度) = 周期表这一周的 weightAdjust: 半减载 -15% / 大减载 -30%
+//                —— 这本来就是写在 wkInfo 里给用户看的文案(「重量降至85%」/「降至70%」),
+//                   之前只有首页横幅读它, 真正干活的地方全是另外一套
+function fbDeloadSeverity(week) {
+  var sets = 40;
+  try {
+    var raw = localStorage.getItem('fitbuddy_deload');
+    if (raw) {
+      var s = JSON.parse(raw) || {};
+      var v = parseFloat(s.reduction);
+      if (isFinite(v) && v >= 0) sets = Math.max(0, Math.min(90, v));
+    }
+  } catch (e) {}
+  var weight = 15;
+  try {
+    var p = Math.abs(fbPeriodWeekPct(week));
+    // 上限 80 而不是 60: 马拉松减量期第 16 周是 -70%(taperRate 0.3, 跑量降到 30%),
+    // 夹到 60 会让 P3 建议和今天的重量指令比周期表少说 10 个点 —— 又一处"两个数字"。
+    // 力量的最大降幅是 -30%(大减载), 抬高上限碰不到它, 这个改动对力量训练没有影响。
+    if (p > 0) weight = Math.min(80, p);
+  } catch (e) {}
+  return { sets: sets, weight: weight };
+}
+
+// 默认波浪 = 主计划那一周的强度换算成系数: +0% → 0.74, -15% → 0.63, -30% → 0.52, +30% → 0.96。
+// 曲线的峰谷形状由 buildCycleWeekInfo 决定, 这里不参与排布 —— 主计划改了这里自动跟着改。
 function fbPeriodBaseIntensity(week) {
-  var cw = ((week - 1) % FB_PERIOD_CYCLE) + 1;
-  if (cw === FB_PERIOD_CYCLE) return FB_PERIOD_DELOAD_I;
-  return FB_PERIOD_RAMP[cw - 1];
+  var v = FB_PERIOD_BASE * (1 + fbPeriodWeekPct(week) / 100);
+  return Math.max(0.25, Math.min(1, v));
 }
 
+// 读存档时按当前周期长度过滤: 用户把周期从 12 周改成 4 周之后, 第 5~12 周的旧调整
+// 既不显示也用不上, 但如果还留在存档里, fbPeriodEdited() 会一直为真 —— 计划被悄悄
+// 缩放了, 而用户在卡片上找不到任何改动过的痕迹。这种"看不见却在起作用"最要命。
+// 存储里仍保留原值: 改回长周期时那些调整还在, 只是当前周期用不到。
 function fbPeriodPlan() {
+  var out = { adj: {}, global: 0 };
   try {
     var p = JSON.parse(localStorage.getItem(FB_PERIOD_KEY) || 'null');
     if (p && typeof p === 'object') {
-      return { adj: p.adj || {}, global: parseFloat(p.global) || 0 };
+      var N = fbPeriodTotalWeeks();
+      Object.keys(p.adj || {}).forEach(function (k) {
+        var w = parseInt(k, 10);
+        if (w >= 1 && w <= N) {
+          var v = parseFloat(p.adj[k]);
+          if (!isNaN(v)) out.adj[w] = v;
+        }
+      });
+      out.global = parseFloat(p.global) || 0;
     }
   } catch (e) {}
-  return { adj: {}, global: 0 };
+  return out;
 }
 function fbPeriodSave(p) {
   try { localStorage.setItem(FB_PERIOD_KEY, JSON.stringify(p)); } catch (e) {}

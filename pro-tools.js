@@ -5,7 +5,7 @@
 //   1. 热身组计算器        - 输入目标重量→自动生成渐进热身方案
 //   2. 杠铃片计算器        - 输入总重量→显示每侧杠铃片配比
 //   3. RPE自调节系统       - 根据RPE评分自动建议下周±重量/组数
-//   4. 减载周自动化        - 每4周自动降量40%,可开关
+//   4. 减载周自动化        - 按周期表的减载周自动降量,可开关(节奏跟随用户自选周期)
 //   5. 渐进超负荷趋势线    - 每个动作的重量×次数折线图
 //   6. 周期化日历视图      - 16/4周波浪图,强度起伏+减载周
 //   7. 智能补课重排        - 漏练自动压缩或顺延
@@ -288,31 +288,34 @@ function isDeloadWeekActive(weekNum, cycle) {
   } catch (e) {}
   var settings = getDeloadSettings();
   if (!settings.enabled) return false;
+
+  // 哪一周减载, 唯一真源是主计划的周期表 —— 用户选了 N 周周期, 那周的 deload 标记就说了算。
+  // 这里曾经写死"第4周为减载周"(ir 无视用户周期), 与主计划 buildCycleWeekInfo(N) 错位:
+  // 10 个可选周期长度里只有 N=4 对得上。N=6 时它砍的是第 4 周(主计划的 +15% 冲击周),
+  // 而真正该减载的第 5、6 周一次没减; N=3 更极端, 整个周期从头到尾没有减载过。
+  // 就算产品经理没发现, 用户也会发现: 他这周明明被安排轻练, 计划却给了最多的组数。
+  if (typeof fbPeriodIsDeloadWeek === 'function') {
+    try { return !!fbPeriodIsDeloadWeek(weekNum); } catch (e) {}
+  }
+  // planner-core 没加载时的兜底: 退回写死 interval, 至少保证长周期里还会减载
   var interval = settings.interval || 4;
-  // 第4周(或每interval周)为减载周
   return ((weekNum - 1) % interval) === (interval - 1);
 }
 
-function getDeloadReduction() {
-  var settings = getDeloadSettings();
-  return (settings.reduction || 40) / 100;
-}
-
-function applyDeloadToSets(sets, goal) {
-  var reduction = getDeloadReduction();
-  if (goal === 'marathon' || goal === 'cardio') {
-    // 跑步减载:降距离不降天数
-    return Math.max(1, Math.round(sets * (1 - reduction * 0.6)));
-  }
-  return Math.max(1, Math.round(sets * (1 - reduction)));
-}
+// ⚠️ 这里删掉了 applyDeloadToSets 和 getDeloadReduction: 它们定义之后从未被任何地方调用
+// (只有 applyDeloadToSets 曾被挂到 window 上, 也没有内联 onclick 用到它), 却各自带着第三套
+// 降幅口径 —— 一旦哪天被接上线, 就是又一次「同一个减载周好几个数字」的重演。
+// 现在降幅只有 fbDeloadSeverity() 一个出口。
 
 function renderDeloadToggle() {
   var settings = getDeloadSettings();
   var isDeload = isDeloadWeekActive(currentWeek, currentCycle);
+  // 文案跟着真实周期走: interval 已经不再参与判定(见 isDeloadWeekActive),
+  // 继续显示"每4周"等于当着选了 6 周周期的用户说假话。
+  var N = (typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : 4;
   var html = '<div style="background:var(--bg);border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">' +
     '<div><div style="font-size:13px;font-weight:700;color:var(--text);">🔄 减载周自动化</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:2px;">每' + (settings.interval || 4) + '周自动降量' + (settings.reduction || 40) + '%</div></div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:2px;">按 ' + N + ' 周周期安排减载周 · 降量' + (settings.reduction || 40) + '%</div></div>' +
     '<div style="display:flex;align-items:center;gap:8px;">';
   if (isDeload) {
     html += '<span style="font-size:11px;font-weight:700;color:#8B5CF6;">⚡ 本周减载</span>';
@@ -551,10 +554,36 @@ var DeloadDecisionCtrl = {
 };
 
 // ============ Pro P1 · 周期化全透明 + 可编辑 ============
-// 免费版告诉你"这周练什么", 这里把未来 16 周的容量波浪摊开, 并且允许改。
+// 免费版告诉你"这周练什么", 这里把整个周期的容量波浪摊开, 并且允许改。
 // 敢摊开是商业模式差异: 黑盒 AI 计划画不出这张图, 一画就暴露它是模板。
+
+// 强度中位(= 不增不减)。常量定义在 planner-core, 这里带兜底读一次:
+// 万一两个文件的缓存版本错配, 也不能让它变成 0 从而算出 NaN 组数。
+function fbPeriodBaseVal() {
+  var v = (typeof FB_PERIOD_BASE !== 'undefined') ? parseFloat(FB_PERIOD_BASE) : 0.74;
+  return (v > 0.05 && v < 2) ? v : 0.74;
+}
+
+// 这张卡能不能改, 取决于「这一周的计划是由什么构成的」。
+// P1 的调整最终是缩放 cfg.sets 生效的(pro-tools 的 doGenerateInternal 包装里),
+// 但 buildMarathonPlan(level, days, equip, wOff) 和 buildCardioPlan(...) 连 cfg 都不接 ——
+// 跑步/有氧的每周内容是按分期算出来的(含赛前 taper), 组数缩放对它是零作用。
+// 拖了没反应比不给按钮更糟: 用户会以为自己点漏了, 反复去点。所以这里诚实标成只读。
+function fbPeriodEditable() {
+  try {
+    if (typeof fbCurrentGoal === 'function') {
+      var g = fbCurrentGoal();
+      if (g === 'marathon' || g === 'cardio') return false;
+    }
+  } catch (e) {}
+  return true;
+}
+
 function fbPeriodEditorInner() {
-  var N = (typeof FB_PERIOD_WEEKS !== 'undefined') ? FB_PERIOD_WEEKS : 16;
+  // 周期长度跟用户自己的计划周期走, 不再写死 16 —— 写死过一次, 选 6/12 周模板的用户
+  // 看到的减载周和当天实际练的完全是两周。
+  var N = (typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : 16;
+  var editable = fbPeriodEditable();
   var cw = (typeof currentWeek !== 'undefined' && currentWeek) ? currentWeek : 1;
   if (cw > N || cw < 1) cw = ((((cw - 1) % N) + N) % N) + 1;
   var sel = PeriodCtrl.selected || cw;
@@ -588,42 +617,64 @@ function fbPeriodEditorInner() {
   var curI = fbPeriodIntensity(sel);
   var pct = Math.round(curI * 100);
   var edited = (typeof fbPeriodEdited === 'function') ? fbPeriodEdited() : false;
+  // 跑步/有氧没有「组数」这个概念, 副标题要说用户真正能核对的那个量: 本周跑量相对基准的增减
+  var volPct = (typeof fbPeriodWeekPct === 'function') ? fbPeriodWeekPct(sel) : 0;
+  var weekSub = editable
+    ? '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作'
+    : '本周跑量 ' + (volPct > 0 ? '+' : '') + volPct + '%';
 
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:9px 12px;background:var(--bg);border-radius:10px;">' +
     '<div><div style="font-size:13px;font-weight:700;color:var(--text);">第 ' + sel + ' 周' +
       (sel === cw ? '<span style="font-size:10px;font-weight:700;color:#FF6B35;margin-left:5px;">本周</span>' : '') +
       (fbPeriodIsDeloadWeek(sel) ? '<span style="font-size:10px;font-weight:700;color:var(--text3);margin-left:5px;">减载周</span>' : '') +
       '</div>' +
-      '<div style="font-size:11px;color:var(--text3);margin-top:2px;">强度 ' + pct + '% · 约 ' +
-        Math.max(2, Math.round(4 * curI / 0.74)) + ' 组/动作</div></div>' +
-    '<div style="display:flex;gap:6px;">' +
-      '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
-      '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
-    '</div></div>';
-
-  html += '<div style="display:flex;gap:6px;margin-top:8px;">' +
-    '<button onclick="PeriodCtrl.adjustGlobal(-0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 −5%</button>' +
-    '<button onclick="PeriodCtrl.adjustGlobal(0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 ＋5%</button>' +
-    (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
+      '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + weekSub + '</div></div>' +
+    (editable
+      ? '<div style="display:flex;gap:6px;">' +
+          '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
+          '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
+        '</div>'
+      : '') +
     '</div>';
 
+  html += editable
+    ? '<div style="display:flex;gap:6px;margin-top:8px;">' +
+        '<button onclick="PeriodCtrl.adjustGlobal(-0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 −5%</button>' +
+        '<button onclick="PeriodCtrl.adjustGlobal(0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 ＋5%</button>' +
+        (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
+        '</div>'
+    : '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">跑步/有氧的每周内容是分期算出来的（含赛前 taper），手动加减组数不会改变它 —— 这张图只用来看清趋势。</div>';
+
   html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
-    '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 16 周（减载周不受影响）。<br>' +
-    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>';
+    (editable
+      ? '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 ' + N + ' 周（减载周不受影响）。<br>' +
+        '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>'
+      : '想调跑步的训练量，去改「目标距离 / 每周天数」或当前周 —— 这张图会跟着变。</div>');
   return html;
 }
 
 function renderPeriodEditor() {
   if (typeof fbPeriodIntensity !== 'function') return '';
+  var N = (typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : 16;
+  var editable2 = fbPeriodEditable();
+  // 标题上的「可编辑」必须是真的: 跑步/有氧这里没有可编辑的东西, 标了就是骗点击
+  var title = '<span>📈 ' + N + '周周期化 · ' + (editable2 ? '可编辑' : '只读') + '</span>' + fbProBadgeHtml();
+  // 说明跟着用户的实际周期走。以前写"每 4 周一个小周期" —— 选了 6 周计划的用户
+  // 数一数对不上, 只会觉得这张图不是给他的。
+  var headHtml = editable2
+    ? '你的计划周期是 <b style="color:var(--text);">' + N + ' 周</b>，这张图把它整个摊开：柱子越矮容量越低，灰色的那几周是减载周。'
+    : '你的跑步计划是 <b style="color:var(--text);">' + N + ' 周</b>分期：柱子越矮跑量越低，灰色那几周是减量期（taper）。';
+  var tailHtml = editable2
+    ? '<span style="color:var(--text3);">这张图别家不敢画 —— 画出来你就会发现，所谓 AI 计划不过是同一条曲线。</span>'
+    : '<span style="color:var(--text3);">图上的形状就是实际跑量的形状，和下面的周进度条说的是同一件事。</span>';
   var head = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
-    '未来 16 周的容量波浪：每 4 周一个小周期，前 3 周爬坡，第 4 周减载。<br>' +
-    '<span style="color:var(--text3);">这张图别家不敢画 —— 画出来你就会发现，所谓 AI 计划不过是同一条曲线。</span></div>';
+    headHtml + '<br>' + tailHtml + '</div>';
 
   if (typeof collapsibleCard === 'function') {
-    return collapsibleCard('pc-period-edit', '<span>📈 16周周期化 · 可编辑</span>' + fbProBadgeHtml(),
+    return collapsibleCard('pc-period-edit', title,
       head + '<div id="periodEditorPanel">' + fbPeriodEditorInner() + '</div>', false);
   }
-  return '<div class="progress-card"><div class="card-title">📈 16周周期化 · 可编辑' + fbProBadgeHtml() + '</div>' +
+  return '<div class="progress-card"><div class="card-title">' + title + '</div>' +
     head + '<div id="periodEditorPanel">' + fbPeriodEditorInner() + '</div></div>';
 }
 
@@ -1051,7 +1102,6 @@ window.calcPlates = calcPlates;
 window.getRPEAdjustment = getRPEAdjustment;
 window.renderRPEAdjustmentBadge = renderRPEAdjustmentBadge;
 window.isDeloadWeekActive = isDeloadWeekActive;
-window.applyDeloadToSets = applyDeloadToSets;
 window.getDeloadSettings = getDeloadSettings;
 window.renderDeloadToggle = renderDeloadToggle;
 // 老的「周期化日历视图」(canvas 版) 已删: 它只画 4 周、强度写死不能改,
@@ -1171,14 +1221,18 @@ window.initProToolsPlan = function() {
       var isDeload = isDeloadWeekActive(currentWeek, currentCycle);
       var effectiveCfg = cfg;
       if (isDeload) {
-        var reduction = getDeloadReduction();
-        effectiveCfg = Object.assign({}, cfg, {
-          sets: Math.max(2, Math.round(cfg.sets * (1 - reduction * 0.5)))
-        });
-        // 力量目标降更多
-        if (goal === 'strength' || goal === 'muscle') {
-          effectiveCfg.sets = Math.max(2, Math.round(cfg.sets * (1 - reduction * 0.4)));
-        }
+        // 降幅读唯一真源: 预设是 reduction(默认 40)。这里曾被 *0.5 / *0.4 两层衰减打成
+        // 实际只降 25%, 而且 4 组的动作设 40% 和设 60% 算出来都是 3 组 —— 用户以为在调强度,
+        // 实际在调空气。设计了一个拧不动的阀门, 比压根没有这个阀门更伤信任。
+        var sev = (typeof fbDeloadSeverity === 'function')
+          ? fbDeloadSeverity(currentWeek)
+          : { sets: 40, weight: 15 };
+        var cut = Math.round(cfg.sets * sev.sets / 100);
+        var reduced = cfg.sets - cut;
+        // 组数是整数, 四舍五入会把小动作的削减抹平: 2 组降 40% 算下来是 0.8 → 1, 再被
+        // 下限夹回 2, 这一周就"减了个寂寞"。保底减 1 组 —— 减载周必须让用户看得出来比平时少。
+        if (reduced >= cfg.sets) reduced = cfg.sets - 1;
+        effectiveCfg = Object.assign({}, cfg, { sets: Math.max(1, reduced) });
       } else {
         // P1: 用户在周期化卡上调过强度 → 按这一周的强度缩放组数。
         // ⚠️ 只有真的改过才动。没改过就走原逻辑, 否则每个用户的计划都被悄悄改一遍,
@@ -1187,8 +1241,8 @@ window.initProToolsPlan = function() {
           if (typeof fbPeriodEdited === 'function' && fbPeriodEdited() &&
               typeof fbPeriodIntensity === 'function') {
             var inten = fbPeriodIntensity(currentWeek);
-            // 0.74 是默认波浪的中位, 以它为 1.0 基准, 上下按比例缩放
-            var ratio = inten / 0.74;
+            // FB_PERIOD_BASE 是默认波浪的中位, 以它为 1.0 基准, 上下按比例缩放
+            var ratio = inten / fbPeriodBaseVal();
             effectiveCfg = Object.assign({}, cfg, {
               sets: Math.max(2, Math.round(cfg.sets * ratio))
             });

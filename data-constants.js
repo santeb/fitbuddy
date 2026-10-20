@@ -462,8 +462,14 @@ var _CYCLE_CARDIO_RECOVERY = {
   intensity: "心率 55-70%",
   rpe: "RPE 4-5"
 };
-function buildCycleWeekInfo(totalWeeks) {
+// goal 传进来的原因: 马拉松不是"力量的短周期", 它有自己的四期分期, 不能套这张波浪表。
+// 不传就是老行为(力量周期), 现有调用点不会因为漏传一个参数就换掉自己的周期表。
+function buildCycleWeekInfo(totalWeeks, goal) {
   totalWeeks = totalWeeks || 4;
+  // 马拉松: 每一周的排布交给 buildMarathonCycleWeekInfo, 长度固定 16
+  if (goal === 'marathon' && typeof buildMarathonCycleWeekInfo === 'function') {
+    return buildMarathonCycleWeekInfo();
+  }
   if (totalWeeks === 3) return [WEEK_INFO[0], WEEK_INFO[1], Object.assign({}, _CYCLE_DELOAD_WEEK)]; // 适应 → 爬坡 → 轻减载
   if (totalWeeks <= 4) return WEEK_INFO.slice(0, totalWeeks);
   var list = [WEEK_INFO[0]]; // 第1周:适应
@@ -477,8 +483,14 @@ function buildCycleWeekInfo(totalWeeks) {
       continue;
     }
     var boost = Math.min(block * 5 + (posInBlock - 1) * 5, 30);
+    // 文案和百分比必须由同一个数驱动。以前 note 取 _CYCLE_MID_NOTES[(posInBlock-1)%4],
+    // 每块都重新从"渐进超负荷"开头讲, 而 boost 是跨块累加的 —— N>=7 时第 2/3 块会出现
+    // 「渐进超负荷 — 尝试增加重量 2.5-5kg …… 重量调整: +15%」这种同一行自相矛盾的话
+    // (renderWeekInfo 把 note 和 weightAdjust 渲染在同一行, 用户直接看得见)。
+    // 现在按钮位 → 文案一档: +5%渐进超负荷 / +10%挑战周 / +15%冲击周 / >=+20%巅峰周, 封顶到表尾。
+    var noteIdx = Math.min(Math.max(boost / 5 - 1, 0), _CYCLE_MID_NOTES.length - 1);
     list.push({
-      note: _CYCLE_MID_NOTES[(posInBlock - 1) % _CYCLE_MID_NOTES.length] + "（周期第" + k + "周）",
+      note: _CYCLE_MID_NOTES[noteIdx] + "（周期第" + k + "周）",
       deload: false,
       weightAdjust: "+" + boost + "%"
     });
@@ -533,6 +545,46 @@ var MARATHON_WEEK_NOTES = {
   9:"巅峰期开始，跑量最大", 10:"LSD接近目标距离", 11:"模拟比赛配速节奏", 12:"巅峰期收尾，最后一次长距离",
   13:"减量第一周，跑量降至60%", 14:"继续减量，保持轻松跑", 15:"赛前最后一周，跑量30%", 16:"比赛周！放松跑+碳水加载"
 };
+
+// 马拉松 16 周专用周期表。
+// 以前这里套用的是力量的"每3周爬坡 + 1周半减载"波浪周期, 跟跑步的四期分期毫无血缘关系:
+//   第5周  周期表说 -15% 减载, 但 MARATHON_WEEK_NOTES 写的是"首次加入节奏跑"(该加)
+//   第15周 周期表说 +25%(全程第二高), 而实际 LSD 从 34km 掉到 14km(-59%), 是最该降的一周
+// 同一个 App 里 week-bar 按"基础期/强化期/巅峰期/减量期"分区, P1 卡的柱子却是另一套形状,
+// 摆在一起就是自相矛盾。现在这张表直接从 MARATHON_PHASES 派生, 两边说同一件事。
+//
+// 前 12 周(Ramp): 负荷随周期递增, 增幅逐步收窄 —— 越接近赛前越不该再加量, 这是 taper 的前提。
+// 后 4 周(Taper): 不新造口径, 严格沿用 buildMarathonPlan / renderMarathonProgress 里早就写死的
+//                 taperRate [0.6, 0.5, 0.4, 0.3] → 跑量降至 60/50/40/30% → -40/-50/-60/-70%。
+// 这四周同时标 deload: 减量期本来就是减载, 否则这张表会在"该 taper 的周"告诉别处"这周正常练"。
+function buildMarathonCycleWeekInfo() {
+  var _ramp = [0, 5, 10, 15, 20, 24, 28, 32, 35, 37, 39, 40];
+  var _taper = [0.6, 0.5, 0.4, 0.3];
+  var _out = [];
+  for (var _w = 1; _w <= 16; _w++) {
+    var _ph = null;
+    for (var _i = 0; _i < MARATHON_PHASES.length; _i++) {
+      if (MARATHON_PHASES[_i].weeks.indexOf(_w) >= 0) { _ph = MARATHON_PHASES[_i]; break; }
+    }
+    if (!_ph) _ph = MARATHON_PHASES[0];
+    var _note = MARATHON_WEEK_NOTES[_w] || '';
+    if (_w <= 12) {
+      _out.push({
+        note: _ph.name + ' · ' + _note + '（第' + _w + '周）',
+        deload: false,
+        weightAdjust: '+' + _ramp[_w - 1] + '%'
+      });
+    } else {
+      var _k = _w - 13;
+      _out.push({
+        note: _ph.name + ' · ' + _note + '（第' + _w + '周 · 跑量降至' + Math.round(_taper[_k] * 100) + '%）',
+        deload: true,
+        weightAdjust: '-' + Math.round((1 - _taper[_k]) * 100) + '%'
+      });
+    }
+  }
+  return _out;
+}
 
 // 配速计算器
 function calcMarathonPaces(targetH, targetM) {
