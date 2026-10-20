@@ -281,6 +281,11 @@ function saveDeloadSettings(settings) {
 }
 
 function isDeloadWeekActive(weekNum, cycle) {
+  // P3: 用户在「减载决策」卡上按了"本周按减载执行" —— 那是按身体信号触发的,
+  // 优先级高于日历节奏。身体说该减的时候, 日历说不该减也得听身体的。
+  try {
+    if (typeof fbDeloadOverrideActive === 'function' && fbDeloadOverrideActive()) return true;
+  } catch (e) {}
   var settings = getDeloadSettings();
   if (!settings.enabled) return false;
   var interval = settings.interval || 4;
@@ -602,212 +607,413 @@ function renderPRCards() {
   return html;
 }
 
-// ============ 6. 周期化日历视图 ============
-
-function drawPeriodizationCalendar(canvasId, plan) {
-  var canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-
-  var goal = plan ? plan.goal : 'muscle';
-  var totalWeeks = goal === 'marathon' ? 16 : (typeof getCycleLength === 'function' ? getCycleLength() : 4);
-  var isMarathon = goal === 'marathon';
-
-  var ctx = canvas.getContext('2d');
-  var dpr = window.devicePixelRatio || 1;
-  var rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  var W = rect.width, H = rect.height;
-  ctx.clearRect(0, 0, W, H);
-
-  var cardColor = getComputedStyle(document.body).getPropertyValue('--card').trim() || '#fff';
-  ctx.fillStyle = cardColor;
-  ctx.fillRect(0, 0, W, H);
-
-  var pad = { top: 30, right: 16, bottom: 30, left: 16 };
-  var cw = W - pad.left - pad.right;
-  var ch = H - pad.top - pad.bottom;
-
-  // 强度模式:4周一周期,1-3周递增,第4周减载
-  function getIntensity(week) {
-    if (isMarathon) {
-      var phase = week <= 4 ? 'base' : week <= 8 ? 'build' : week <= 12 ? 'peak' : 'taper';
-      if (phase === 'taper') {
-        var taperWeek = ((week - 1) % 4) + 1;
-        return [0.4, 0.35, 0.3, 0.25][taperWeek - 1] || 0.3;
-      }
-      var cycleWeek = ((week - 1) % 4) + 1;
-      var base = 0.4 + (week - 1) * 0.04;
-      if (cycleWeek === 4) return base * 0.65; // 减载
-      return Math.min(0.95, base);
-    } else {
-      // 自定义周期:第1周适应,中间逐周递增,最后一周减载
-      var cwLen = Math.max(totalWeeks, 2);
-      var cycleWeek2 = ((week - 1) % cwLen) + 1;
-      if (cycleWeek2 === cwLen) return 0.5; // 减载周
-      if (cycleWeek2 === 1) return 0.63;
-      return Math.min(0.95, 0.63 + (cycleWeek2 - 1) * 0.11);
-    }
-  }
-
-  // 绘制波浪图
-  var weekW = cw / totalWeeks;
-  var maxH = ch * 0.85;
-
-  // 背景波浪填充
-  ctx.beginPath();
-  ctx.moveTo(pad.left, pad.top + ch);
-  for (var w = 0; w < totalWeeks; w++) {
-    var intensity = getIntensity(w + 1);
-    var x = pad.left + weekW * (w + 0.5);
-    var y = pad.top + ch - intensity * maxH;
-    if (w === 0) {
-      ctx.lineTo(x, y);
-    } else {
-      // 平滑曲线
-      var prevIntensity = getIntensity(w);
-      var prevX = pad.left + weekW * (w - 0.5);
-      var prevY = pad.top + ch - prevIntensity * maxH;
-      var cpX1 = prevX + weekW * 0.3;
-      var cpY1 = prevY;
-      var cpX2 = x - weekW * 0.3;
-      var cpY2 = y;
-      ctx.bezierCurveTo(cpX1, cpY1, cpX2, cpY2, x, y);
-    }
-  }
-  ctx.lineTo(pad.left + cw, pad.top + ch);
-  ctx.closePath();
-
-  // 渐变填充
-  var grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
-  grad.addColorStop(0, 'rgba(255,107,53,0.35)');
-  grad.addColorStop(1, 'rgba(255,107,53,0.02)');
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  // 波浪线
-  ctx.beginPath();
-  for (var w = 0; w < totalWeeks; w++) {
-    var intensity = getIntensity(w + 1);
-    var x = pad.left + weekW * (w + 0.5);
-    var y = pad.top + ch - intensity * maxH;
-    if (w === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      var prevIntensity = getIntensity(w);
-      var prevX = pad.left + weekW * (w - 0.5);
-      var prevY = pad.top + ch - prevIntensity * maxH;
-      var cpX1 = prevX + weekW * 0.3;
-      var cpY1 = prevY;
-      var cpX2 = x - weekW * 0.3;
-      var cpY2 = y;
-      ctx.bezierCurveTo(cpX1, cpY1, cpX2, cpY2, x, y);
-    }
-  }
-  ctx.strokeStyle = '#FF6B35';
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-
-  // 周节点
-  var text3Color = getComputedStyle(document.body).getPropertyValue('--text3').trim() || '#999';
-  var textColor = getComputedStyle(document.body).getPropertyValue('--text').trim() || '#1A1A2E';
-  for (var w = 0; w < totalWeeks; w++) {
-    var intensity = getIntensity(w + 1);
-    var x = pad.left + weekW * (w + 0.5);
-    var y = pad.top + ch - intensity * maxH;
-    var isDeload = ((w + 1) % 4) === 0 || (isMarathon && w >= 12);
-    var isActive = (w + 1) === currentWeek;
-
-    ctx.beginPath();
-    ctx.arc(x, y, isActive ? 6 : 4, 0, Math.PI * 2);
-    ctx.fillStyle = isDeload ? '#8B5CF6' : (isActive ? '#FF3E7F' : '#FF6B35');
-    ctx.fill();
-    if (isActive) {
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.strokeStyle = '#FF3E7F';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    // 周标签
-    ctx.fillStyle = isActive ? '#FF3E7F' : text3Color;
-    ctx.font = isActive ? 'bold 10px sans-serif' : '9px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('W' + (w + 1), x, pad.top + ch + 14);
-  }
-
-  // 马拉松阶段分隔线
-  if (isMarathon) {
-    var phases = MARATHON_PHASES;
-    phases.forEach(function(phase, pi) {
-      if (pi === 0) return;
-      var startX = pad.left + (phase.weeks[0] - 1) * weekW;
-      ctx.strokeStyle = phase.color + '60';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(startX, pad.top);
-      ctx.lineTo(startX, pad.top + ch);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    });
-
-    // 阶段标签
-    phases.forEach(function(phase) {
-      var midWeek = (phase.weeks[0] + phase.weeks[phase.weeks.length - 1]) / 2;
-      var x = pad.left + (midWeek - 0.5) * weekW;
-      ctx.fillStyle = phase.color;
-      ctx.font = 'bold 9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(phase.name, x, 16);
-    });
-  }
-
-  // 图例
-  ctx.font = '9px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#FF6B35';
-  ctx.beginPath();
-  ctx.arc(pad.left + 6, H - 8, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = text3Color;
-  ctx.fillText('正常强度', pad.left + 12, H - 5);
-
-  ctx.fillStyle = '#8B5CF6';
-  ctx.beginPath();
-  ctx.arc(pad.left + 76, H - 8, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = text3Color;
-  ctx.fillText('减载周', pad.left + 82, H - 5);
-
-  ctx.fillStyle = '#FF3E7F';
-  ctx.beginPath();
-  ctx.arc(pad.left + 130, H - 8, 4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = text3Color;
-  ctx.fillText('当前周', pad.left + 136, H - 5);
+// HTML 转义。动作名来自用户自定义输入, 不转义的话一个 "<img onerror>" 就能打穿进度页。
+function ptEsc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderPeriodizationCalendar() {
-  var plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
-  if (!plan) return '';
-  var isMarathon = plan.goal === 'marathon';
-  var totalWeeks = isMarathon ? 16 : 4;
-  var height = isMarathon ? 180 : 160;
+// Pro 卡统一徽章。三处(P0/卡点诊断在 planner-core, P2/P3/P4 在这里)必须长得一样,
+// 否则同一个 Pro 在页面上出现两种标识, 像两个产品。
+function fbProBadgeHtml() {
+  var free = (typeof FB_PRO_FREE_BETA !== 'undefined') ? FB_PRO_FREE_BETA : true;
+  return '<span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:6px;' +
+    'background:linear-gradient(135deg,#FF6B35,#F59E0B);color:#fff;">PRO</span>' +
+    (free ? '<span style="font-size:10px;color:var(--text3);font-weight:500;margin-left:5px;">内测期免费</span>' : '');
+}
 
-  var html = '<div class="progress-card">' +
-    '<div class="card-title">📅 周期化日历视图</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">' + (isMarathon ? '16周完整周期' : '4周微周期') + ' · 强度起伏+减载周一目了然</div>' +
-    '<div class="chart-wrap"><canvas id="calendarCanvas" style="width:100%;height:' + height + 'px;"></canvas></div>' +
-  '</div>';
+// ============ Pro P2 · 部位平衡与弱点分析 ============
+// 免费版有「部位训练分布」环形图, 只回答"各练了几次";
+// 这张卡回答"练得均不均衡、哪里是短板" —— 从"描述"跨到"判断", 这条线就是收费线。
+function renderMuscleBalance() {
+  if (typeof fbBalanceReport !== 'function') return '';
+  var rep = null;
+  try { rep = fbBalanceReport(); } catch (e) { return ''; }
+  if (!rep || !rep.hasData) return '';
 
-  setTimeout(function() {
-    drawPeriodizationCalendar('calendarCanvas', plan);
-  }, 50);
+  var html = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
+    '统计最近 <b style="color:var(--text);">' + rep.spanDays + ' 天</b>每个部位的平均周容量，' +
+    '对照主流容量区间，再看<b style="color:var(--text);">推/拉、上/下肢</b>有没有练歪。<br>' +
+    '<span style="color:var(--text3);">组数按当天动作数占比摊算，是估算值，别当精账。</span></div>';
 
+  if (rep.findings.length) {
+    rep.findings.forEach(function (f) {
+      html += '<div style="background:' + f.color + '14;border-left:3px solid ' + f.color +
+        ';border-radius:10px;padding:10px 12px;margin-bottom:8px;">' +
+        '<div style="font-size:12px;color:var(--text);line-height:1.65;">' + ptEsc(f.text) + '</div></div>';
+    });
+  } else {
+    html += '<div style="background:#22C55E14;border-left:3px solid #22C55E;border-radius:10px;padding:10px 12px;margin-bottom:10px;' +
+      'font-size:12px;color:var(--text);line-height:1.65;">各部位都在推荐区间内，推拉也平衡。' +
+      '这种情况最该做的不是加量，是别乱改。</div>';
+  }
+
+  // 横轴上限取"最大实际值"和"区间上限"里更大的那个, 再留 15% 余量 ——
+  // 否则练得猛的人(比如胸 25 组)的柱子会全部顶满, 看不出差别。
+  var maxScale = 1;
+  rep.items.forEach(function (it) {
+    maxScale = Math.max(maxScale, it.setsPerWeek, it.target[1]);
+  });
+  maxScale = maxScale * 1.15;
+
+  html += '<div style="font-size:11px;color:var(--text3);margin:2px 0 8px;">阴影段 = 推荐区间</div>';
+  rep.items.forEach(function (it) {
+    var curPct = Math.min(100, it.setsPerWeek / maxScale * 100);
+    var loPct = Math.min(100, it.target[0] / maxScale * 100);
+    var bandW = Math.min(100, it.target[1] / maxScale * 100) - loPct;
+    var color = it.status === 'low' ? '#EF4444' : it.status === 'high' ? '#8B5CF6'
+      : it.status === 'ok' ? '#22C55E' : '#94A3B8';
+    var tag = it.status === 'low' ? '偏少' : it.status === 'high' ? '偏多'
+      : it.status === 'ok' ? '合适' : '没练';
+    html += '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">' +
+      '<span style="width:30px;flex:none;font-size:12px;font-weight:600;color:var(--text);">' + ptEsc(it.label) + '</span>' +
+      '<div style="flex:1;position:relative;height:10px;border-radius:5px;background:var(--border);overflow:hidden;">' +
+        '<div style="position:absolute;top:0;bottom:0;left:' + loPct.toFixed(1) + '%;width:' + bandW.toFixed(1) + '%;background:#22C55E22;"></div>' +
+        '<div style="position:absolute;top:0;bottom:0;left:0;width:' + curPct.toFixed(1) + '%;background:' + color + ';border-radius:5px;"></div>' +
+      '</div>' +
+      '<span style="width:58px;flex:none;text-align:right;font-size:11px;color:var(--text2);">' +
+        (it.setsPerWeek > 0 ? Math.round(it.setsPerWeek) + '组/周' : '—') + '</span>' +
+      '<span style="width:26px;flex:none;text-align:right;font-size:10px;font-weight:700;color:' + color + ';">' + tag + '</span>' +
+    '</div>';
+  });
+
+  // 处方只给最弱的那一个。一次改一个部位, 4 周后能明确知道"是这个改动起了作用";
+  // 一次开三张处方, 见效了也不知道是谁的功劳, 下次还是不知道该怎么调。
+  var target = null;
+  if (rep.weak && rep.weak.status === 'low') target = rep.weak;
+  if (!target) {
+    var lows = rep.items.filter(function (it) { return it.status === 'low'; });
+    if (lows.length) target = lows[0];
+  }
+  if (target) {
+    var add = Math.max(2, Math.round(target.target[0] - target.setsPerWeek));
+    var aid = (typeof fbBalanceAid === 'function') ? fbBalanceAid(target.muscle) : '';
+    html += '<div style="margin-top:12px;padding:11px 12px;background:var(--bg);border-radius:10px;">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">🧭 下一步：' +
+        ptEsc(target.label) + '每周加 ' + add + ' 组</div>' +
+      '<div style="font-size:12px;color:var(--text2);line-height:1.7;">' +
+        (aid ? ('加 <b style="color:var(--text);">' + ptEsc(aid) + ' 3 组 × 10 次</b>，排在' +
+                 ptEsc(target.label) + '主项之后<br>') : '') +
+        '分到 2 次训练里，别一次加完 —— 单次容量涨超 20% 就是在攒疲劳<br>' +
+        '4 周后回来看这张卡：' + ptEsc(target.label) + '的柱子进阴影段就算补上了' +
+      '</div></div>';
+  }
+
+  if (typeof collapsibleCard === 'function') {
+    return collapsibleCard('pc-balance', '<span>⚖️ 部位平衡分析</span>' + fbProBadgeHtml(), html, false);
+  }
+  return '<div class="progress-card"><div class="card-title">⚖️ 部位平衡分析' + fbProBadgeHtml() + '</div>' + html + '</div>';
+}
+
+// ============ Pro P3 · 减载决策自动化 ============
+// 卡片平时也在, 显示"监控中"+ 信号清单。这跟 P0 卡点诊断不一样:
+// 诊断是"有病才来", 减载是"没病也要定期体检" —— 消失了用户就不知道系统在看着。
+function renderDeloadDecision() {
+  if (typeof fbDeloadSignals !== 'function') return '';
+  var s = null;
+  try { s = fbDeloadSignals(); } catch (e) { return ''; }
+  if (!s || !s.hasData) return '';
+
+  var html = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
+    '减载不看日历，看身体：汇总 <b style="color:var(--text);">RPE 趋势、成绩回落、部位疲劳、连练天数、出勤率</b> 五类信号。<br>' +
+    '<span style="color:var(--text3);">单条信号永远不会触发减载 —— 一条可能是巧合，两条同时出现才是真的累了。</span></div>';
+
+  if (s.need) {
+    html += '<div style="background:#EF444414;border-left:3px solid #EF4444;border-radius:10px;padding:11px 12px;margin-bottom:10px;">' +
+      '<div style="font-size:13px;font-weight:800;color:#EF4444;margin-bottom:4px;">⚠️ ' +
+        (s.strong ? '这周必须减载' : '这周建议减载') + '</div>' +
+      '<div style="font-size:12px;color:var(--text2);line-height:1.65;">' +
+        '有 <b style="color:var(--text);">' + s.signals.length + ' 条</b>信号同时亮起。' +
+        '这时候硬加重量，长的是疲劳不是力量。</div></div>';
+  } else {
+    html += '<div style="background:#22C55E14;border-left:3px solid #22C55E;border-radius:10px;padding:11px 12px;margin-bottom:10px;">' +
+      '<div style="font-size:13px;font-weight:800;color:#22C55E;margin-bottom:4px;">✅ 暂时不用减载</div>' +
+      '<div style="font-size:12px;color:var(--text2);line-height:1.65;">信号都在阈值内，按原计划继续冲就行。</div></div>';
+  }
+
+  // 信号清单: 不需要减载时也照样列出来, 让用户看见"系统在看什么"
+  html += '<div style="font-size:11px;color:var(--text3);margin:0 0 7px;">当前信号（' + s.signals.length + '）</div>';
+  if (s.signals.length) {
+    s.signals.forEach(function (g) {
+      html += '<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);">' +
+        '<span style="flex:none;width:7px;height:7px;border-radius:50%;background:' + g.color + ';margin-top:5px;"></span>' +
+        '<span style="flex:1;font-size:12px;color:var(--text2);line-height:1.6;">' +
+          '<b style="color:var(--text);">' + ptEsc(g.label) + '</b>：' + ptEsc(g.detail) + '</span></div>';
+    });
+  } else {
+    html += '<div style="font-size:12px;color:var(--text3);padding:7px 0;">没有异常信号。' +
+      'RPE 在正常区间，成绩没回落，也没有连练过度。</div>';
+  }
+
+  if (s.need) {
+    var plan = (typeof fbDeloadPlan === 'function') ? fbDeloadPlan() : [];
+    if (plan.length) {
+      html += '<div style="margin-top:12px;font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">📋 减载周怎么练</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;">' +
+        plan.map(function (p, i) {
+          return '<div style="display:flex;gap:7px;font-size:12px;color:var(--text2);line-height:1.6;">' +
+            '<span style="flex:none;width:16px;height:16px;border-radius:50%;background:#EF44441A;color:#EF4444;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:2px;">' + (i + 1) + '</span>' +
+            '<span style="flex:1;">' + ptEsc(p) + '</span></div>';
+        }).join('') + '</div>';
+    }
+  }
+
+  // 行动按钮: 点了就直接把本周标成减载周, 计划页的组数立刻降下来, 不用再去找开关
+  html += '<div style="display:flex;gap:8px;margin-top:12px;">';
+  if (s.override) {
+    html += '<button onclick="DeloadDecisionCtrl.cancel()" style="flex:1;padding:9px;border-radius:10px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">↩︎ 取消本周减载</button>';
+  } else {
+    html += '<button onclick="DeloadDecisionCtrl.apply()" style="flex:1;padding:9px;border-radius:10px;background:linear-gradient(135deg,#FF6B35,#F59E0B);color:#fff;border:none;font-size:12px;font-weight:700;cursor:pointer;">⚡ 本周按减载执行</button>';
+  }
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
+    (s.weeksSince >= 99 ? '记录里还没有减载过的痕迹' : '距离上次减载 ' + s.weeksSince + ' 周') +
+    ' · 减载标记只影响本周，下周自动恢复</div>';
+
+  var badge = s.need
+    ? '<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;background:#EF444420;color:#EF4444;">该减载</span>'
+    : '<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px;margin-left:6px;background:#22C55E20;color:#22C55E;">正常</span>';
+
+  if (typeof collapsibleCard === 'function') {
+    return collapsibleCard('pc-deload', '<span>🔄 减载决策</span>' + badge + fbProBadgeHtml(), html, s.need);
+  }
+  return '<div class="progress-card"><div class="card-title">🔄 减载决策' + badge + '</div>' + html + '</div>';
+}
+
+var DeloadDecisionCtrl = {
+  apply: function () {
+    try { if (typeof fbSetDeloadOverride === 'function') fbSetDeloadOverride(true); } catch (e) {}
+    this._rerender();
+  },
+  cancel: function () {
+    try { if (typeof fbSetDeloadOverride === 'function') fbSetDeloadOverride(false); } catch (e) {}
+    this._rerender();
+  },
+  // 重渲染整页是最省事的做法, 而且 renderProgress 已被 initProToolsProgress 挂钩,
+  // Pro 区块会跟着重建。代价是丢滚动位置 —— 但卡片是折叠的, 影响可控。
+  _rerender: function () {
+    try { if (typeof renderProgress === 'function') renderProgress(); } catch (e) {}
+    try { if (typeof doGenerate === 'function') doGenerate(); } catch (e2) {}
+  }
+};
+
+// ============ Pro P1 · 周期化全透明 + 可编辑 ============
+// 免费版告诉你"这周练什么", 这里把未来 16 周的容量波浪摊开, 并且允许改。
+// 敢摊开是商业模式差异: 黑盒 AI 计划画不出这张图, 一画就暴露它是模板。
+function fbPeriodEditorInner() {
+  var N = (typeof FB_PERIOD_WEEKS !== 'undefined') ? FB_PERIOD_WEEKS : 16;
+  var cw = (typeof currentWeek !== 'undefined' && currentWeek) ? currentWeek : 1;
+  if (cw > N || cw < 1) cw = ((((cw - 1) % N) + N) % N) + 1;
+  var sel = PeriodCtrl.selected || cw;
+  if (sel > N || sel < 1) sel = cw;
+
+  var html = '<div style="display:flex;align-items:flex-end;gap:2px;height:64px;padding:0 1px;">';
+  for (var w = 1; w <= N; w++) {
+    var inten = fbPeriodIntensity(w);
+    // 高度映射不做 0 起点: 强度实际只在 0.5~0.95 之间, 从 0 画的话
+    // 所有柱子都顶在上面, 看不出波浪, 也就失去了这张图的意义。
+    var hPct = Math.max(10, Math.min(100, (inten - 0.4) / 0.6 * 100));
+    var isNow = (w === cw), isSel = (w === sel), isDl = fbPeriodIsDeloadWeek(w);
+    var color = isSel ? '#FF6B35' : (isDl ? '#94A3B8' : '#3B82F6');
+    html += '<div onclick="PeriodCtrl.select(' + w + ')" style="flex:1;height:100%;display:flex;flex-direction:column;' +
+      'justify-content:flex-end;align-items:center;cursor:pointer;border-radius:4px;' +
+      (isNow ? 'background:#FF6B3518;' : '') + '">' +
+      '<div style="width:100%;max-width:16px;height:' + hPct.toFixed(1) + '%;background:' + color +
+        ';border-radius:3px;opacity:' + (isDl && !isSel ? 0.6 : 1) + ';' +
+        (isSel ? 'box-shadow:0 0 0 2px #FF6B3540;' : '') + '"></div></div>';
+  }
+  html += '</div>';
+
+  html += '<div style="display:flex;gap:2px;padding:0 1px;margin-top:3px;">';
+  for (var w2 = 1; w2 <= N; w2++) {
+    var isNow2 = (w2 === cw), isSel2 = (w2 === sel);
+    html += '<div style="flex:1;text-align:center;font-size:9px;font-weight:' + (isSel2 ? 800 : 600) +
+      ';color:' + (isSel2 ? '#FF6B35' : (isNow2 ? 'var(--text)' : 'var(--text3)')) + ';">' + w2 + '</div>';
+  }
+  html += '</div>';
+
+  var curI = fbPeriodIntensity(sel);
+  var pct = Math.round(curI * 100);
+  var edited = (typeof fbPeriodEdited === 'function') ? fbPeriodEdited() : false;
+
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:9px 12px;background:var(--bg);border-radius:10px;">' +
+    '<div><div style="font-size:13px;font-weight:700;color:var(--text);">第 ' + sel + ' 周' +
+      (sel === cw ? '<span style="font-size:10px;font-weight:700;color:#FF6B35;margin-left:5px;">本周</span>' : '') +
+      (fbPeriodIsDeloadWeek(sel) ? '<span style="font-size:10px;font-weight:700;color:var(--text3);margin-left:5px;">减载周</span>' : '') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:2px;">强度 ' + pct + '% · 约 ' +
+        Math.max(2, Math.round(4 * curI / 0.74)) + ' 组/动作</div></div>' +
+    '<div style="display:flex;gap:6px;">' +
+      '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
+      '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
+    '</div></div>';
+
+  html += '<div style="display:flex;gap:6px;margin-top:8px;">' +
+    '<button onclick="PeriodCtrl.adjustGlobal(-0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 −5%</button>' +
+    '<button onclick="PeriodCtrl.adjustGlobal(0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 ＋5%</button>' +
+    (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
+    '</div>';
+
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
+    '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 16 周（减载周不受影响）。<br>' +
+    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>';
   return html;
+}
+
+function renderPeriodEditor() {
+  if (typeof fbPeriodIntensity !== 'function') return '';
+  var head = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
+    '未来 16 周的容量波浪：每 4 周一个小周期，前 3 周爬坡，第 4 周减载。<br>' +
+    '<span style="color:var(--text3);">这张图别家不敢画 —— 画出来你就会发现，所谓 AI 计划不过是同一条曲线。</span></div>';
+
+  if (typeof collapsibleCard === 'function') {
+    return collapsibleCard('pc-period-edit', '<span>📈 16周周期化 · 可编辑</span>' + fbProBadgeHtml(),
+      head + '<div id="periodEditorPanel">' + fbPeriodEditorInner() + '</div>', false);
+  }
+  return '<div class="progress-card"><div class="card-title">📈 16周周期化 · 可编辑' + fbProBadgeHtml() + '</div>' +
+    head + '<div id="periodEditorPanel">' + fbPeriodEditorInner() + '</div></div>';
+}
+
+var PeriodCtrl = {
+  selected: 0,
+  // 只刷新卡片内部, 不整页重渲染 —— 整页重渲染会把用户刚展开的其它卡片折叠状态搞乱,
+  // 而且滚到一半跳回顶部, 编辑这种连续操作里最难受的就是这个。
+  refresh: function () {
+    var el = document.getElementById('periodEditorPanel');
+    if (!el) return;
+    try { el.innerHTML = fbPeriodEditorInner(); } catch (e) {}
+  },
+  select: function (w) { this.selected = w; this.refresh(); },
+  adjust: function (d) {
+    try { if (typeof fbPeriodAdjust === 'function') fbPeriodAdjust(this.selected, d); } catch (e) {}
+    this.refresh();
+    this._applyToPlan();
+  },
+  adjustGlobal: function (d) {
+    try { if (typeof fbPeriodAdjustGlobal === 'function') fbPeriodAdjustGlobal(d); } catch (e) {}
+    this.refresh();
+    this._applyToPlan();
+  },
+  reset: function () {
+    try { if (typeof fbPeriodReset === 'function') fbPeriodReset(); } catch (e) {}
+    this.selected = 0;
+    this.refresh();
+    this._applyToPlan();
+  },
+  // 改完立刻让计划页按新强度重新生成, 否则用户看着柱子动了、计划没变, 会以为没生效
+  _applyToPlan: function () {
+    try { if (typeof doGenerate === 'function') doGenerate(); } catch (e) {}
+  }
+};
+
+// ============ Pro P4 · 月度复盘报告 ============
+function renderMonthlyReview() {
+  if (typeof fbMonthlyReport !== 'function') return '';
+  var rep = null, prev = null;
+  try {
+    rep = fbMonthlyReport(0);
+    prev = fbMonthlyReport(-1);
+  } catch (e) { return ''; }
+  if (!rep || (!rep.hasData && rep.days <= 0)) return '';
+
+  var html = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
+    ptEsc(rep.label) + '的训练全貌' + (rep.partial ? '（截至今天）' : '') + '。<br>' +
+    '<span style="color:var(--text3);">日常的卡片都是局部判断，这里把它们拼成一个月。</span></div>';
+
+  // 概览四宫格
+  var ton = rep.tonnage > 0 ? (rep.tonnage >= 10000 ? (rep.tonnage / 1000).toFixed(1) + ' 吨' : Math.round(rep.tonnage) + ' kg') : '—';
+  var prevTon = (prev && prev.tonnage > 0) ? prev.tonnage : 0;
+  var dDays = (prev && prev.days > 0) ? (rep.days - prev.days) : null;
+  var cards = [
+    { label: '训练天数', val: rep.days + ' 天', delta: (dDays === null ? '' : (dDays >= 0 ? '+' : '') + dDays) },
+    { label: '总组数', val: rep.totalSets > 0 ? rep.totalSets + ' 组' : '—', delta: '' },
+    { label: '总容量', val: ton, delta: (prevTon > 0 ? (rep.tonnage >= prevTon ? '+' : '') + Math.round((rep.tonnage - prevTon) / prevTon * 100) + '%' : '') },
+    { label: '出勤率', val: (rep.adherence >= 0 ? Math.round(rep.adherence * 100) + '%' : '—'), delta: '' }
+  ];
+  html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;">' +
+    cards.map(function (c) {
+      return '<div style="background:var(--bg);border-radius:10px;padding:9px 4px;text-align:center;">' +
+        '<div style="font-size:15px;font-weight:800;color:var(--text);">' + ptEsc(c.val) + '</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + ptEsc(c.label) + '</div>' +
+        (c.delta ? '<div style="font-size:10px;font-weight:700;color:' + (c.delta.indexOf('-') === 0 ? '#EF4444' : '#22C55E') + ';margin-top:1px;">' + ptEsc(c.delta) + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+
+  // 力量变化: 涨的列出前 3, 跌的单独列 ——
+  // 只报好消息的话是安慰剂, 掉的那几个才是下个月要处理的。
+  var ups = rep.lifts.filter(function (l) { return l.gain > 0; }).slice(0, 3);
+  var downs = rep.lifts.filter(function (l) { return l.gain < 0; }).slice(0, 2);
+  html += '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">💪 力量变化</div>';
+  if (ups.length) {
+    html += '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:6px;">' +
+      ups.map(function (l) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">' +
+          '<span style="font-size:12px;color:var(--text);font-weight:600;">' + ptEsc(l.name) + '</span>' +
+          '<span style="font-size:12px;font-weight:700;color:#22C55E;">+' + l.gain.toFixed(1) + '%</span></div>';
+      }).join('') + '</div>';
+  } else {
+    html += '<div style="font-size:12px;color:var(--text3);margin-bottom:6px;">这个月没有明显上涨的动作 —— 要么记录太少，要么该调计划了。</div>';
+  }
+  if (downs.length) {
+    html += '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:6px;">' +
+      downs.map(function (l) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;">' +
+          '<span style="font-size:12px;color:var(--text2);">' + ptEsc(l.name) + '</span>' +
+          '<span style="font-size:12px;font-weight:700;color:#EF4444;">' + l.gain.toFixed(1) + '%</span></div>';
+      }).join('') + '</div>';
+  }
+
+  // RPE 分布: 7-8 是甜蜜区, 占比过低(练太轻)或过高(练太狠)都值得说
+  if (rep.rpe.n > 0) {
+    var midPct = Math.round(rep.rpe.mid / rep.rpe.n * 100);
+    var hiPct = Math.round(rep.rpe.high / rep.rpe.n * 100);
+    html += '<div style="font-size:12px;font-weight:700;color:var(--text);margin:10px 0 6px;">🎚 RPE 分布</div>' +
+      '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--border);">' +
+      '<div style="width:' + (rep.rpe.low / rep.rpe.n * 100) + '%;background:#94A3B8;"></div>' +
+      '<div style="width:' + (rep.rpe.mid / rep.rpe.n * 100) + '%;background:#22C55E;"></div>' +
+      '<div style="width:' + (rep.rpe.high / rep.rpe.n * 100) + '%;background:#EF4444;"></div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--text3);">' +
+      '<span>≤6 轻松 ' + Math.round(rep.rpe.low / rep.rpe.n * 100) + '%</span>' +
+      '<span style="color:#22C55E;font-weight:700;">7-8 甜蜜区 ' + midPct + '%</span>' +
+      '<span style="color:#EF4444;">≥9 力竭 ' + hiPct + '%</span></div>';
+    if (hiPct >= 40) {
+      html += '<div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.6;">' +
+        '有 ' + hiPct + '% 的组冲到了 RPE 9 以上 —— 这个月练得太狠了，下个月把主力组压回 7-8。</div>';
+    } else if (midPct < 30 && rep.rpe.n >= 6) {
+      html += '<div style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.6;">' +
+        '只有 ' + midPct + '% 的组落在 RPE 7-8。太轻了不长肉，太重了攒疲劳，中段才是有效组。</div>';
+    }
+  }
+
+  // 缺席归因
+  if (rep.missed > 0) {
+    html += '<div style="margin-top:10px;padding:10px 12px;background:#F59E0B12;border-left:3px solid #F59E0B;border-radius:10px;">' +
+      '<div style="font-size:12px;color:var(--text);line-height:1.65;">' +
+      '计划里该练 <b>' + rep.planned + '</b> 天，缺了 <b>' + rep.missed + '</b> 天' +
+      (rep.worstDow ? '，最常缺席的是 <b>' + ptEsc(rep.worstDow) + '</b>' : '') +
+      (rep.worstDow ? '。<br>与其怪自己没坚持，不如把那天的训练换到你能去的时间 —— 改时间比改意志力容易得多。' : '。') +
+      '</div></div>';
+  }
+
+  // 收尾一句: 复盘必须有结论, 否则就是一堆数字
+  var closing = '';
+  if (ups.length >= 2) {
+    closing = '这个月有 ' + ups.length + ' 个动作在涨，方向是对的，下个月不用大改，继续加就行。';
+  } else if (downs.length >= 1 && ups.length === 0) {
+    closing = '这个月全是掉的。别再往上加重量了 —— 先去卡点诊断看看卡在哪一环。';
+  } else if (rep.days <= 4) {
+    closing = '这个月只练了 ' + rep.days + ' 天。先别谈计划，把出勤稳住就是最大的进步。';
+  } else {
+    closing = '数据和上个月差不多。稳住出勤，' + (ups.length ? '继续推 ' + ups[0].name : '把记录做全，下个月才有东西可看') + '。';
+  }
+  html += '<div style="margin-top:10px;padding:10px 12px;background:var(--bg);border-radius:10px;font-size:12px;color:var(--text);line-height:1.7;font-weight:600;">' +
+    '📌 ' + ptEsc(closing) + '</div>';
+
+  if (typeof collapsibleCard === 'function') {
+    return collapsibleCard('pc-monthly', '<span>📅 月度复盘 · ' + ptEsc(rep.month + '月') + '</span>' + fbProBadgeHtml(), html, false);
+  }
+  return '<div class="progress-card"><div class="card-title">📅 月度复盘 · ' + ptEsc(rep.month + '月') + fbProBadgeHtml() + '</div>' + html + '</div>';
 }
 
 // ============ 7. 智能补课重排 ============
@@ -1091,8 +1297,8 @@ window.getDeloadSettings = getDeloadSettings;
 window.renderDeloadToggle = renderDeloadToggle;
 window.renderProgressionCharts = renderProgressionCharts;
 window.drawProgressionChart = drawProgressionChart;
-window.renderPeriodizationCalendar = renderPeriodizationCalendar;
-window.drawPeriodizationCalendar = drawPeriodizationCalendar;
+// 老的「周期化日历视图」(canvas 版) 已删: 它只画 4 周、强度写死不能改,
+// 现在由 P1 的「16周周期化 · 可编辑」完全取代。两张周期卡并存只会让用户不知道该信哪张。
 window.renderRescheduleBanner = renderRescheduleBanner;
 window.checkMissedDays = checkMissedDays;
 window.renderFatigueWarning = renderFatigueWarning;
@@ -1153,6 +1359,22 @@ window.initProToolsProgress = function() {
         // 🎯 行动指令优先:先看"下次练多重",再看成就和趋势
         proHtml += rpeSummaryHtml;
 
+        // 🔄 减载决策(P3): 紧跟 RPE。这两张是"本周就能执行"的,
+        //    下面那些是"这几个月才能见效"的。先解决这周, 再看长期。
+        proHtml += renderDeloadDecision();
+
+        // ⚖️ 部位平衡(P2): 结构性问题, 改起来要按周算, 排在即时指令之后
+        proHtml += renderMuscleBalance();
+
+        // 📈 周期化(P1): 最长期的一张, 管未来 16 周。
+        //    它取代了老的「周期化日历视图」卡 —— 那张只画 4 周、强度写死不能改,
+        //    两张周期卡并存只会让用户不知道该信哪个。
+        proHtml += renderPeriodEditor();
+
+        // 📅 月度复盘(P4): 回顾类, 放在所有"该做什么"之后。
+        //    人是先想知道接下来怎么办, 再回头看上个月发生了什么。
+        proHtml += renderMonthlyReview();
+
         // 🏆 个人纪录
         proHtml += renderPRCards();
 
@@ -1163,9 +1385,6 @@ window.initProToolsProgress = function() {
         if (typeof fbStrengthCardEntryHtml === 'function') {
           proHtml += fbStrengthCardEntryHtml('card');
         }
-
-        // 周期化日历视图
-        proHtml += renderPeriodizationCalendar();
 
         // 渐进超负荷趋势线
         proHtml += renderProgressionCharts();
@@ -1206,6 +1425,21 @@ window.initProToolsPlan = function() {
         if (goal === 'strength' || goal === 'muscle') {
           effectiveCfg.sets = Math.max(2, Math.round(cfg.sets * (1 - reduction * 0.4)));
         }
+      } else {
+        // P1: 用户在周期化卡上调过强度 → 按这一周的强度缩放组数。
+        // ⚠️ 只有真的改过才动。没改过就走原逻辑, 否则每个用户的计划都被悄悄改一遍,
+        //    出了问题是排查不出来的 —— 新功能默认不改变任何既有行为。
+        try {
+          if (typeof fbPeriodEdited === 'function' && fbPeriodEdited() &&
+              typeof fbPeriodIntensity === 'function') {
+            var inten = fbPeriodIntensity(currentWeek);
+            // 0.74 是默认波浪的中位, 以它为 1.0 基准, 上下按比例缩放
+            var ratio = inten / 0.74;
+            effectiveCfg = Object.assign({}, cfg, {
+              sets: Math.max(2, Math.round(cfg.sets * ratio))
+            });
+          }
+        } catch (e) {}
       }
 
       _originalDoGenerateInternal(goal, level, days, equip, trainingDays, schedule, effectiveCfg, goalCfg);
