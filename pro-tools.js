@@ -564,12 +564,17 @@ function fbPeriodBaseVal() {
   return (v > 0.05 && v < 2) ? v : 0.74;
 }
 
-// 这张卡能不能改, 取决于「这一周的计划是由什么构成的」。
+// 这张卡要不要出现, 取决于「这一周的计划是靠什么构成的」。
 // P1 的调整最终是缩放 cfg.sets 生效的(pro-tools 的 doGenerateInternal 包装里),
 // 但 buildMarathonPlan(level, days, equip, wOff) 和 buildCardioPlan(...) 连 cfg 都不接 ——
-// 跑步/有氧的每周内容是按分期算出来的(含赛前 taper), 组数缩放对它是零作用。
-// 拖了没反应比不给按钮更糟: 用户会以为自己点漏了, 反复去点。所以这里诚实标成只读。
-function fbPeriodEditable() {
+// 跑步/有氧的每周内容是按分期算出来的(含赛前 taper), 改强度对它零作用。
+//
+// 曾经这里处理方式是「柱子保留、标成只读」, 实测是坏选择:
+//   ① 不能拖的柱子图对跑步用户是纯噪音 —— 同一页的周进度条已经把
+//      基础期/强化期/巅峰期/减量期 和剩余跑量说清楚了, 两张图讲的同一件事;
+//   ② 「看起来能改、其实不能」比「没有这个功能」更糟, 用户会反复点, 还以为自己点漏了。
+// 所以这两类目标干脆不渲染这张卡。等跑步也能按周期微调的那天再放回来。
+function fbPeriodCardVisible() {
   try {
     if (typeof fbCurrentGoal === 'function') {
       var g = fbCurrentGoal();
@@ -583,7 +588,6 @@ function fbPeriodEditorInner() {
   // 周期长度跟用户自己的计划周期走, 不再写死 16 —— 写死过一次, 选 6/12 周模板的用户
   // 看到的减载周和当天实际练的完全是两周。
   var N = (typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : 16;
-  var editable = fbPeriodEditable();
   var cw = (typeof currentWeek !== 'undefined' && currentWeek) ? currentWeek : 1;
   if (cw > N || cw < 1) cw = ((((cw - 1) % N) + N) % N) + 1;
   var sel = PeriodCtrl.selected || cw;
@@ -617,11 +621,7 @@ function fbPeriodEditorInner() {
   var curI = fbPeriodIntensity(sel);
   var pct = Math.round(curI * 100);
   var edited = (typeof fbPeriodEdited === 'function') ? fbPeriodEdited() : false;
-  // 跑步/有氧没有「组数」这个概念, 副标题要说用户真正能核对的那个量: 本周跑量相对基准的增减
-  var volPct = (typeof fbPeriodWeekPct === 'function') ? fbPeriodWeekPct(sel) : 0;
-  var weekSub = editable
-    ? '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作'
-    : '本周跑量 ' + (volPct > 0 ? '+' : '') + volPct + '%';
+  var weekSub = '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作';
 
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:9px 12px;background:var(--bg);border-radius:10px;">' +
     '<div><div style="font-size:13px;font-weight:700;color:var(--text);">第 ' + sel + ' 周' +
@@ -629,44 +629,35 @@ function fbPeriodEditorInner() {
       (fbPeriodIsDeloadWeek(sel) ? '<span style="font-size:10px;font-weight:700;color:var(--text3);margin-left:5px;">减载周</span>' : '') +
       '</div>' +
       '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + weekSub + '</div></div>' +
-    (editable
-      ? '<div style="display:flex;gap:6px;">' +
-          '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
-          '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
-        '</div>'
-      : '') +
+    '<div style="display:flex;gap:6px;">' +
+      '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
+      '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
+      '</div>' +
     '</div>';
 
-  html += editable
-    ? '<div style="display:flex;gap:6px;margin-top:8px;">' +
-        '<button onclick="PeriodCtrl.adjustGlobal(-0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 −5%</button>' +
-        '<button onclick="PeriodCtrl.adjustGlobal(0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 ＋5%</button>' +
-        (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
-        '</div>'
-    : '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">跑步/有氧的每周内容是分期算出来的（含赛前 taper），手动加减组数不会改变它 —— 这张图只用来看清趋势。</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:8px;">' +
+    '<button onclick="PeriodCtrl.adjustGlobal(-0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 −5%</button>' +
+    '<button onclick="PeriodCtrl.adjustGlobal(0.05)" style="flex:1;padding:8px;border-radius:9px;background:var(--bg);color:var(--text);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">整体 ＋5%</button>' +
+    (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
+    '</div>';
 
   html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
-    (editable
-      ? '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 ' + N + ' 周（减载周不受影响）。<br>' +
-        '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>'
-      : '想调跑步的训练量，去改「目标距离 / 每周天数」或当前周 —— 这张图会跟着变。</div>');
+    '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 ' + N + ' 周（减载周不受影响）。<br>' +
+    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>';
   return html;
 }
 
 function renderPeriodEditor() {
   if (typeof fbPeriodIntensity !== 'function') return '';
+  // 跑步/有氧不渲染: 那两类计划的每周量是分期算出来的, 改强度对它零作用,
+  // 留一张不能拖的柱子图只是在同页重复一遍周进度条已经说过的话。
+  if (typeof fbPeriodCardVisible === 'function' && !fbPeriodCardVisible()) return '';
   var N = (typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : 16;
-  var editable2 = fbPeriodEditable();
-  // 标题上的「可编辑」必须是真的: 跑步/有氧这里没有可编辑的东西, 标了就是骗点击
-  var title = '<span>📈 ' + N + '周周期化 · ' + (editable2 ? '可编辑' : '只读') + '</span>' + fbProBadgeHtml();
+  var title = '<span>📈 ' + N + '周周期化 · 可编辑</span>' + fbProBadgeHtml();
   // 说明跟着用户的实际周期走。以前写"每 4 周一个小周期" —— 选了 6 周计划的用户
   // 数一数对不上, 只会觉得这张图不是给他的。
-  var headHtml = editable2
-    ? '你的计划周期是 <b style="color:var(--text);">' + N + ' 周</b>，这张图把它整个摊开：柱子越矮容量越低，灰色的那几周是减载周。'
-    : '你的跑步计划是 <b style="color:var(--text);">' + N + ' 周</b>分期：柱子越矮跑量越低，灰色那几周是减量期（taper）。';
-  var tailHtml = editable2
-    ? '<span style="color:var(--text3);">这张图别家不敢画 —— 画出来你就会发现，所谓 AI 计划不过是同一条曲线。</span>'
-    : '<span style="color:var(--text3);">图上的形状就是实际跑量的形状，和下面的周进度条说的是同一件事。</span>';
+  var headHtml = '你的计划周期是 <b style="color:var(--text);">' + N + ' 周</b>，这张图把它整个摊开：柱子越矮容量越低，灰色的那几周是减载周。';
+  var tailHtml = '<span style="color:var(--text3);">这张图别家不敢画 —— 画出来你就会发现，所谓 AI 计划不过是同一条曲线。</span>';
   var head = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
     headHtml + '<br>' + tailHtml + '</div>';
 
@@ -1173,9 +1164,10 @@ window.initProToolsProgress = function() {
         // ⚖️ 部位平衡(P2): 结构性问题, 改起来要按周算, 排在即时指令之后
         proHtml += renderMuscleBalance();
 
-        // 📈 周期化(P1): 最长期的一张, 管未来 16 周。
+        // 📈 周期化(P1): 最长期的一张, 管未来 N 周。
         //    它取代了老的「周期化日历视图」卡 —— 那张只画 4 周、强度写死不能改,
         //    两张周期卡并存只会让用户不知道该信哪个。
+        //    跑步/有氧 renderPeriodEditor() 自己会返回空串(那两类计划改强度没用)。
         proHtml += renderPeriodEditor();
 
         // 📅 月度复盘(P4): 回顾类, 放在所有"该做什么"之后。
