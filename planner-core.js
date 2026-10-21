@@ -1970,6 +1970,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   // 🍽 计划变更时同步动作库饮食计算器的联动目标(仅联动模式,静默,不弹任何提示)
   try {
     if (_lastNutriCtx && typeof window.dietRefreshFromPlan === 'function') window.dietRefreshFromPlan(_lastNutriCtx);
+    // 1RM 计算器的动作候选含「当前计划的动作」，计划重生成后下拉要跟着换（新增/删了动作都得跟上）
+    if (typeof populateRmExSelect === 'function') populateRmExSelect();
   } catch(e) {}
   // 默认折叠:只展开今天(或下一个)训练日,其余收起
   fbCollapseToToday();
@@ -7274,6 +7276,8 @@ if (document.readyState === 'loading') {
 
 // 页面完全加载后,如果沒有计划则显示欢迎提示
 window.addEventListener('load', function() {
+  // 🏆 1RM 面板的动作下拉（首次进入时填上；之后靠切 tab / 计划重渲染刷新）
+  try { if (typeof populateRmExSelect === 'function') populateRmExSelect(); } catch(e) {}
   // 🔊 同步语音播报按钮状态
   syncVoiceBtn();
   var planResult = document.getElementById("planResult");
@@ -8283,6 +8287,9 @@ function switchCalcTab(kind) {
   if (kind !== "rm" && typeof window.renderProCalculators === "function") {
     window.renderProCalculators();
   }
+  // 1RM 面板的动作下拉依赖当前计划/训练日志,每次切回来都重填:PR 会随打卡变化,
+  // 用户在计划页加了新动作也要能立刻选到。
+  if (kind === "rm" && typeof populateRmExSelect === "function") populateRmExSelect();
 }
 
 // ============ 1RM 极限重量计算器 ============
@@ -8300,7 +8307,7 @@ function calc1RM() {
   var w = parseFloat(document.getElementById("rmWeight").value);
   var r = parseInt(document.getElementById("rmReps").value);
   var res = document.getElementById("rmResult");
-  if (!w || !r || w <= 0 || r < 1) { res.style.display = "none"; return; }
+  if (!w || !r || w <= 0 || r < 1) { res.style.display = "none"; fbHideRmPrCmp(); return; }
   if (r > 15) r = 15;
 
   var rm;
@@ -8312,6 +8319,7 @@ function calc1RM() {
   rm = Math.round(rm * 10) / 10;
 
   document.getElementById("rmValue").textContent = rm + " kg";
+  fbRenderRmPrCmp(fbRmCurEx(), rm);
   document.getElementById("rmFormulaLabel").textContent = (rmFormula === "brzycki" ? "Brzycki" : "Epley") + " 公式估算";
   document.getElementById("rm50").textContent = Math.round(rm * 0.5 * 10) / 10 + " kg";
   document.getElementById("rm60").textContent = Math.round(rm * 0.6 * 10) / 10 + " kg";
@@ -8323,6 +8331,162 @@ function calc1RM() {
   res.style.display = "block";
 }
 
+// ============ 1RM 计算器 ↔ PR 卡联动（2026-10-21） ============
+// 问题：1RM 算出来是个孤零零的数字。它不知道你上个月卧推推了多少，算完也没地方落。
+// 补两头：① 选动作 → 跟你的纪录对照；② 超了 → 一键存进 PR 卡。
+// 不写两套估算口径：这里只读 PR_KEY，怎么写由 checkPR 负责（那边已有「只有更强才覆盖」）。
+
+// 候选动作：已有 PR + 训练日志里记过的 + 当前计划的动作。
+// 三条一起看是因为：练了半年的人 PR 里就有；只打过卡还没破纪录的人要从日志捞；
+// 刚生成计划还没练过的人总得能在自己的计划里找到动作。
+function fbRmExCandidates() {
+  var seen = {}, out = [];
+  function push(n) {
+    if (!n || seen[n]) return;
+    // 自重动作算 1RM 没意义（历史上还出过「俯卧撑 15kg」这种假 PR），直接排除
+    if (typeof isBodyweightEx === 'function' && isBodyweightEx(n)) return;
+    seen[n] = 1; out.push(n);
+  }
+  Object.keys(getPRs()).forEach(push);
+  Object.keys(trainingLog || {}).forEach(push);
+  if (lastPlan && lastPlan.trainingDays) {
+    lastPlan.trainingDays.forEach(function (d) {
+      (d && d.exes || []).forEach(function (e) { push(e && e.n); });
+    });
+  }
+  return out;
+}
+
+// 填充动作下拉。幂等，可反复调用（计划重渲染 / 切 tab 都会调）。
+// keepSel: 指定要保持选中的动作名（PR 卡跳过来时用）。
+function populateRmExSelect(keepSel) {
+  var sel = document.getElementById('rmExName');
+  var row = document.getElementById('rmExRow');
+  if (!sel || !row) return;
+  var names = fbRmExCandidates();
+  if (!names.length) { row.style.display = 'none'; return; } // 还没有任何可用动作：不给一个空的下拉
+  row.style.display = '';
+  var prs = getPRs();
+  // 有纪录的排前面——用户多半是冲着「比 PR 强了多少」来的
+  names.sort(function (a, b) { return (prs[b] ? prs[b].e1rm : 0) - (prs[a] ? prs[a].e1rm : 0); });
+  var cur = keepSel || sel.value;
+  // ⚠️ 动作名可能来自用户自定义动作，带 < > & " 会截断 HTML，必须转义
+  var html = '<option value="">— 选个动作（可选）—</option>';
+  names.forEach(function (n) {
+    var p = prs[n];
+    html += '<option value="' + fbEsc(n) + '">' + fbEsc(n) +
+      (p && p.e1rm ? '（PR ' + p.e1rm + 'kg）' : '') + '</option>';
+  });
+  sel.innerHTML = html;
+  if (cur && names.indexOf(cur) >= 0) sel.value = cur;
+}
+
+// 当前选中的动作名（没选 / 控件不存在 → 空串）
+function fbRmCurEx() {
+  var sel = document.getElementById('rmExName');
+  return sel ? (sel.value || '') : '';
+}
+
+// 选了动作：把该动作的最好成绩带进输入框，省得用户回忆上次推了多少。
+// ⚠️ 只在两个框都空时才代填 —— 典型流程是「先敲今天的成绩，再选动作看比 PR 强多少」，
+//    这时候把人家刚敲的数字顶掉是灾难。
+function onRmExChange() {
+  var name = fbRmCurEx();
+  if (name) {
+    var p = getPRs()[name];
+    var wEl = document.getElementById('rmWeight');
+    var rEl = document.getElementById('rmReps');
+    if (p && p.weight > 0 && p.reps > 0 && wEl && rEl && !wEl.value && !rEl.value) {
+      wEl.value = p.weight;
+      rEl.value = p.reps;
+    }
+  }
+  calc1RM();
+}
+
+function fbHideRmPrCmp() {
+  var el = document.getElementById('rmPrCmp');
+  if (el) { el.className = 'rm-pr-cmp'; el.innerHTML = ''; }
+}
+
+// 1RM 算完之后那句对照。三种情形，语气各不相同：
+//   ① 破纪录 → 说清楚超了多少 + 给存档按钮
+//   ② 没破    → 只报「还差多少 + 原纪录是什么」，不评价
+//   ③ 没选动作 → 提示可以选，但不挡版面
+// ⚠️ 这里不写任何训练建议（别加重量/该减载都不是它的活），只回答「这数字对你意味着什么」。
+function fbRenderRmPrCmp(name, rm) {
+  var el = document.getElementById('rmPrCmp');
+  if (!el) return;
+  if (!name) {
+    el.className = 'rm-pr-cmp on-hint';
+    el.innerHTML = '🏆 上面选一个动作，就能跟你的个人纪录对照';
+    return;
+  }
+  var p = getPRs()[name] || null;
+  if (!p || !(p.e1rm > 0)) {
+    el.className = 'rm-pr-cmp on-old';
+    el.innerHTML = fbEsc(name) + ' 还没有纪录 · 存下这次就是第一个' + fbRmSaveBtnHtml();
+    return;
+  }
+  var base = '你的 ' + fbEsc(name) + ' 纪录 ' + p.e1rm + 'kg' +
+    (p.weight > 0 && p.reps > 0 ? '（' + p.weight + 'kg × ' + p.reps + ' 次）' : '') +
+    (p.date ? ' · ' + p.date : '');
+  var d = Math.round((rm - p.e1rm) * 10) / 10;
+  if (d > 0) {
+    el.className = 'rm-pr-cmp on-new';
+    el.innerHTML = '🎉 比 ' + base + ' 高出 <b>' + d + 'kg</b> —— 新纪录' + fbRmSaveBtnHtml();
+  } else if (d === 0) {
+    el.className = 'rm-pr-cmp on-old';
+    el.innerHTML = '跟纪录打平：' + base;
+  } else {
+    el.className = 'rm-pr-cmp on-old';
+    el.innerHTML = '离纪录还差 <b>' + Math.abs(d) + 'kg</b>：' + base;
+  }
+}
+
+function fbRmSaveBtnHtml() {
+  return '<button class="rm-pr-save" onclick="fbSaveRmAsPr()">📌 存进我的纪录</button>';
+}
+
+// 把这次的成绩写进 PR 卡。走的是打卡那条唯一的路 checkPR()，
+// 不在这里另起一套 PR 写入逻辑 —— 两套写法迟早算出两个不一样的最好成绩。
+function fbSaveRmAsPr() {
+  var name = fbRmCurEx();
+  if (!name) { showToast('先选一个动作'); return; }
+  var wEl = document.getElementById('rmWeight');
+  var rEl = document.getElementById('rmReps');
+  var w = wEl ? parseFloat(wEl.value) : 0;
+  var r = rEl ? parseInt(rEl.value, 10) : 0;
+  if (!w || !r || w <= 0 || r < 1) { showToast('先填上重量和次数'); return; }
+  var old = getPRs()[name];
+  // 没超过原纪录就不写，并且明确告诉用户没写 —— 静默失败会让人以为坏了
+  if (old && old.e1rm > 0 && computeE1RM(w, r) <= old.e1rm) {
+    showToast('这次没超过原纪录（' + old.e1rm + 'kg），纪录没动');
+    return;
+  }
+  checkPR(name, w, r);
+  populateRmExSelect(name);
+  calc1RM();
+  // 进度页如果已经渲染过就顺手刷新 PR 卡，否则用户翻过去看到的还是旧数字
+  try {
+    if (document.querySelector && document.querySelector('#proToolsSection') && typeof renderProgress === 'function') renderProgress();
+  } catch (e) {}
+}
+
+// 计划页小工具 / PR 卡每行的跳转入口。以前要去动作库点第三个 tab，等于没有入口。
+function goRmCalc(name) {
+  var t = document.querySelector('.tab-btn[data-tab="page-lib"]');
+  if (t) t.click();
+  if (typeof switchCalcTab === 'function') switchCalcTab('rm');
+  populateRmExSelect(name);
+  var sel = document.getElementById('rmExName');
+  if (sel && name) {
+    sel.value = name;
+    onRmExChange();
+  }
+  var hub = document.getElementById('calcHub');
+  if (hub) hub.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 
 // PWA Install Prompt (lifecycle event listener at top level)

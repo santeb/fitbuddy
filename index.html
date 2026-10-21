@@ -446,6 +446,28 @@ input,select{font-family:inherit;}
 .calc-panel .rm-calc .rm-title{display:none;}
 .calc-panel .rm-actions{margin:0 0 12px;}
 
+/* ========== 计划页小工具入口（饮食 / 1RM） ========== */
+/* 2026-10-21: 这两个计算器的入口原本只在动作库页的 tab 里(还在搜索框下面),
+   带着"我该吃多少/该推多重"这类问题进来的人,在计划页根本走不到。 */
+.plan-tool-row{display:flex;gap:8px;margin-bottom:14px;}
+.plan-tool-btn{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:11px 12px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;cursor:pointer;text-align:left;box-shadow:var(--shadow);transition:border-color .2s;}
+.plan-tool-btn:active{border-color:var(--primary);}
+.plan-tool-ico{font-size:17px;line-height:1;flex-shrink:0;}
+.plan-tool-txt{min-width:0;flex:1;}
+.plan-tool-txt b{display:block;font-size:12.5px;font-weight:700;color:var(--text);}
+.plan-tool-txt span{display:block;font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.plan-tool-arrow{color:var(--text3);font-size:15px;flex-shrink:0;}
+
+/* ========== 1RM ↔ PR 联动 ========== */
+.rm-ex-row{margin-bottom:10px;}
+.rm-ex-row label{display:block;font-size:13px;font-weight:600;color:var(--text2);margin-bottom:7px;}
+.rm-pr-cmp{display:none;margin-top:10px;padding:9px 12px;border-radius:10px;font-size:12px;line-height:1.6;}
+.rm-pr-cmp.on-new{display:block;background:#22C55E1A;color:#15803D;}
+.rm-pr-cmp.on-old{display:block;background:var(--bg);color:var(--text2);}
+.rm-pr-cmp.on-hint{display:block;background:var(--bg);color:var(--text3);}
+[data-theme="dark"] .rm-pr-cmp.on-new{background:#22C55E26;color:#4ADE80;}
+.rm-pr-save{display:block;width:100%;margin-top:8px;padding:8px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;background:var(--primary);color:#fff;}
+
 /* ========== 饮食计算器（#calcPanelDiet） ========== */
 .diet-inputs{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;padding:12px;background:var(--bg);border-radius:12px;}
 .diet-row{display:flex;align-items:center;gap:8px;}
@@ -864,6 +886,20 @@ input,select{font-family:inherit;}
       </div>
     </div>
 
+    <!-- 🔧 小工具入口（2026-10-21：这两个计算器原来只藏在动作库页的 tab 里，带着「我该吃多少 / 该推多重」进来的人在计划页撞不到） -->
+    <div class="plan-tool-row">
+      <button type="button" class="plan-tool-btn" onclick="goDietCalc()">
+        <span class="plan-tool-ico">🍽</span>
+        <span class="plan-tool-txt"><b>今天吃多少</b><span>蛋白/碳水克数 · 同步计划</span></span>
+        <span class="plan-tool-arrow">›</span>
+      </button>
+      <button type="button" class="plan-tool-btn" onclick="goRmCalc()">
+        <span class="plan-tool-ico">🏋️</span>
+        <span class="plan-tool-txt"><b>算我的 1RM</b><span>对照 PR · 该不该加</span></span>
+        <span class="plan-tool-arrow">›</span>
+      </button>
+    </div>
+
     <!-- 🔥 Pro 专区：场景定制付费模板（【2026-09-25 暂时隐藏】需求恢复时去掉 style 里的 display:none 即可） -->
     <div class="card collapsible-card collapsed" style="display:none;margin-bottom:14px;border:1.5px solid var(--primary);">
       <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;" onclick="this.parentElement.classList.toggle('collapsed')">
@@ -1040,6 +1076,11 @@ input,select{font-family:inherit;}
           <button data-formula="brzycki" onclick="switchRMFormula('brzycki',this)">Brzycki 公式</button>
         </div>
         <div style="font-size:11px;color:var(--text3);margin:6px 0 2px;line-height:1.6;">📖 1RM = 最多能标准举起 1 次的重量 · 两种公式只是不同的估算算法，结果略有差异，选哪个都行</div>
+        <!-- 🏆 选了动作就能跟个人纪录对照；候选列表由 populateRmExSelect() 按 PR/训练日志/当前计划填充 -->
+        <div class="rm-ex-row" id="rmExRow" style="display:none;">
+          <label for="rmExName">记在哪个动作名下 <span style="font-weight:400;font-size:11px;color:var(--text3);">（选了就跟你的 PR 对照）</span></label>
+          <select id="rmExName" class="text-input" onchange="onRmExChange()"></select>
+        </div>
         <div class="rm-input-row">
           <div class="form-group"><label>举起重量 (kg)</label><input type="number" class="text-input" id="rmWeight" placeholder="例如 60" min="1" oninput="calc1RM()" aria-label="举起重量（公斤）"></div>
           <div class="form-group"><label>完成次数</label><input type="number" class="text-input" id="rmReps" placeholder="例如 8" min="1" max="15" oninput="calc1RM()" aria-label="完成次数"></div>
@@ -1057,6 +1098,8 @@ input,select{font-family:inherit;}
             <tr><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
           </table>
         </div>
+        <!-- 🏆 与个人纪录的对照结果，由 fbRenderRmPrCmp() 写入；没算过或没选动作时不占版面 -->
+        <div class="rm-pr-cmp" id="rmPrCmp"></div>
       </div>
       <div class="calc-panel" id="calcPanelWarmup" role="tabpanel" aria-label="热身组计算器"></div>
       <div class="calc-panel" id="calcPanelPlate" role="tabpanel" aria-label="杠铃片计算器"></div>
@@ -1221,8 +1264,8 @@ input,select{font-family:inherit;}
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=95" defer></script>
-<script src="pro-tools.js?v=20" defer></script>
+<script src="planner-core.js?v=96" defer></script>
+<script src="pro-tools.js?v=21" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>

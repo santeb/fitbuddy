@@ -339,6 +339,8 @@ var DeloadCtrl = {
 };
 
 // ============ 5.5 🏆 个人纪录(PR)卡片 ============
+// 🧮 每行右边的按钮跳到 1RM 计算器并带上这个动作 —— 纪录卡是"回顾",
+//    看完自然会问"那我现在能推多少", 给它一个不用再翻页找工具的出口。
 function renderPRCards() {
   if (typeof buildPRsFromLog !== 'function') return '';
   var prs = buildPRsFromLog();
@@ -348,19 +350,32 @@ function renderPRCards() {
   var html = '<div class="progress-card"><div class="card-title" style="justify-content:space-between;">' +
     '<span>🏆 个人纪录 <span style="font-size:10px;color:var(--text3);font-weight:400;">按估算1RM(Epley)</span></span>' +
     '<button class="export-btn" style="font-size:11px;padding:4px 10px;border:none;background:var(--primary-light);color:var(--primary);" onclick="generateShareImage()">📸 分享图</button></div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">在训练动作卡「渐进超负荷」中记录重量/次数，自动统计历史最佳</div>';
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">在训练动作卡「渐进超负荷」中记录重量/次数，自动统计历史最佳 · 点 🧮 用这个动作的成绩算 1RM</div>';
   keys.slice(0, 8).forEach(function(exName) {
     var p = prs[exName];
+    // ⚠️ exName 早期版本直接拼接未转义。动作名可以来自用户自定义动作,
+    //    一个 "<img onerror=...>" 就能打穿进度页 —— 一并修掉。
     html += '<div class="pr-row">' +
       '<div style="min-width:0;">' +
-        '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + exName + '</div>' +
+        '<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + ptEsc(exName) + '</div>' +
         '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + (p.weight || 0) + 'kg × ' + (p.reps || 0) + ' 次' + (p.date ? ' · ' + p.date : '') + '</div>' +
       '</div>' +
-      '<span class="pr-badge">🏋️ ' + p.e1rm + 'kg</span>' +
+      '<span style="display:inline-flex;align-items:center;gap:6px;flex-shrink:0;">' +
+        '<button onclick="goRmCalc(' + ptJsArg(exName) + ')" title="用 1RM 计算器算 ' + ptEsc(exName) + '" aria-label="用 1RM 计算器算 ' + ptEsc(exName) + '" style="border:1.5px solid var(--border);background:var(--bg);color:var(--text2);font-size:13px;line-height:1;padding:5px 8px;border-radius:8px;cursor:pointer;">🧮</button>' +
+        '<span class="pr-badge">🏋️ ' + p.e1rm + 'kg</span>' +
+      '</span>' +
     '</div>';
   });
   html += '</div>';
   return html;
+}
+
+// 把任意字符串安全地塞进内联 onclick 的参数位。
+// 两段转义缺一不可:JSON.stringify 负责 JS 字符串字面量,后面的 replace 负责 HTML 属性上下文
+// (动作名里带引号会提前闭合 onclick,带尖括号能直接注入标签)。
+function ptJsArg(s) {
+  return JSON.stringify(String(s === null || s === undefined ? '' : s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // HTML 转义。动作名来自用户自定义输入, 不转义的话一个 "<img onerror>" 就能打穿进度页。
