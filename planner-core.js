@@ -5098,7 +5098,8 @@ function toggleDone(id) {
     // [DEBUG] console.log('toggleDone: 更新完成动作统计', _stats.done);
     // 同步更新进度页的完成动作数
     if (document.getElementById('page-prog').classList.contains('active')) renderProgress();
-    // 🎣 取消勾选后同步刷新未完成感 banner
+    // 🎣 取消勾选后同步刷新未完成感 banner + 开场一句话
+    updateTodayHero();
     updateProgressBanner();
   } else {
     check.classList.add("done"); check.innerHTML = "✓";
@@ -5112,7 +5113,8 @@ function toggleDone(id) {
     recordHistory(dist, exName, exDiff, exM, dayExCnt);
     // ⚡ 即时反馈: 勾选时 +N kcal 飘字
     if (exName && exDiff) fbFloatKcal(el, estimateCalories(exDiff, exM, dist, exName, dayExCnt));
-    // 🎣 未完成感 banner 刷新
+    // 🎣 未完成感 banner + 顶部开场一句话刷新(刚打完卡,不能还写着「隔了 N 天」)
+    updateTodayHero();
     updateProgressBanner();
     // 马拉松/跑步:自动提示记录跑鞋里程
     if (dist > 0 && shoeList.length > 0) {
@@ -5478,10 +5480,109 @@ function fbTodayFatigueLine(day) {
     + '<br><span style="opacity:0.9;">建议今天休息,或换成不涉及的部位。恢复也是训练的一部分。</span></div>';
 }
 
+// ============ 🫱 开场一句话: 「你上次到哪了」 ============
+// Hero 的大字已经回答了「今天练什么」。但打开 App 那一刻, 用户真正要对标的是另一件事:
+// 我上次练到什么程度、隔了多久 —— 这两个数才决定今天能不能往上加。而这件事至今没人在说,
+// 用户得自己翻进度页去找, 多数人就翻到一半放弃了, 或者直接凭印象上重量。
+//
+// 最该开口的是「断了一阵回来」那天。那天的风险从来不是不努力, 而是照着上次重量硬上,
+// 练完酸三天, 接着又是两周不来 —— 断一次丢两周, 这才是流失的真实形状。
+// 这时候给句「加油」毫无用处, 该给的是降一档的具体做法。
+//
+// 纪律(跟 P3 减载决策同一条「宁漏勿误」): 状态正常就闭嘴。
+// 天天挂一句「上次 2 天前」, 第三次就会被当成背景图略过 —— 等真隔了一周回来,
+// 那句话早就失效了。所以只有隔了 2 天以上才出现, 「别急着加」更是要 4 天以上才说。
+var FB_OPEN_WARN_DAYS = 4;    // 隔这么多天起, 提醒别按上次重量往上加
+var FB_OPEN_LONG_DAYS = 7;    // 隔了一整周, 明确要降一档找回动作
+
+// '2026-10-21' → '周二'。日期串来自用户手里的 history, 格式不保险, 解不出来就返回空串。
+function fbDowOf(dateStr) {
+  try {
+    var p = String(dateStr).slice(0, 10).split('-');
+    if (p.length !== 3) return '';
+    var d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    if (isNaN(d.getTime())) return '';
+    return '周' + '日一二三四五六'.charAt(d.getDay());
+  } catch (e) { return ''; }
+}
+
+// 上次练了什么 + 那次的实际重量/次数。拿不全就返回 null —— 宁可不显示, 不编。
+function fbLastWorkout() {
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]'); } catch (e) { return null; }
+  if (!hist || !hist.length) return null;
+  var last = null;
+  for (var i = hist.length - 1; i >= 0; i--) {
+    var h = hist[i];
+    if (!h || !h.date) continue;
+    // 力量: exercises 里有动作名; 跑步: 只有 distance 没有动作名 —— 两种都算练过
+    if ((h.exercises && h.exercises.length) || h.distance > 0) { last = h; break; }
+  }
+  if (!last) return null;
+  var out = { names: (last.exercises || []).slice(0, 2), ex: null, km: last.distance || 0, dow: fbDowOf(last.date) };
+  if (out.names.length) {
+    try {
+      var log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}');
+      var arr = log[out.names[0]] || [];
+      for (var j = arr.length - 1; j >= 0; j--) {
+        var e = arr[j];
+        if (e && parseFloat(e.weight) > 0) {
+          out.ex = { w: parseFloat(e.weight), r: parseInt(e.reps, 10) || 0 };
+          break;
+        }
+      }
+    } catch (e2) {}
+  }
+  return out;
+}
+
+// Hero 顶部那一行。isRest: 今天是休息日 —— 休息日只报事实、不给训练建议,
+// 因为 Hero 下半已经有一整段「肌肉修复中」的恢复日文案在说话了, 再叠一层只会互相稀释。
+function fbComebackHtml(isRest) {
+  var days = getDaysSinceLastCheckin();
+  // null = 一次都没练过(Hero 大字正在带他开始, 不需要第二句)
+  // 0/1 = 今天或昨天刚练过 —— 记忆还在脑子里, 屏幕上再说一遍纯属废话
+  if (days === null || days <= 1) return '';
+  var lw = fbLastWorkout();   // 可能为 null: 天数的结论依然成立, 只是说不出上次练了啥
+
+  // 第一行: 只报事实。全都是用户自己的数据, 不带评价 —— 用户来对标用的, 不是来听表扬的
+  var fact = '';
+  if (lw && lw.ex) {
+    fact = '上次 ' + lw.dow + ' · ' + fbEsc(lw.names[0]) + ' ' + lw.ex.w + 'kg×' + lw.ex.r;
+  } else if (lw && lw.km > 0) {
+    fact = '上次 ' + lw.dow + ' · 跑了 ' + (Math.round(lw.km * 10) / 10) + 'km';
+  } else if (lw && lw.names.length) {
+    fact = '上次 ' + lw.dow + ' · ' + fbEsc(lw.names[0]);
+  } else {
+    fact = '上次训练距今 ' + days + ' 天';
+  }
+
+  // 第二行: 判断。这才是这一行存在的理由, 所以门槛比第一行高得多。
+  // ⚠️ 刻意不给百分比。「降到 70%」「减 20%」这种数字一旦写进这里, 就会变成
+  //    第三套降幅口径(减载有 fbDeloadSeverity、周期有 fbPeriodBaseVal),
+  //    对不上是迟早的事。给行为, 不给比率 —— 行为不会和别的卡矛盾。
+  var advice = '';
+  if (!isRest) {
+    if (days >= FB_OPEN_LONG_DAYS) {
+      advice = '别接着上次的重量来：先用轻一档找回动作，做完还剩力气才算回到场上。';
+    } else if (days >= FB_OPEN_WARN_DAYS) {
+      advice = '今天先稳住这个重量别急着加 —— 隔了 ' + days + ' 天，找回节奏比破纪录值钱。';
+    }
+  }
+
+  return '<div style="display:inline-block;max-width:100%;margin-bottom:10px;padding:6px 10px;' +
+    'border-radius:10px;background:rgba(255,255,255,0.18);font-size:12px;line-height:1.5;color:#fff;">' +
+    '<div style="font-weight:700;">' + (days >= FB_OPEN_LONG_DAYS ? '💤 ' : (days >= FB_OPEN_WARN_DAYS ? '⏸ ' : '📌 ')) +
+    fact + '</div>' +
+    (advice ? '<div style="opacity:0.85;margin-top:3px;">' + advice + '</div>' : '') +
+    '</div>';
+}
+
 function fbTodayHeroHtml() {
   if (!lastPlan || !lastPlan.trainingDays) return '';
   var ti = fbGetTodayDayIdx();
   var html = '<div id="fbTodayHero" style="margin-bottom:12px;padding:18px 18px 16px;border-radius:18px;background:linear-gradient(135deg,#FF6B35,#FF3E7F);color:#fff;box-shadow:0 6px 20px rgba(255,107,53,0.25);">';
+  html += fbComebackHtml(ti < 0);
   if (ti >= 0) {
     var day = lastPlan.trainingDays[ti];
     var muscles = (day && day.exes) ? Array.from(new Set(day.exes.map(function(e){return e.m||''}).filter(Boolean))) : [];
@@ -5737,6 +5838,18 @@ function fbShowCelebrationModal(actionCount) {
     document.head.appendChild(s);
   }
   document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// 打卡后 Hero 也要一起刷。打完卡的那一刻 getDaysSinceLastCheckin() 变成 0,
+// 顶部那句「上次是 5 天前」必须立刻消失 —— 否则大字显示「✅ 已全部完成」,
+// 上面却挂着「💤 隔了 12 天」, 用户刚练完就看见自己在被说懒, 一句话劝退。
+// (updateProgressBanner 只管 banner, 管不到 hero, 所以这里是两条独立的刷新)
+function updateTodayHero() {
+  var el = document.getElementById('fbTodayHero');
+  if (!el) return;
+  var html = fbTodayHeroHtml();
+  if (!html) { el.remove(); return; }
+  el.outerHTML = html;
 }
 
 // 勾选/取消勾选后刷新 banner(元素不存在则跳过)
@@ -8483,7 +8596,17 @@ function isDeloadWeek() {
 }
 
 // ⚠️ 这里删掉了 getDeloadMultiplier()(返回写死的 0.6): 它定义之后从未被调用、也没导出,
-// 又是一套独立的降幅口径。留着只会让下一个接手的人以为"减载倍率是 0.6"并拿它去接 logic。
+// 又是一套独立的降幅口径。留着只会让下一个接手的人以为"减载倍率是 0.6"并拿它去接逻辑。
+//
+// ⚠️⚠️ renderDeloadBanner() 看着像死代码(页面上一个调用点都没有), 但它不是 ——
+//    曾经差点被当成「第三套降幅口径」删掉, 属于误判, 已恢复。理由:
+//    (1) 它读的就是唯一真源 fbPeriodWeekPct / fbPeriodIsDeloadWeek, 是这套口径的
+//        **消费者**而不是第二套实现 —— 把它删了等于把"减载周只有一个数字"这件事
+//        的最后一道防线拆了;
+//    (2) verify-period.js 里有一整节在拿它断言「横幅 / 今日指令 / 周期表三个数字一致」,
+//        那 25 条护栏全靠这个函数存在才能跑;
+//    (3) 它没渲染到页面上, 是**还没接线**, 不是**不该存在**。接线前先想清楚它和
+//        pro-tools 的 renderDeloadToggle 会不会在同一屏重复说一件事。
 function renderDeloadBanner() {
   if (!isDeloadWeek()) return '';
   // 降多少也说主计划的数字: 周期里有半减载(-15%)和大减载(-30%)两档, 写死 40% 会
