@@ -69,11 +69,6 @@ FitBuddy 不一样：
 - PR 个人纪录卡：每个动作的最佳成绩自动归档
 - 连续打卡记录 + 热力图
 
-### 🎮 训练精灵养成
-- 5 个物种（含 1 个隐藏款），5 阶段进化
-- 每次训练获得经验值
-- SVG 手绘风格精灵肖像
-
 ### 🏆 游戏化激励系统
 - 4 类 17 枚成就徽章
 - 6 级等级系统
@@ -125,7 +120,6 @@ fitbuddy/
 ├── pro-tools.js         # Pro 工具：1RM/热身组/杠铃片计算器/周期日历/PR卡/疲劳预警
 ├── calculator-diet.js   # 饮食计算器：计划联动 + 逐日分档 + 今日已吃追踪
 ├── data-constants.js    # 静态数据：动作库/配置/饮食指南
-├── pets.js              # 训练精灵养成系统
 ├── persistence.js       # localStorage 持久化封装
 ├── backup-code.js       # 备份码生成/恢复
 ├── onboarding.js        # 新手引导
@@ -145,7 +139,7 @@ fitbuddy/
 - **纯前端**：HTML + CSS + JavaScript（零框架依赖）
 - **存储**：localStorage（本地持久化）
 - **PWA**：Service Worker + Web App Manifest
-- **图表**：SVG 手绘精灵 + Canvas 热力图/走势图
+- **图表**：Canvas 热力图/走势图
 - **音效**：Web Audio API
 
 ---
@@ -158,7 +152,6 @@ fitbuddy/
 - [x] 营养计算 + 计划联动 + 按训练日分档
 - [x] 连续打卡 + 热力图
 - [x] 成就徽章系统
-- [x] 训练精灵养成
 - [x] 马拉松 16 周专项
 - [x] PWA 离线支持
 - [x] 组间休息计时器
