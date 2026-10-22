@@ -3668,22 +3668,30 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       }
 
       // 渐进超负荷输入(力量动作)
+      // 🎯 预填上次的重量/次数:默认操作是「什么都不用做」,只有实际不一样才改一个数字。
+      //    预填值带 prog-prefill(灰虚线)= 未确认;用户动过 → fbProgTouch 摘掉标记 → 记为 manual。
       var progInputsHtml = '';
       if (isLiftEx) {
         var progId = checkId + '_prog';
+        var _touch = ' oninput="fbProgTouch(this)"';
+        var preW = (lastLog && parseFloat(lastLog.weight) > 0) ? parseFloat(lastLog.weight) : '';
+        var preR = (lastLog && parseInt(lastLog.reps, 10) > 0) ? parseInt(lastLog.reps, 10) : '';
+        var preCls = ' prog-prefill';
         if (isBodyweight) {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
-            '<span class="prog-label">次数</span><input type="number" class="prog-input" placeholder="次" min="1" max="50" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="1-10" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
-            '</div>';
+            '</div>'+
+            fbProgHintHtml(progId, ex.n);
         } else {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
-            '<span class="prog-label">重量</span><input type="number" class="prog-input" placeholder="kg" step="0.5" min="0" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
-            '<span class="prog-label">次数</span><input type="number" class="prog-input" placeholder="次" min="1" max="50" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" class="prog-input" placeholder="1-10" min="1" max="10" onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">重量</span><input type="number" inputmode="decimal" class="prog-input'+(preW!==''?preCls:'')+'" placeholder="kg" step="0.5" min="0" value="'+(preW===''?'':preW)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
+            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="1-10" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
-            '</div>';
+            '</div>'+
+            fbProgHintHtml(progId, ex.n);
         }
       }
 
@@ -4132,16 +4140,80 @@ function fbShowRpeGuide() {
   document.getElementById('modal').classList.add('show');
 }
 
-function saveTrainingLog(exName, weight, reps, rpeVal) {
+function saveTrainingLog(exName, weight, reps, rpeVal, src) {
   if (!exName) return;
   if (!trainingLog[exName]) trainingLog[exName] = [];
-  var entry = { date: new Date().toISOString().slice(0,10), weight: parseFloat(weight)||0, reps: parseInt(reps)||0, rpe: parseInt(rpeVal)||0 };
+  // src: 'manual' = 用户确认/改过的真实成绩(唯一能进 PR 与卡点诊断的数据)
+  //      'auto'   = 打卡时按上次成绩自动带入的占位(让趋势线连续,但不得参与结论)
+  var mode = (src === 'auto') ? 'auto' : 'manual';
+  var entry = { date: new Date().toISOString().slice(0,10), weight: parseFloat(weight)||0, reps: parseInt(reps)||0, rpe: parseInt(rpeVal)||0, src: mode };
   trainingLog[exName].push(entry);
   if (trainingLog[exName].length > 50) trainingLog[exName] = trainingLog[exName].slice(-50);
   localStorage.setItem("fitbuddy_trainlog", JSON.stringify(trainingLog));
-  // 🏆 破纪录检测
-  checkPR(exName, weight, reps);
+  // 🏆 破纪录检测 —— 只认 manual:自动带入的占位不能产生假 PR
+  if (mode === 'manual') checkPR(exName, weight, reps);
 }
+// 用户真的动过输入框 → 摘掉预填态,这条数据升级为「已确认」
+function fbProgTouch(el) {
+  if (!el) return;
+  el.classList.remove('prog-prefill');
+  el.setAttribute('data-touched', '1');
+}
+window.fbProgTouch = fbProgTouch;
+// 该行有没有被用户改过(决定记 manual 还是 auto)
+function fbProgRowTouched(row) {
+  if (!row) return false;
+  var ins = row.querySelectorAll('input');
+  for (var i = 0; i < ins.length; i++) {
+    if (ins[i].getAttribute('data-touched') === '1') return true;
+  }
+  return false;
+}
+// 只统计「已确认」的条数(用于「再记 N 次」这类承诺文案)
+function fbManualCount(exName) {
+  var arr = (typeof trainingLog !== 'undefined' && trainingLog && trainingLog[exName]) || [];
+  var n = 0;
+  for (var i = 0; i < arr.length; i++) if (arr[i] && arr[i].src !== 'auto') n++;   // 老数据无 src = 当年手填的,算数
+  return n;
+}
+window.fbManualCount = fbManualCount;
+// 打卡时的就地提示:只说话,不写数据。
+// ⚠️ 这里曾经是「静默写入一条 auto 成绩」——会让用户以为记过了,从此不再手输,
+//    真实成绩恒为 0 → 诊断卡永远不出;而且复制出来的趋势线是假的(长得像证据)。
+//    宁可这次没记,也不造假数据。
+var FB_PROG_NEED = 3;   // 攒够几次「已确认成绩」才够下判断
+function fbProgNudgeOnCheck(id, exName) {
+  if (!exName) return;
+  var row = document.getElementById(id + '_prog');
+  if (!row) return;                                   // 跑步/有氧/无预填 → 不说话
+  if (fbProgRowTouched(row)) return;                  // 用户已改过数字 = 已记,别啰嗦
+  var ins = row.querySelectorAll('input');
+  if (!ins.length) return;
+  var bw = (typeof isBodyweightEx === 'function') ? isBodyweightEx(exName) : false;
+  var w = '', r = '';
+  if (bw) { r = ins[0] ? ins[0].value : ''; }
+  else { w = ins[0] ? ins[0].value : ''; r = ins[1] ? ins[1].value : ''; }
+  if (!w && !r) return;                               // 从没记过 → 没有「上次」可沿用
+  var lab = row.querySelector('.prog-last');
+  if (lab) lab.textContent = '还是 ' + (w ? w + 'kg × ' : '') + r + '次？改数字才算这次的成绩';
+}
+window.fbProgNudgeOnCheck = fbProgNudgeOnCheck;
+// 「还差几次」常驻缺口提示:不弹窗(已有飘字/语音/banner/成就/周完成/日完成六套反馈,第七套是噪音)
+function fbProgHintHtml(progId, exName) {
+  var n = fbManualCount(exName);
+  if (n >= FB_PROG_NEED) return '';
+  return '<div class="prog-hint" id="' + progId + '_hint">记满 ' + FB_PROG_NEED + ' 次成绩，我才知道你卡在哪（已 ' + n + '/' + FB_PROG_NEED + '）</div>';
+}
+window.fbProgHintHtml = fbProgHintHtml;
+// 记了一次之后就地刷新这行(够 3 次就整行消失,交给诊断卡接管)
+function fbRefreshProgHint(progId, exName) {
+  var el = document.getElementById(progId + '_hint');
+  if (!el) return;
+  var n = fbManualCount(exName);
+  if (n >= FB_PROG_NEED) { if (el.parentNode) el.parentNode.removeChild(el); return; }
+  el.textContent = '记满 ' + FB_PROG_NEED + ' 次成绩，我才知道你卡在哪（已 ' + n + '/' + FB_PROG_NEED + '）';
+}
+window.fbRefreshProgHint = fbRefreshProgHint;
 
 // 从输入框读取并保存渐进超负荷数据
 function logProg(exName, progId) {
@@ -4164,7 +4236,9 @@ function logProg(exName, progId) {
     rpe  = inputs[2] ? inputs[2].value : '';
   }
   if (!weight && !reps && !rpe) return;
-  saveTrainingLog(exName, weight, reps, rpe);
+  // onchange 触发 = 用户确实编辑过 → manual(即便值跟上次一样,也是他确认过的)
+  saveTrainingLog(exName, weight, reps, rpe, 'manual');
+  fbRefreshProgHint(progId, exName);
 }
 
 // 动作替换入口(找到 dayIdx/exIdx 然后打开替换弹窗)
@@ -5071,6 +5145,7 @@ function toggleDone(id) {
     el.classList.remove("done");
     localStorage.removeItem(doneKey(id));
 
+
     var today = new Date().toISOString().slice(0,10);
     var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
     var found = hist.find(function(h){ return h.date === today; });
@@ -5113,6 +5188,8 @@ function toggleDone(id) {
     if (exName) speakText(exName + "，完成", true);
     // 记录训练历史(动作信息已在上方获取)
     recordHistory(dist, exName, exDiff, exM, dayExCnt);
+    // 🎯 打卡顺手把成绩带进训练记录(默认零操作;改过数字则以用户填的为准)
+    fbProgNudgeOnCheck(id, exName);
     // ⚡ 即时反馈: 勾选时 +N kcal 飘字
     if (exName && exDiff) fbFloatKcal(el, estimateCalories(exDiff, exM, dist, exName, dayExCnt));
     // 🎣 未完成感 banner + 顶部开场一句话刷新(刚打完卡,不能还写着「隔了 N 天」)
@@ -6326,6 +6403,7 @@ function buildPRsFromLog() {
   var changed = false;
   Object.keys(trainingLog || {}).forEach(function(exName){
     (trainingLog[exName] || []).forEach(function(e){
+      if (e.src === 'auto') return;   // 打卡带入的占位不算成绩,不参与 PR 重建
       var est = computeE1RM(e.weight, e.reps);
       if (est > 0 && (!prs[exName] || est > prs[exName].e1rm)) {
         prs[exName] = { e1rm: est, weight: e.weight, reps: e.reps, date: e.date };
@@ -10192,7 +10270,9 @@ function fbDiagnoseStalls() {
 
   var items = [];
   names.forEach(function (name) {
-    var raw = (log[name] || []).filter(function (e) { return !!e; });
+    // ⚠️ src='auto' 是打卡时按上次成绩自动带入的占位,不是真实成绩:
+    //    拿它诊断会得出「你 8 周没涨」的假结论(其实只是他没填数字)—— 宁漏勿误。
+    var raw = (log[name] || []).filter(function (e) { return !!e && e.src !== 'auto'; });
     if (raw.length < 4) return;                       // 少于 4 条谈不上趋势
     var u = (typeof getLogUnit === 'function') ? getLogUnit(name) : { mode: 'weight', unit: 'kg' };
     var mode = (u && u.mode === 'reps') ? 'reps' : 'weight';

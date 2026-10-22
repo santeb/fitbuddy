@@ -575,11 +575,15 @@ input,select{font-family:inherit;}
 .term-popover b{color:var(--text);display:block;margin-bottom:4px;font-size:13px;}
 
 /* Progressive Overload - weight/reps inputs */
-.prog-input{width:54px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px;text-align:center;background:var(--bg);color:var(--text);}
+.prog-input{width:54px;padding:7px 6px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:center;background:var(--bg);color:var(--text);}
 .prog-input:focus{border-color:var(--primary);outline:none;}
+/* 预填值 = 上次的成绩,用户还没确认:灰虚线,动过一下就变实色(表示这次是真填的) */
+.prog-input.prog-prefill{color:var(--text3);border-style:dashed;}
 .prog-label{font-size:10px;color:var(--text3);margin-right:2px;}
 .prog-row{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap;}
 .prog-last{font-size:10px;color:var(--blue);margin-left:4px;white-space:nowrap;}
+/* 「还差几次成绩」的常驻缺口提示:不弹窗,就在输入框下面一行,记满自动消失 */
+.prog-hint{font-size:10px;color:var(--text3);margin:4px 0 0 2px;line-height:1.5;}
 
 /* Exercise substitute button */
 .sub-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;background:var(--bg);color:var(--text3);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
@@ -1264,7 +1268,7 @@ input,select{font-family:inherit;}
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=96" defer></script>
+<script src="planner-core.js?v=98" defer></script>
 <script src="pro-tools.js?v=21" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
