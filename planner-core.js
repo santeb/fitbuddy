@@ -485,6 +485,7 @@ var _autoAdvanced = false;
 // 防止同周重复跳转：用 cycle+week 作为唯一标记，一旦跳过就不再跳
 var _weekAdvancedKey = null; // 本次跳转的 cycle_week 标记
 
+// ⏸ 挂起跳周的逻辑在下方「周结束:先记成绩,再进下一周」一节
 function checkAutoAdvanceWeek() {
   if (!lastPlan || !lastPlan.trainingDays) return;
   var goal = lastPlan.goal;
@@ -494,10 +495,36 @@ function checkAutoAdvanceWeek() {
   // 本周所有动作是否已勾选
   if (!checkWeekComplete()) return;
 
+  // ⏸ 先记成绩,再跳周:今天打过卡的力量动作里还有没记成绩的 → 挂起跳周。
+  //    因为跳周会 doGenerate 重渲染,而成绩输入框(.prog-row)挂在本周训练日卡片上,
+  //    重渲染后它就没了 —— 刚练完的重量/次数/RPE 永远没机会填。
+  var _unlogged = [];
+  try { _unlogged = fbTodayUnloggedLifts(); } catch (e) { _unlogged = []; }
+  if (_unlogged.length > 0) {
+    _autoAdvanced = true;   // 关键:抑制 toggleDone 里的 resetAllCheckmarks,勾选必须留着
+    fbSetPendingAdvance(currentWeek, currentCycle);
+    speakText("本周训练全部完成，先记下今天的成绩");
+    showToast("第 " + currentWeek + " 周完成 · 还有 " + _unlogged.length + " 个动作没记成绩");
+    setTimeout(function () { doGenerate(); }, 100);   // 重渲染 → 顶部出现「先记成绩」结算条
+    return;
+  }
+
+  fbDoAdvanceWeek();
+}
+
+// 真正的跳周动作(自动跳 与 手动点「进入第 N+1 周」共用这一条路径)
+function fbDoAdvanceWeek() {
+  if (!lastPlan || !lastPlan.trainingDays) return;
+  var goal = lastPlan.goal;
+  var totalWeeks = goal === "marathon" ? 16 : getCycleLength();
+  if (currentWeek >= totalWeeks) return;
+  if (!checkWeekComplete()) return;
+
   // 防止同周重复跳转：用 cycle_week 做标记
   var advanceKey = currentCycle + "_" + currentWeek;
   if (_weekAdvancedKey === advanceKey) return; // 本周已经跳过
   _weekAdvancedKey = advanceKey;
+  fbClearPendingAdvance();
   // GA4: 自动跳周(核心留存事件)
   if (typeof track === 'function') track('week_advance', { cycle: currentCycle, week: currentWeek, totalWeeks: totalWeeks });
 
@@ -545,6 +572,177 @@ function checkAutoAdvanceWeek() {
   setTimeout(function(){ t.style.opacity = "0"; t.style.transition = "opacity .4s"; }, 2500);
   setTimeout(function(){ if (t.parentNode) t.remove(); }, 3000);
 }
+
+// ============ 周结束:先记成绩,再进下一周 ============
+// 由来:以前「本周最后一个勾打完 → 立刻跳下一周」。但成绩输入框挂在本周训练日卡片上,
+//   跳周会重渲染,输入框随之消失 —— 用户刚练完,还没来得及填重量就再也填不了了。
+//   结果是打卡数据有、成绩数据恒为 0,而卡点诊断/PR/趋势图只读 manual 记录 → 永远不出。
+// 现在:跳周前先看今天打卡的动作有没有记成绩;没记 → 挂起,给一条结算条(去记 / 直接进下周)。
+// ⚠️ 这不是第七套反馈,是一个待办闸门:它只在「本周最后一个勾打完」这一刻出现,且只拦当天。
+// ⚠️ 只拦当天:隔天再打开直接放行 —— 那时记也已经不是当天的成绩了,不该把用户卡在上周。
+var FB_PENDING_ADVANCE_KEY = 'fitbuddy_pending_advance';
+
+function fbGetPendingAdvance() {
+  try { return JSON.parse(localStorage.getItem(FB_PENDING_ADVANCE_KEY) || 'null'); } catch (e) { return null; }
+}
+function fbSetPendingAdvance(week, cycle) {
+  try {
+    localStorage.setItem(FB_PENDING_ADVANCE_KEY, JSON.stringify({
+      cycle: cycle, week: week, date: new Date().toISOString().slice(0, 10)
+    }));
+  } catch (e) {}
+}
+function fbClearPendingAdvance() {
+  try { localStorage.removeItem(FB_PENDING_ADVANCE_KEY); } catch (e) {}
+}
+
+// 今天打卡过的动作名(recordHistory 已按日期写进 fitbuddy_history)
+function fbTodayCheckedExes() {
+  var today = new Date().toISOString().slice(0, 10);
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]'); } catch (e) { return []; }
+  for (var i = 0; i < hist.length; i++) {
+    if (hist[i] && hist[i].date === today && hist[i].exercises) return hist[i].exercises;
+  }
+  return [];
+}
+// 该动作有没有成绩输入框(与渲染时的 isLiftEx 同一口径:非马拉松 且 非有氧)
+// 先看计划里的动作对象(它自带 m,和渲染时用的是同一个字段),查不到再回落到动作库。
+function fbHasProgRow(exName) {
+  if (!lastPlan || lastPlan.goal === 'marathon') return false;
+  var m = '';
+  if (lastPlan.trainingDays) {
+    for (var d = 0; d < lastPlan.trainingDays.length && !m; d++) {
+      var day = lastPlan.trainingDays[d];
+      if (!day || !day.exes) continue;
+      for (var i = 0; i < day.exes.length; i++) {
+        if (day.exes[i].n === exName) { m = day.exes[i].m || ''; break; }
+      }
+    }
+  }
+  if (!m) {
+    for (var j = 0; j < EXES.length; j++) {
+      if (EXES[j].n === exName) { m = EXES[j].m || ''; break; }
+    }
+  }
+  return !!m && m !== '有氧';
+}
+// 今天有没有记过成绩(只认 manual:auto 占位不算)
+function fbLoggedToday(exName) {
+  var arr = (typeof trainingLog !== 'undefined' && trainingLog && trainingLog[exName]) || [];
+  var today = new Date().toISOString().slice(0, 10);
+  for (var i = arr.length - 1; i >= 0; i--) {
+    if (!arr[i] || arr[i].date !== today) continue;
+    if (arr[i].src !== 'auto') return true;
+  }
+  return false;
+}
+// 今天打了卡、但成绩还没记的力量动作(结算条就盯这几个)
+function fbTodayUnloggedLifts() {
+  var checked = fbTodayCheckedExes();
+  var out = [];
+  for (var i = 0; i < checked.length; i++) {
+    var n = checked[i];
+    if (!n || out.indexOf(n) >= 0) continue;
+    if (!fbHasProgRow(n)) continue;
+    if (fbLoggedToday(n)) continue;
+    out.push(n);
+  }
+  return out;
+}
+window.fbTodayUnloggedLifts = fbTodayUnloggedLifts;
+
+// 结算条内容(未记数变化时整块重刷)
+function fbWeekCloseBarInner(un) {
+  var n = un.length;
+  var nw = currentWeek + 1;
+  var title = n > 0
+    ? '<b style="font-size:14px;color:#7C2D12;">第 ' + currentWeek + ' 周练完了</b> · 还有 <b style="color:#C2410C;">' + n + '</b> 个动作没记成绩'
+    : '<b style="font-size:14px;color:#7C2D12;">第 ' + currentWeek + ' 周练完了</b> · 成绩都记好了';
+  var sub = n > 0
+    ? '成绩是你自己的数据。记满 3 次我才知道你卡在哪 —— 刚练完,数字最准。'
+    : '进入第 ' + nw + ' 周后,本周的勾选会清空。';
+  var btns = '';
+  if (n > 0) {
+    btns += '<button onclick="fbGoLogFirstUnlogged()" style="flex:1;padding:10px 0;border:none;border-radius:12px;background:#F97316;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">去记成绩</button>';
+  }
+  btns += '<button onclick="fbForceAdvanceWeek()" style="' + (n > 0 ? 'flex:1;' : 'width:100%;') + 'padding:10px 0;border:1.5px solid #F97316;border-radius:12px;background:#fff;color:#C2410C;font-size:13px;font-weight:700;cursor:pointer;">进入第 ' + nw + ' 周</button>';
+  return '<div style="font-size:13px;line-height:1.6;color:#7C2D12;">' + title + '</div>'
+    + '<div style="font-size:11.5px;line-height:1.5;color:#9A3412;margin:6px 0 10px;">' + sub + '</div>'
+    + '<div style="display:flex;gap:8px;">' + btns + '</div>';
+}
+
+// 结算条容器:只在「本周勾完 + 成绩没记完 + 还是当天」时出现
+function fbWeekCloseBarHtml() {
+  var p = fbGetPendingAdvance();
+  if (!p) return '';
+  if (p.cycle !== currentCycle || p.week !== currentWeek) { fbClearPendingAdvance(); return ''; }
+  // 勾被取消了(不是周结束) → 清掉挂起,别留一个假闸门
+  if (!checkWeekComplete()) { fbClearPendingAdvance(); return ''; }
+  return '<div id="fbWeekCloseBar" style="background:linear-gradient(135deg,#FFF7ED,#FFEDD5);'
+    + 'border:1.5px solid #F97316;border-radius:16px;padding:14px 16px;margin-bottom:14px;">'
+    + fbWeekCloseBarInner(fbTodayUnloggedLifts()) + '</div>';
+}
+window.fbWeekCloseBarHtml = fbWeekCloseBarHtml;
+
+// 记了一次成绩后就地刷新结算条(不用重渲染整页,避免输入框失焦)
+function fbRefreshWeekCloseBar() {
+  var bar = document.getElementById('fbWeekCloseBar');
+  if (!bar) return;
+  var p = fbGetPendingAdvance();
+  if (!p || p.cycle !== currentCycle || p.week !== currentWeek || !checkWeekComplete()) return;
+  bar.innerHTML = fbWeekCloseBarInner(fbTodayUnloggedLifts());
+}
+window.fbRefreshWeekCloseBar = fbRefreshWeekCloseBar;
+
+// 点「去记成绩」:展开所在日 → 滚过去 → 高亮并聚焦第一个未记的输入框
+function fbGoLogFirstUnlogged() {
+  var un = fbTodayUnloggedLifts();
+  if (!un.length) { fbForceAdvanceWeek(); return; }
+  if (!lastPlan || !lastPlan.trainingDays) return;
+  for (var di = 0; di < lastPlan.trainingDays.length; di++) {
+    var day = lastPlan.trainingDays[di];
+    if (!day || !day.exes) continue;
+    for (var ei = 0; ei < day.exes.length; ei++) {
+      if (day.exes[ei].n !== un[0]) continue;
+      var dayId = 'day_' + di;
+      var wrap = document.getElementById(dayId);
+      if (wrap && wrap.classList && wrap.classList.contains('collapsed')) toggleDay(dayId);
+      var prog = document.getElementById(dayId + '_ex' + ei + '_prog');
+      if (prog) {
+        try { prog.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+        prog.style.transition = 'box-shadow .3s';
+        prog.style.boxShadow = '0 0 0 2px #F97316';
+        (function (_p) {
+          var first = _p.querySelector('input');
+          setTimeout(function () {
+            _p.style.boxShadow = '';
+            if (first) { try { first.focus(); if (first.select) first.select(); } catch (e2) {} }
+          }, 380);
+        })(prog);
+      }
+      return;
+    }
+  }
+}
+window.fbGoLogFirstUnlogged = fbGoLogFirstUnlogged;
+
+// 点「进入第 N+1 周」:认了这次不记,直接跳
+function fbForceAdvanceWeek() {
+  fbClearPendingAdvance();
+  fbDoAdvanceWeek();
+}
+window.fbForceAdvanceWeek = fbForceAdvanceWeek;
+
+// 启动时兜底:挂起状态不是今天的(隔天了)→ 直接放行,别把用户卡在上周
+function fbAutoReleasePendingAdvance() {
+  var p = fbGetPendingAdvance();
+  if (!p) return;
+  var today = new Date().toISOString().slice(0, 10);
+  if (p.date === today) return;
+  setTimeout(function () { fbForceAdvanceWeek(); }, 400);
+}
+window.fbAutoReleasePendingAdvance = fbAutoReleasePendingAdvance;
 
 // ============ 动作替换 ============
 var subTarget = null; // {dayIdx, exIdx, exName}
@@ -1880,6 +2078,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } catch(e) {}
   try {
   var html = "";
+  // ⏸ 周结束结算条:成绩没记完时,它盖在计划最上方,压住「进入下一周」的入口
+  html += fbWeekCloseBarHtml();
   var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : goalCfg.intensity;
   // 马拉松:动态计算实际周跑量,覆盖静态配置
   if (goal === "marathon" && trainingDays) {
@@ -4239,6 +4439,8 @@ function logProg(exName, progId) {
   // onchange 触发 = 用户确实编辑过 → manual(即便值跟上次一样,也是他确认过的)
   saveTrainingLog(exName, weight, reps, rpe, 'manual');
   fbRefreshProgHint(progId, exName);
+  // 周结束挂起中:记一次就刷一次结算条上的「还有 N 个」
+  fbRefreshWeekCloseBar();
 }
 
 // 动作替换入口(找到 dayIdx/exIdx 然后打开替换弹窗)
@@ -4464,7 +4666,7 @@ function generateShareImage() {
   // 水印
   ctx.textAlign = 'center'; ctx.font = '400 18px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillText('fitbuddy.app', W/2, H-40);
+  ctx.fillText('santeb.github.io/fitbuddy', W/2, H-40);
 
   // 生成图片 + 弹窗预览
   canvas.toBlob(function(blob){
@@ -4725,7 +4927,7 @@ function fbExportStrengthCard() {
 
   ctx.textAlign = 'center'; ctx.font = '400 18px sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillText('fitbuddy.app', W / 2, H - 40);
+  ctx.fillText('santeb.github.io/fitbuddy', W / 2, H - 40);
 
   canvas.toBlob(function(blob){
     var url = URL.createObjectURL(blob);
@@ -7345,6 +7547,8 @@ function restoreLastPlan() {
   } catch(e) { console.error('恢复计划失败:', e); }
   // 🆕 启动时刷新今日训练 hero + 未完成感 banner
   fbRefreshRetentionUI();
+  // 🆕 上周挂起的跳周,隔天了就自动放行(成绩只在当天拦)
+  fbAutoReleasePendingAdvance();
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', restoreLastPlan);
