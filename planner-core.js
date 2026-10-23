@@ -785,6 +785,10 @@ function confirmSub() {
   if (lastPlan && lastPlan.trainingDays && lastPlan.trainingDays[subTarget.dayIdx] && lastPlan.trainingDays[subTarget.dayIdx].exes) {
     var newEx = EXES.find(function(e){ return e.n === selectedSubName; });
     if (newEx) {
+      var oldEx = lastPlan.trainingDays[subTarget.dayIdx].exes[subTarget.exIdx];
+      // v103:写替换偏好表。只改 lastPlan 的话,跳周重建(buildPlan)会把换过的
+      // 动作冲回默认 —— 换动作只在当周有效。存档后每次 buildPlan 都会 replay。
+      if (oldEx && oldEx.n && oldEx.n !== selectedSubName) fbSetExSwap(oldEx.n, selectedSubName);
       lastPlan.trainingDays[subTarget.dayIdx].exes[subTarget.exIdx] = newEx;
       localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
     }
@@ -1230,6 +1234,35 @@ var LEVEL_RANK  = {beginner:0, intermediate:1, advanced:2};
 var _lastLevelCalibration = null; // 本次生成所用的校准详情(渲染提示条用,渲染后即清空)
 var _lastAdaptiveInfo = null;     // 本次生成的自适应容量详情
 
+// ── v103b · 升档时间戳(「升档后别急着再加量」的前提) ──────────────────
+// 由来:诊断的 setsPerWeek 出自 fbMuscleLoadWin,数的是**打卡记录里的实际完成组**,
+//   滞后于计划。刚升完档,计划组数立刻涨了,但数据要练几周才追上 —— 这期间诊断
+//   看着旧数据判「容量不足」再劝加一笔,就是假阳性。
+// ⚠️ 自动校准每次 doGenerate 都跑,而原本**没有任何「上次何时升档」的记录**,
+//    所以这个护栏根本无从下手 —— 时间戳是它的前提,不是可选优化。
+// ⚠️ 只记「升」不记「降」:降档后组数变少,容量结论更可能是真的,不需要压。
+var FB_LEVEL_AT_KEY = 'fitbuddy_levelcal_at';
+var FB_LEVEL_GRACE_DAYS = 21;   // 与 fbAdjReviewLine 同口径(3 周数据才长得出来)
+var FB_LEVEL_NAMES = {beginner:'新手', intermediate:'中级', advanced:'进阶'};
+function fbGetLevelAt() {
+  try {
+    var o = JSON.parse(localStorage.getItem(FB_LEVEL_AT_KEY) || 'null');
+    return (o && typeof o === 'object' && o.at) ? o : null;
+  } catch (e) { return null; }
+}
+function fbSetLevelAt(from, to) {
+  try { localStorage.setItem(FB_LEVEL_AT_KEY, JSON.stringify({ at: Date.now(), from: from, to: to })); } catch (e) {}
+}
+function fbClearLevelAt() { try { localStorage.removeItem(FB_LEVEL_AT_KEY); } catch (e) {} }
+// 还剩几天缓冲;0 = 不在窗口内
+function fbLevelGraceLeft() {
+  var o = fbGetLevelAt();
+  if (!o) return 0;
+  var left = FB_LEVEL_GRACE_DAYS - Math.round((Date.now() - o.at) / 86400000);
+  return left > 0 ? left : 0;
+}
+window.fbLevelGraceLeft = fbLevelGraceLeft;
+
 // 取体重:优先当前表单输入,回落到已保存的 profile
 function getBodyWeightForCalibration() {
   var w = 0;
@@ -1374,6 +1407,8 @@ function renderAdaptiveVolumeBanner() {
 // 撤销自动校准:写关闭标记 + 把表单改回用户原本的选择 + 重新生成
 function undoLevelCalibration(targetLevel) {
   try { localStorage.setItem(LEVEL_CAL_OFF_KEY, '1'); } catch(e) {}
+  // v103b:档都退回去了,「升档缓冲」这个前提就不成立了 —— 不清的话会白压 21 天
+  try { fbClearLevelAt(); } catch(e) {}
   var lr = document.querySelector('input[name="level"][value="' + targetLevel + '"]');
   if (lr) lr.checked = true;
   var short = {beginner:'新手', intermediate:'中级', advanced:'进阶'}[targetLevel] || targetLevel;
@@ -2552,19 +2587,19 @@ function doGenerate() {
           trainingDays = lastPlan.trainingDays;
           _skipRebuild = false;
         } else {
-          trainingDays = buildPearFixedPlan(level, days);
+          trainingDays = fbApplyExSwaps(buildPearFixedPlan(level, days));
           if (trainingDays) {
             pearFixedUsed = true;
           } else {
             // 参数兜底(buildPearFixedPlan 仅支持 beginner×3天):退回原 buildPlan,不报错
-            trainingDays = buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset);
+            trainingDays = fbApplyExSwaps(buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset));
           }
         }
       } else if (_skipRebuild && lastPlan && lastPlan.trainingDays) {
         trainingDays = lastPlan.trainingDays;
         _skipRebuild = false;
       } else {
-        trainingDays = buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset);
+        trainingDays = fbApplyExSwaps(buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset));
       }
       // 伤病过滤
       trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ delete ex._injured; }); });
@@ -2572,6 +2607,15 @@ function doGenerate() {
         trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
       }
       // 保存到 lastPlan
+      // v103b:顺手记下「这次升档了」。放在这里而不是校准分支里,是为了把两条升档
+      //   路径一起覆盖 —— 自动校准(只在升的那次渲染出现)和用户自己在表单里改档。
+      //   下一次渲染时旧 lastPlan 还在,可以比出档位变化。
+      try {
+        var _prevLv = lastPlan && lastPlan.level;
+        if (_prevLv && level && _prevLv !== level && LEVEL_RANK[level] > LEVEL_RANK[_prevLv]) {
+          fbSetLevelAt(_prevLv, level);
+        }
+      } catch (e) {}
       lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
       lastPlan._pearFixed = pearFixedUsed; // 🍐 当前计划是否为梨形固定计划(渲染/统计用)
       if (currentCycle) lastPlan.cycle = currentCycle;
@@ -3786,6 +3830,14 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var done = localStorage.getItem(doneKey(checkId)) === "1";
       var isInjuredEx = ex._injured || false;
 
+      // v103 组数手动偏移:诊断处方给的「每周 +N 组」摊到每次训练。
+      // 有氧/马拉松不参与 —— 它们的处方是时长和配速,不是组数。
+      var _setsAdj = 0;
+      if (!isMarathon && goal !== 'cardio' && ex.m !== '有氧') {
+        try { _setsAdj = (typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0; } catch (e) { _setsAdj = 0; }
+      }
+      var _exPres = _setsAdj > 0 ? (sets + _setsAdj) + '组 x ' + goalCfg.reps : presDisplay;
+
       // 马拉松专属处方显示
       var exPrescriptionHtml;
       var distData = "";
@@ -3848,7 +3900,9 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           (cardioCfg.rest && cardioCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+cardioCfg.rest+'\')">⏱ '+cardioCfg.rest+'</button>' : '');
       } else {
         exPrescriptionHtml =
-          '<div class="ex-sets">'+presDisplay+'</div>'+
+          // 可解释:多出来的组必须有出处。不然用户看到「怎么变 5 组了」只会以为是 bug。
+          (_setsAdj > 0 ? '<div style="font-size:10.5px;color:var(--primary);opacity:0.9;margin-bottom:3px;">➕ 含你上次加的 ' + _setsAdj + ' 组</div>' : '')+
+          '<div class="ex-sets">'+_exPres+'</div>'+
           '<div class="ex-intensity">'+goalCfg.intensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
           (goalCfg.rest && goalCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+goalCfg.rest+'\')">⏱ '+goalCfg.rest+'</button>' : '');
       }
@@ -3879,18 +3933,20 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         var preCls = ' prog-prefill';
         if (isBodyweight) {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
-            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="1-10" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>'+
+            fbProgQuickHtml(progId, ex.n, true, '', preR)+
             fbProgHintHtml(progId, ex.n);
         } else {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
             '<span class="prog-label">重量</span><input type="number" inputmode="decimal" class="prog-input'+(preW!==''?preCls:'')+'" placeholder="kg" step="0.5" min="0" value="'+(preW===''?'':preW)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
-            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="1-10" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>'+
+            fbProgQuickHtml(progId, ex.n, false, preW, preR)+
             fbProgHintHtml(progId, ex.n);
         }
       }
@@ -4398,6 +4454,65 @@ function fbProgNudgeOnCheck(id, exName) {
   if (lab) lab.textContent = '还是 ' + (w ? w + 'kg × ' : '') + r + '次？改数字才算这次的成绩';
 }
 window.fbProgNudgeOnCheck = fbProgNudgeOnCheck;
+// ── 快捷记录(v101):把「输入」换成「点选」 ──────────────────────
+// 组间只有 60 秒,手输要走「点框→弹键盘→删旧值→输新值→收键盘」五步,还容易点错。
+// 真实记录里绝大多数只有两种情况:跟上次一样 / 上次加一个最小片。
+// 这两种各给一个按钮 = 一次点击、零键盘。输入框保留,只有特殊数值才用得上。
+// 两行:第一行「跟上次一样」(最高频,独占一行给足点击面积);第二行是重量/次数的微调。
+// ⚠️ 次数必须单独给步进:重量几天才动一次,次数几乎每组都要改——它是「你实际做到了几个」,
+//    不是计划值(计划 8 个、做到 10 个很常见)。只给重量按钮的话,最常见的改动反而没快捷路径。
+function fbProgQuickHtml(progId, exName, isBw, preW, preR) {
+  var has = isBw ? (preR !== '') : (preW !== '' || preR !== '');
+  if (!has) return '';                        // 从没记过 → 没有「上次」可比,按钮无从谈起
+  var en = exName.replace(/'/g, "\\'");
+  var b = function (cls, k, txt) {
+    return '<button class="' + cls + '" onclick="fbProgQuick(\'' + progId + '\',\'' + en + '\',\'' + k + '\')">' + txt + '</button>';
+  };
+  var row1 = '<div class="qk-line1">' + b('qk-same', 'same', '✓ 跟上次一样') +
+             '<span class="prog-saved" id="' + progId + '_saved"></span></div>';
+  var row2 = '';
+  if (!isBw) row2 += '<span class="qk-lb">重量</span>' + b('qk-dn', 'w_dn', '−2.5') + b('qk-up', 'w_up', '+2.5');
+  row2 += '<span class="qk-lb">次数</span>' + b('qk-dn', 'r_dn', '−1') + b('qk-up', 'r_up', '+1');
+  // data-w/data-r 记着「上次」到底是多少:same 按钮靠它把两个框都拉回去(见下)
+  return '<div class="prog-quick" id="' + progId + '_qk" data-w="' + (isBw ? '' : (preW || '')) +
+         '" data-r="' + (preR || '') + '">' + row1 +
+         '<div class="prog-quick2">' + row2 + '</div></div>';
+}
+// 点按钮 = 用户主动确认过这一次(不是系统替他记),按 manual 入库
+function fbProgQuick(progId, exName, kind) {
+  var row = document.getElementById(progId);
+  if (!row) return;
+  var isBw = false;
+  try { isBw = (typeof isBodyweightEx === 'function') ? isBodyweightEx(exName) : false; } catch (e) { isBw = false; }
+  var ins = row.querySelectorAll('input');    // 自重:[次数,RPE]  器械:[重量,次数,RPE]
+  var wEl = isBw ? null : ins[0];
+  var rEl = isBw ? ins[0] : ins[1];
+  if (!rEl) return;
+  if (kind === 'same') {
+    // 「跟上次一样」= 重量和次数都回到上次,不管你之前手改过哪个。
+    // 不回填的话:先点 +1 再点「跟上次一样」会存成 60×9 —— 按钮说的是一套、存的是另一套。
+    var qk = document.getElementById(progId + '_qk');
+    if (qk) {
+      var dw = qk.getAttribute('data-w'), dr = qk.getAttribute('data-r');
+      if (!isBw && wEl && dw) wEl.value = dw;
+      if (dr) rEl.value = dr;
+    }
+  } else if (kind === 'w_up' || kind === 'w_dn') {
+    if (!wEl) return;
+    var wv = (parseFloat(wEl.value) || 0) + ((kind === 'w_up') ? 2.5 : -2.5);
+    wEl.value = wv < 0 ? 0 : Math.round(wv * 10) / 10;
+  } else if (kind === 'r_up' || kind === 'r_dn') {
+    var rv = (parseInt(rEl.value, 10) || 0) + ((kind === 'r_up') ? 1 : -1);
+    rEl.value = rv < 1 ? 1 : rv;            // 次数最小 1,不为 0/负
+  }
+  if (wEl) fbProgTouch(wEl);
+  fbProgTouch(rEl);
+  logProg(exName, progId);
+  var saved = document.getElementById(progId + '_saved');
+  if (saved) saved.textContent = '✓ 已记 ' + (isBw ? (rEl.value + '次') : ((wEl && wEl.value ? wEl.value : 0) + 'kg × ' + rEl.value + '次'));
+}
+window.fbProgQuick = fbProgQuick;
+
 // 「还差几次」常驻缺口提示:不弹窗(已有飘字/语音/banner/成就/周完成/日完成六套反馈,第七套是噪音)
 function fbProgHintHtml(progId, exName) {
   var n = fbManualCount(exName);
@@ -4435,7 +4550,10 @@ function logProg(exName, progId) {
     reps = inputs[1] ? inputs[1].value : '';
     rpe  = inputs[2] ? inputs[2].value : '';
   }
-  if (!weight && !reps && !rpe) return;
+  // ⚠️ 只填了 RPE、重量和次数都空 → 不入库。否则会写一条 weight=0/reps=0 的脏数据,
+  //    被诊断口径读成「重量一直没涨」—— 假数据比没记录更糟。
+  if (isBw) { if (!reps) return; }
+  else { if (!weight && !reps) return; }
   // onchange 触发 = 用户确实编辑过 → manual(即便值跟上次一样,也是他确认过的)
   saveTrainingLog(exName, weight, reps, rpe, 'manual');
   fbRefreshProgHint(progId, exName);
@@ -5904,6 +6022,297 @@ function fbTodayHeroHtml() {
   return html;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// v103 · 动作替换偏好 / 组数手动偏移 / 改动留痕
+// 三件事同一个主题:让「按诊断结论改计划」这条路走得通 ——
+//   ① 改得留得住(不被重渲染冲掉)
+//   ② 改得看得懂(知道多出来那组是哪来的)
+//   ③ 改完知道有没有用(复查时对照改前改后)
+// ══════════════════════════════════════════════════════════════════════
+
+// ① 动作替换偏好表
+// 由来:confirmSub 只改 lastPlan.trainingDays,靠 _skipRebuild 让本次渲染复用。
+//   跳周时 fbDoAdvanceWeek 不设 _skipRebuild → buildPlan 全新生成 → 上周换过的
+//   动作被冲回默认。等于「换动作」只在当周有效,下一周自己变回去 —— 用户会以为
+//   自己记错了或者 app 抽风。
+// 修法:单独存一张 {原动作名 → 新动作名},每次 buildPlan 之后 replay。
+//   按动作名而不是 dayIdx 映射:换掉一个动作通常是不想练它(不是那天不想练),
+//   而且训练天数一改 dayIdx 就错位。
+var FB_EXSWAP_KEY = 'fitbuddy_exswap';
+function fbGetExSwaps() {
+  try { return JSON.parse(localStorage.getItem(FB_EXSWAP_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function fbSetExSwap(fromName, toName) {
+  if (!fromName || !toName || fromName === toName) return;
+  var m = fbGetExSwaps();
+  m[fromName] = toName;
+  try { localStorage.setItem(FB_EXSWAP_KEY, JSON.stringify(m)); } catch (e) {}
+}
+function fbApplyExSwaps(trainingDays) {
+  var m = fbGetExSwaps();
+  if (!trainingDays || !m || !Object.keys(m).length) return trainingDays;
+  trainingDays.forEach(function (day) {
+    if (!day || !day.exes) return;
+    day.exes = day.exes.map(function (ex) {
+      if (!ex || !ex.n) return ex;
+      var to = m[ex.n];
+      if (!to) return ex;
+      var nx = null;
+      try { nx = EXES.find(function (e) { return e.n === to; }); } catch (e) {}
+      return nx || ex;
+    });
+    // 替换后可能跟当天已有动作撞名 → 去重。空出的槽位不补:宁可少一个动作,
+    // 也不要为了凑数把用户刚换掉的动作塞回来。
+    try { day.exes = dedup(day.exes).filter(function (e) { return !!e; }); } catch (e) {}
+  });
+  return trainingDays;
+}
+window.fbApplyExSwaps = fbApplyExSwaps;
+
+// ② 组数手动偏移
+// ⚠️ 整条容量链(level基线 → 自适应容量 → P1强度 → 减载周)全是每次渲染现算的
+//    派生值,没有一层是「用户手动设的绝对值」。手动加的组必须有自己的存档位,
+//    而且挂在链的最外层做加法 —— 不是覆盖 cfg.sets(那样减载周/自适应一来就冲掉)。
+// ⚠️ 处方只碰组数,绝不碰 level:动一档等于同时改组数/次数/强度/休息四个变量,
+//    4 周后见效了根本归因不出是哪个起的作用。
+// 存的单位是「每周 +N 组」(跟诊断处方同一口径),渲染时按该动作每周出现次数分摊。
+var FB_PLAN_ADJ_KEY = 'fitbuddy_plan_adj';
+var FB_ADJ_MAX_WEEK = 4;     // 一次最多每周 +4 组:再往上就该减载了,不是加量
+var FB_ADJ_MAX_PER = 3;      // 单次训练最多多 3 组,再多这一练就拖垮了
+function fbGetPlanAdj() {
+  try {
+    var o = JSON.parse(localStorage.getItem(FB_PLAN_ADJ_KEY) || 'null');
+    if (!o || typeof o !== 'object') return { v: 1, ex: {}, log: [] };
+    if (!o.ex || typeof o.ex !== 'object') o.ex = {};
+    if (!Array.isArray(o.log)) o.log = [];
+    return o;
+  } catch (e) { return { v: 1, ex: {}, log: [] }; }
+}
+function fbSavePlanAdj(o) {
+  try { localStorage.setItem(FB_PLAN_ADJ_KEY, JSON.stringify(o)); } catch (e) {}
+}
+// 该动作在这份计划里每周出现几次 —— 决定「每周 +2 组」摊到每次是 +1 还是 +2
+function fbExOccurrences(exName) {
+  var n = 0;
+  try {
+    var plan = (typeof lastPlan !== 'undefined' && lastPlan) ||
+      JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+    ((plan && plan.trainingDays) || []).forEach(function (d) {
+      ((d && d.exes) || []).forEach(function (e) { if (e && e.n === exName) n++; });
+    });
+  } catch (e) {}
+  return n;
+}
+// 渲染用:这次训练这个动作要多做几组
+function fbExSetsDelta(exName) {
+  var adj = fbGetPlanAdj();
+  var rec = adj.ex && adj.ex[exName];
+  if (!rec || !(rec.d > 0)) return 0;
+  var occ = fbExOccurrences(exName) || 1;
+  return Math.min(FB_ADJ_MAX_PER, Math.max(1, Math.round(rec.d / occ)));
+}
+window.fbExSetsDelta = fbExSetsDelta;
+
+// 处方落地按钮(诊断卡「容量不足」那一条)
+function fbVolumeRxHtml(idx) {
+  var it = (window.__fbStallItems || [])[idx];
+  if (!it || !it.load || !it.load.hasData) return '';
+  var adj = fbGetPlanAdj();
+  var rec = adj.ex && adj.ex[it.name];
+  var cur = Math.round(it.load.setsPerWeek || 0);
+  var lo = (it.target && it.target[0]) || 0;
+  if (rec && rec.d > 0) {
+    return '<div id="fbRxVol' + idx + '" style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+      + '<span style="font-size:11.5px;color:var(--text2);flex:1;">✅ 已给这个动作每周 +' + rec.d + ' 组 —— 练的时候每次都会多 ' + fbExSetsDelta(it.name) + ' 组</span>'
+      + '<button onclick="fbUndoVolumeRx(' + idx + ')" style="padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;">撤销</button>'
+      + '</div>';
+  }
+  // v103b 升档缓冲:刚升完档,计划组数已经涨了,但诊断读的打卡数据还没追上 →
+  //   这时候判「容量不足」是假阳性。压的是「行动」,不是「事实」——
+  //   上面那行「约 N 组/周」是真实发生过的,照旧显示;只是别在计划刚变大时又加一笔。
+  // ⚠️ 撤销态放在这个判断之前:撤销必须永远可用,不能因为处在缓冲期就锁死。
+  var _grace = fbLevelGraceLeft();
+  if (_grace > 0) {
+    return '<div id="fbRxVol' + idx + '" style="margin-top:10px;font-size:11.5px;line-height:1.6;color:var(--text2);background:var(--bg);border-radius:8px;padding:8px 10px;">'
+      + '⏳ 你刚升到「' + (FB_LEVEL_NAMES[(fbGetLevelAt() || {}).to] || '新档位') + '」，计划组数已经涨了 —— 先按新计划练 '
+      + _grace + ' 天，等数据追上来再看要不要加。</div>';
+  }
+  // ⚠️ 已达标(cap 已达建议下限)就不再给按钮。这里曾经写成 max(1, lo-cur),
+  //    结果负差被夹成 +1 —— 容量已经超了还在劝人加量,那就是帮倒忙。
+  var gap = lo - cur;
+  if (!(gap > 0)) return '';
+  var d = Math.min(FB_ADJ_MAX_WEEK, gap);
+  return '<div id="fbRxVol' + idx + '" style="margin-top:10px;">'
+    + '<button onclick="fbApplyVolumeRx(' + idx + ')" style="width:100%;padding:9px 0;border:none;border-radius:10px;background:var(--primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">'
+    + '把「' + fbEsc(it.name) + '」加到 ' + (cur + d) + ' 组/周（+' + d + '）</button>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.55;">只改这一个动作，一次最多 +'
+    + FB_ADJ_MAX_WEEK + ' 组 —— 一次改一堆，4 周后分不清是哪个改动起了作用。</div></div>';
+}
+function fbApplyVolumeRx(idx) {
+  var it = (window.__fbStallItems || [])[idx];
+  if (!it || !it.load) return;
+  var cur = Math.round(it.load.setsPerWeek || 0);
+  var lo = (it.target && it.target[0]) || 0;
+  var gap = lo - cur;
+  if (!(gap > 0)) return;                    // 已达标 → 点了也不加
+  var d = Math.min(FB_ADJ_MAX_WEEK, gap);
+  var adj = fbGetPlanAdj();
+  var prev = (adj.ex[it.name] && adj.ex[it.name].d) || 0;
+  adj.ex[it.name] = { d: prev + d, at: Date.now(), muscle: it.muscle || '' };
+  adj.log.push({ t: Date.now(), ex: it.name, muscle: it.muscle || '', d: d, from: cur, to: cur + d });
+  fbSavePlanAdj(adj);
+  fbRefreshRxBtn(idx);
+  if (typeof showToast === 'function') showToast('已给「' + it.name + '」每周 +' + d + ' 组');
+  fbMarkPlanDirty();
+}
+window.fbApplyVolumeRx = fbApplyVolumeRx;
+// 计划页可能不在当前 tab(用户是在进度页点的按钮)。这时候直接 doGenerate 会走到
+// fbAfterPlanRendered → planResult.scrollIntoView,把进度页整屏滚到计划区 ——
+// 那一下很吓人,像是页面坏了。在计划页就立刻重渲染,不在就挂标记,切回去时再补。
+function fbMarkPlanDirty() {
+  try {
+    var pp = document.getElementById('page-plan');
+    if (pp && pp.classList.contains('active')) {
+      setTimeout(function () { try { doGenerate(); } catch (e) {} }, 60);
+      return;
+    }
+  } catch (e) {}
+  window.__fbPlanDirty = true;
+}
+window.fbApplyVolumeRx = fbApplyVolumeRx;
+function fbUndoVolumeRx(idx) {
+  var it = (window.__fbStallItems || [])[idx];
+  if (!it) return;
+  var adj = fbGetPlanAdj();
+  if (adj.ex[it.name]) delete adj.ex[it.name];
+  adj.log.push({ t: Date.now(), ex: it.name, muscle: it.muscle || '', d: 0, undo: 1 });
+  fbSavePlanAdj(adj);
+  fbRefreshRxBtn(idx);
+  if (typeof showToast === 'function') showToast('已撤销「' + it.name + '」的加量');
+  fbMarkPlanDirty();
+}
+window.fbUndoVolumeRx = fbUndoVolumeRx;
+// 原地换按钮区,不整页重刷 —— 整页重刷会把用户正在读的处方冲掉
+function fbRefreshRxBtn(idx) {
+  var el = document.getElementById('fbRxVol' + idx);
+  if (!el) return;
+  el.outerHTML = fbVolumeRxHtml(idx) || '<div id="fbRxVol' + idx + '" style="display:none"></div>';
+}
+
+// ③ 改动留痕 → 复查时对照改前改后
+// 没有这一跳,4 周后只知道「这 4 周的结果」,不知道「这 4 周跟之前有什么不同」,
+// 于是又绕回「那我该不该换」的原点 —— 改完不知道有没有用,跟自己乱改没区别。
+// ⚠️ 措辞纪律:只摆事实,不下「该不该换」的结论(那是 ①② 的活)。
+function fbAdjReviewLine() {
+  var adj = fbGetPlanAdj();
+  var log = (adj.log || []).filter(function (l) { return l && !l.undo && l.d > 0; });
+  if (!log.length) return '';
+  var last = log[log.length - 1];
+  var days = Math.round((Date.now() - (last.t || 0)) / 86400000);
+  if (days < 21) return '';    // 改了不到 3 周,数据还没长出来,别急着下结论
+  var u = (typeof getLogUnit === 'function') ? (getLogUnit(last.ex) || {}) : {};
+  var isReps = u && u.mode === 'reps';
+  var unit = isReps ? (u.unit || '次') : 'kg';
+  var tl = [];
+  try { tl = ((typeof trainingLog !== 'undefined' && trainingLog) || {})[last.ex] || []; } catch (e) {}
+  var before = 0, after = 0;
+  tl.forEach(function (e) {
+    if (!e || e.src === 'auto' || !e.date) return;
+    var t = Date.parse(String(e.date).slice(0, 10));
+    if (isNaN(t)) return;
+    var perf = isReps ? (parseInt(e.reps, 10) || 0) : (parseFloat(e.weight) || 0);
+    if (!(perf > 0)) return;
+    if (t < (last.t || 0)) { if (perf > before) before = perf; }
+    else if (perf > after) after = perf;
+  });
+  var txt;
+  if (!after) txt = '这之后还没记过成绩 —— 没数据就判断不了这次改得对不对。';
+  else if (before > 0 && after > before) txt = '这期间最好成绩从 ' + before + unit + ' 涨到 ' + after + unit + '。';
+  else if (before > 0 && after < before) txt = '这期间最好成绩从 ' + before + unit + ' 回到 ' + after + unit + '。';
+  else txt = '这期间最好成绩还是 ' + after + unit + ' —— 这次加量没带来变化。';
+  return '<div style="margin-top:8px;font-size:11.5px;line-height:1.6;color:var(--text2);background:var(--bg);border-radius:8px;padding:8px 10px;">'
+    + '🔁 上次（' + days + ' 天前）你给「' + fbEsc(last.ex) + '」每周加了 ' + last.d + ' 组。' + txt + '</div>';
+}
+
+// ── 计划复查条(v102):③「这份计划什么时候过期」 ──────────────────────
+// ⚠️ 措辞纪律:这里永不出现「该换计划了」。健身里最稀缺的判断恰恰是「什么时候别换」——
+//    多数人的问题不是换太慢,是换太勤。这条只给时间信号,结论交给已有的诊断/趋势(①②)。
+// ⚠️ 纯只读:不新建字段、不写训练数据。年龄从最早一次打卡算,零迁移成本,也不会因为
+//    doGenerate/nextCycle 被调用就把计时清零(那会让这条永远不出现)。
+var FB_PLAN_REVIEW_WEEKS  = 6;   // 跑满 6 周 → 该看一次数据
+var FB_PLAN_REVIEW_SNOOZE = 4;   // 看过之后又过 4 周才再提,不是每次打开都烦他
+function fbPlanAgeWeeks() {
+  try {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+    var min = '';
+    (hist || []).forEach(function (h) { if (h && h.date && (!min || h.date < min)) min = h.date; });
+    if (!min) return 0;                       // 一次都没练过 → 谈不上跑了多久
+    var d0 = new Date(min + 'T00:00:00');
+    if (isNaN(d0.getTime())) return 0;
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var d = Math.round((now - d0) / 86400000);
+    return d < 0 ? 0 : Math.floor(d / 7);
+  } catch (e) { return 0; }
+}
+// 有几个动作攒够 FB_PROG_NEED 次已确认成绩 = 有几个动作真能下结论
+function fbReadyExCount() {
+  var log = (typeof trainingLog !== 'undefined' && trainingLog) || {};
+  var n = 0;
+  for (var k in log) {
+    if (!Object.prototype.hasOwnProperty.call(log, k)) continue;
+    try { if (fbManualCount(k) >= FB_PROG_NEED) n++; } catch (e) {}
+  }
+  return n;
+}
+function fbPlanReviewHtml() {
+  var age = fbPlanAgeWeeks();
+  if (age < FB_PLAN_REVIEW_WEEKS) return '';
+  var last = 0;
+  try { last = parseInt(localStorage.getItem('fitbuddy_planreview_at') || '0', 10) || 0; } catch (e) {}
+  if (age - last < FB_PLAN_REVIEW_SNOOZE) return '';
+  var n = fbReadyExCount();
+  var line3 = n > 0
+    ? '你有 <b>' + n + '</b> 个动作记满 ' + FB_PROG_NEED + ' 次，够下结论了 —— 看完再决定动不动它。'
+    : '但还没有动作记满 ' + FB_PROG_NEED + ' 次，现在谁都判断不了该不该换。';
+  var main = n > 0
+    ? '<button onclick="fbPlanReviewGoResult()" style="flex:1;padding:9px 0;border:none;border-radius:10px;background:var(--primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">看看这 ' + age + ' 周的结果</button>'
+    : '<button onclick="fbPlanReviewGoLog()" style="flex:1;padding:9px 0;border:none;border-radius:10px;background:var(--primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">去记成绩</button>';
+  return '<div id="fbPlanReview" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:12px;">'
+    + '<div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px;">📅 这套练法跑了 ' + age + ' 周</div>'
+    + '<div style="font-size:12px;line-height:1.6;color:var(--text2);">到期的不是计划，是「该看一次数据」了。<br>' + line3 + '</div>'
+    // v103 留痕对比:上次改了什么 + 这期间成绩怎么变的。没有这一行,用户还会绕回
+    // 「那我该不该换」—— 因为缺少「这次改得对不对」这个信息。
+    + (fbAdjReviewLine() || '')
+    + '<div style="display:flex;gap:8px;margin-top:10px;">' + main
+    + '<button onclick="fbPlanReviewDismiss()" style="padding:9px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text3);font-size:12.5px;font-weight:700;cursor:pointer;">先不动</button>'
+    + '</div></div>';
+}
+window.fbPlanReviewHtml = fbPlanReviewHtml;
+function fbPlanReviewDismiss() {
+  try { localStorage.setItem('fitbuddy_planreview_at', String(fbPlanAgeWeeks())); } catch (e) {}
+  var el = document.getElementById('fbPlanReview');
+  if (el) el.remove();
+}
+window.fbPlanReviewDismiss = fbPlanReviewDismiss;
+function fbPlanReviewGoResult() {
+  fbPlanReviewDismiss();
+  var btn = document.querySelector('.tab-btn[data-tab="page-prog"]');
+  if (btn) btn.click();
+}
+window.fbPlanReviewGoResult = fbPlanReviewGoResult;
+// 数据不够时给的出口:滚到第一个成绩输入行并高亮(不复用 fbGoLogFirstUnlogged ——
+// 那个在「没有未记动作」时会去跳周,在这个语境下是灾难)
+function fbPlanReviewGoLog() {
+  fbPlanReviewDismiss();
+  var el = document.querySelector('.prog-row');
+  if (!el) return;
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+  el.style.transition = 'box-shadow .3s';
+  el.style.boxShadow = '0 0 0 2px var(--primary)';
+  setTimeout(function () { el.style.boxShadow = ''; }, 1200);
+}
+window.fbPlanReviewGoLog = fbPlanReviewGoLog;
+
 // 启动/切 tab 时,把 hero + banner 注入到 page-plan 顶部(独立于完整计划渲染)
 function fbRefreshRetentionUI() {
   if (!lastPlan || !lastPlan.trainingDays) return;
@@ -5915,19 +6324,23 @@ function fbRefreshRetentionUI() {
   // 📤 力量档案入口条:默认打开的是计划页,入口离用户越近越好。
   // 数据不足时 fbStrengthCardEntryHtml 返回 '',整条不出现 —— 不给新用户看空按钮。
   var entry = (typeof fbStrengthCardEntryHtml === 'function') ? fbStrengthCardEntryHtml('bar') : '';
-  if (!hero && !ban && !entry) return;
+  var review = (typeof fbPlanReviewHtml === 'function') ? fbPlanReviewHtml() : '';
+  if (!hero && !ban && !entry && !review) return;
   // 旧的 hero/banner/入口移除(避免切 tab 重渲染时叠加重复)
   var oldHero = document.getElementById('fbTodayHero');
   var oldBan = document.getElementById('fbProgressBanner');
   var oldEntry = document.getElementById('fbStrengthEntry');
+  var oldReview = document.getElementById('fbPlanReview');
   if (oldHero) oldHero.remove();
   if (oldBan) oldBan.remove();
   if (oldEntry) oldEntry.remove();
+  if (oldReview) oldReview.remove();
   // 优先注入 page-plan 顶部; 不存在则 fallback 到 planResult
   if (top) {
-    top.innerHTML = (hero || '') + (ban || '') + (entry || '');
+    top.innerHTML = (hero || '') + (ban || '') + (entry || '') + (review || '');
   } else if (planRes) {
-    // ⚠️ afterbegin 是前插,必须倒序插入才能呈现 hero → banner → 入口条的顺序
+    // ⚠️ afterbegin 是前插,必须倒序插入才能呈现 hero → banner → 入口条 → 复查条的顺序
+    if (review) planRes.insertAdjacentHTML('afterbegin', review);
     if (entry) planRes.insertAdjacentHTML('afterbegin', entry);
     if (ban) planRes.insertAdjacentHTML('afterbegin', ban);
     if (hero) planRes.insertAdjacentHTML('afterbegin', hero);
@@ -7444,6 +7857,11 @@ function switchTab(btn) {
     updateReminderTrainDays();
     checkReminder();
     fbRefreshRetentionUI();
+    // v103:在别的 tab 上改过组数 → 切回计划页时补一次重渲染,否则看到的还是旧组数
+    if (window.__fbPlanDirty) {
+      window.__fbPlanDirty = false;
+      setTimeout(function () { try { doGenerate(); } catch (e) {} }, 30);
+    }
   }
 }
 
@@ -10594,7 +11012,10 @@ function fbStallCardBody(outerItems) {
   // ⚠️ 只讲最严重的 2 个。三个动作同时卡住时全列出来会撑到 1100px 高,
   //    把后面所有 Pro 卡推到 3 屏之外; 而且一次改三个, 见效了也不知道是哪个起的作用。
   //    一次改两个以内, 4 周后能明确归因 —— 这才是能执行下去的处方。
-  items.slice(0, 2).forEach(function (it) {
+  // 处方落地按钮要按索引取完整的 it(动作名/肌群/周组数),中文名塞进 onclick 里
+  // 转义风险太大 —— 存一份引用,按钮只传下标。
+  window.__fbStallItems = items;
+  items.slice(0, 2).forEach(function (it, ri) {
     var rx = it.rx || fbStallPrescription(it);
     var evidence = [];
     if (it.load.hasData) {
@@ -10621,7 +11042,12 @@ function fbStallCardBody(outerItems) {
           + '<span style="flex:none;width:16px;height:16px;border-radius:50%;background:' + rx.color + '1A;color:' + rx.color + ';font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;margin-top:2px;">' + (i + 1) + '</span>'
           + '<span style="flex:1;">' + fbEsc(p) + '</span></div>';
       }).join('')
-      + '</div></div>';
+      + '</div>'
+      // v103 落地按钮:只有「容量不足」有按钮。其余四类的落地物不是改计划 ——
+      //   减载(周期表自带)/没渐进(练的时候点 +2.5)/恢复不足(先减)/强度分布(改 RPE),
+      //   给它们按钮等于鼓励乱改。
+      + ((it.cause === 'volume' || !it.cause) ? fbVolumeRxHtml(ri) : '')
+      + '</div>';
   });
 
   if (items.length > 2) {

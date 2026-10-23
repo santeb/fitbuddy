@@ -584,6 +584,20 @@ input,select{font-family:inherit;}
 .prog-last{font-size:10px;color:var(--blue);margin-left:4px;white-space:nowrap;}
 /* 「还差几次成绩」的常驻缺口提示:不弹窗,就在输入框下面一行,记满自动消失 */
 .prog-hint{font-size:10px;color:var(--text3);margin:4px 0 0 2px;line-height:1.5;}
+/* 快捷记录(v101):「跟上次一样 / +2.5kg / −2.5kg」一次点击搞定,组间不用弹键盘 */
+.prog-quick{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.prog-quick button{min-height:38px;padding:0 12px;border:1px solid var(--border);border-radius:9px;
+  background:var(--card);font-size:12.5px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;}
+.prog-quick button:active{transform:scale(.96);}
+.prog-quick .qk-same{border-color:#22C55E;color:#22C55E;flex:1 1 auto;}
+.prog-quick .qk-up{border-color:var(--primary);color:var(--primary);background:rgba(255,107,53,.08);}
+.prog-quick .qk-dn{color:var(--text3);}
+.prog-saved{font-size:11px;font-weight:700;color:#22C55E;margin-left:2px;white-space:nowrap;}
+/* 第二行:重量/次数的微调。次数几乎每次都要动(是「做到了几个」,不是计划值),所以单独给步进 */
+.prog-quick .qk-line1{display:flex;align-items:center;gap:6px;width:100%;}
+.prog-quick2{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+.prog-quick2 button{min-height:34px;padding:0 10px;font-size:12px;}
+.qk-lb{font-size:10px;color:var(--text3);margin-right:-2px;}
 
 /* Exercise substitute button */
 .sub-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;background:var(--bg);color:var(--text3);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
@@ -1268,7 +1282,7 @@ input,select{font-family:inherit;}
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=100" defer></script>
+<script src="planner-core.js?v=103" defer></script>
 <script src="pro-tools.js?v=21" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
