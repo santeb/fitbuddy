@@ -762,6 +762,8 @@ function openSubModal(dayIdx, exIdx, exName) {
   var bt = BADGE_TEXT[muscle] || (muscle ? muscle[0] : '?');
   var html = '<div class="sub-modal-title">🔄 替换「'+exName+'」</div>'+
     '<div class="sub-modal-sub">选择替代动作(同肌群 '+MUSCLE_LABELS[muscle]+')</div>';
+  // v103b:这个动作加过量的话,换完那笔加量就静默没了 —— 换之前先说清楚
+  html += (typeof fbSwapAdjNoticeHtml === 'function') ? fbSwapAdjNoticeHtml(exName) : '';
   allowed.slice(0, 10).forEach(function(e, i){
     html += '<div class="sub-item" data-idx="'+i+'" data-name="'+e.n.replace(/'/g,"\\'")+'" onclick="selectSubItem(this,\''+e.n.replace(/'/g,"\\'")+'\')">'+
       '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:28px;height:28px;border-radius:8px;font-size:11px;">'+bt+'</div>'+
@@ -6112,6 +6114,25 @@ function fbExSetsDelta(exName) {
   return Math.min(FB_ADJ_MAX_PER, Math.max(1, Math.round(rec.d / occ)));
 }
 window.fbExSetsDelta = fbExSetsDelta;
+
+// v103b:换动作前告知「之前加的组不会跟着走」
+// 由来:组数偏移按动作名记(adj.ex['杠铃卧推']),换成别的动作后新动作读不到,
+//   于是静默回到计划原组数 —— 用户不知道自己加的量没了,还以为一直在生效。
+//   而「刚加完量才想换动作」恰恰是高发场景(换动作常因不想练/关节不舒服)。
+// ⚠️ 只提示「不带过去」,不自动迁移:那 N 组是按**旧动作**的容量缺口算出来的,
+//    搬到新动作未必成立 —— 自动迁移等于凭空造一个没依据的处方。
+// ⚠️ 也不下「该不该换」的结论:换动作是用户的判断,这里只补一个他不知道的事实。
+function fbSwapAdjNoticeHtml(exName) {
+  var adj = fbGetPlanAdj();
+  var rec = adj.ex && adj.ex[exName];
+  if (!rec || !(rec.d > 0)) return '';
+  return '<div style="margin:8px 0 2px;padding:8px 10px;border-radius:10px;'
+    + 'background:rgba(249,115,22,0.10);border:1px solid rgba(249,115,22,0.35);'
+    + 'font-size:11.5px;line-height:1.6;color:var(--text2);">'
+    + '你之前给这个动作每周加了 ' + rec.d + ' 组。换成别的动作后，这 ' + rec.d
+    + ' 组不会跟过去，新动作按计划原来的组数练。</div>';
+}
+window.fbSwapAdjNoticeHtml = fbSwapAdjNoticeHtml;
 
 // 处方落地按钮(诊断卡「容量不足」那一条)
 function fbVolumeRxHtml(idx) {
