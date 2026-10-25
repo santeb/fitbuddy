@@ -11077,5 +11077,116 @@ function fbStallCardBody(outerItems) {
       '同时改三个以上，4 周后你分不清是哪个改动起了作用。</div>';
   }
 
+  // v105 外部变量排除:给处方之前先把睡眠/减脂/生病这三样排除一遍 —— 详见函数注释。
+  html += fbStallCtxHtml(items);
+
   return html;
 }
+
+// ── v105 · 诊断的「外部变量排除」 ──────────────────────────────────
+// 来源:之前整张诊断完全跑在力量数据上 —— 它能算出「这个动作三周没涨」,
+//      但不知道这三周你有没有睡够、有没有在减脂、有没有生病。少了这一问,
+//      「该改训练了」这个结论有一定概率是在冤枉人。
+// ⚠️ 改这块之前先看这四条纪律,别把它做成一个日常打卡:
+//   ① **只在已经判出卡点、准备动手改的那一刻出现。** 日常什么都不填 ——
+//      加一样每天要记的东西,就跟「愿意花 3 秒记成绩」这个前提直接打架。
+//   ② **挂在现有诊断卡的最后一块**,不新增卡片区域(已经有六套反馈,再开一套会互相打架)。
+//   ③ **不给分。** 是/否二选一,没有中间值、不算总分 —— 一旦有分,用户就开始刷分而不是看趋势。
+//   ④ **只给 14 天冷却,不给永久记住。** 生活状况会变,两周之后再问一次也不啰嗦。
+// ⚠️ 措辞纪律:永远不说「你的停滞跟训练无关」。那条结论得由他自己下 ——
+//    这里只把另一种可能摆出来,由他决定处方现在执行还是等两周。
+var FB_CTX_DAYS = 14;
+var FB_CTX_ITEMS = [
+  { k: 'sleep', t: '最近一周没睡够' },
+  { k: 'diet',  t: '最近在控制饮食' },
+  { k: 'ill',   t: '生病，或者最近特别累' }
+];
+function fbGetCtx() {
+  try { return JSON.parse(localStorage.getItem('fitbuddy_ctx') || 'null') || { picks: [], at: 0 }; }
+  catch (e) { return { picks: [], at: 0 }; }
+}
+function fbSetCtx(c) {
+  try { localStorage.setItem('fitbuddy_ctx', JSON.stringify(c)); } catch (e) {}
+}
+function fbCtxIsFresh() {
+  var c = fbGetCtx();
+  if (!c.at) return false;                      // 一次都没答过 → 永远算「还没问」
+  return (Date.now() - c.at) < FB_CTX_DAYS * 86400000;
+}
+function fbCtxLabel(k) {
+  for (var i = 0; i < FB_CTX_ITEMS.length; i++) if (FB_CTX_ITEMS[i].k === k) return FB_CTX_ITEMS[i].t;
+  return '';
+}
+// 内部片段单独抽出来:点击勾选项时只换这块 innerHTML,不用重算整张诊断卡(那张很长)。
+function fbCtxInnerHtml() {
+  var c = fbGetCtx();
+  var picks = Array.isArray(c.picks) ? c.picks : [];
+  if (fbCtxIsFresh()) {
+    // 答过了也要留痕:整块消失会让他以为自己没答过,下次还得再来一遍。
+    var line = picks.length
+      ? '你说了：<b style="color:var(--text);">' + picks.map(function (k) { return fbEsc(fbCtxLabel(k)); }).join('、') + '</b><br>'
+        + '这里任意一样，都够让成绩停在原地 —— <b style="color:var(--text);">不是上面的处方错了，是它可能来得不是时候。</b>'
+        + '等这一样过去两周再看；急着同时改训练，4 周后你分不清是哪个起了作用。'
+      : '三样都排除了。<b style="color:var(--text);">上面那份改法是干净的</b> —— 按它做 4 周，然后回来对照。';
+    return '<div style="font-size:12px;color:var(--text2);line-height:1.7;">' + line + '</div>'
+      + '<div onclick="fbCtxReset()" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;">改一下答案</div>';
+  }
+  return '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px;">在按上面改之前，先排除这三样</div>'
+    + '<div style="font-size:11.5px;color:var(--text3);line-height:1.65;margin-bottom:9px;">'
+    + '这三样都会让成绩停在原地，但都不是「练得不对」。有就勾一下 —— '
+    + '勾完，上面那份处方要不要立刻执行，你自己掂量。</div>'
+    + '<div style="display:flex;flex-direction:column;gap:6px;">'
+    + FB_CTX_ITEMS.map(function (x) {
+        var on = picks.indexOf(x.k) >= 0;
+        return '<div onclick="fbCtxPick(\'' + x.k + '\')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;'
+          + 'border:1px solid ' + (on ? 'var(--primary)' : 'var(--border)') + ';border-radius:9px;'
+          + 'background:' + (on ? 'var(--primary-light)' : 'var(--bg)') + ';cursor:pointer;">'
+          + '<span style="flex:none;width:15px;height:15px;border-radius:4px;border:1.5px solid ' + (on ? 'var(--primary)' : 'var(--border)') + ';'
+          + 'background:' + (on ? 'var(--primary)' : 'transparent') + ';color:#fff;font-size:10px;font-weight:900;line-height:14px;text-align:center;">'
+          + (on ? '✓' : '') + '</span>'
+          + '<span style="font-size:12px;color:' + (on ? 'var(--text)' : 'var(--text2)') + ';font-weight:' + (on ? '700' : '500') + ';">'
+          + fbEsc(x.t) + '</span></div>';
+      }).join('')
+    + '</div>'
+    + '<div onclick="fbCtxDone()" style="margin-top:9px;padding:8px 0;text-align:center;border-radius:10px;'
+    + 'background:var(--primary);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">'
+    + (picks.length ? '就这些' : '以上都没有') + '</div>';
+}
+function fbStallCtxHtml(items) {
+  var shown = (items || []).filter(function (it) { return it && it.cause !== 'recovery'; });
+  // ⚠️ 已经判成「恢复不足」就别再问一遍恢复:那等于同一张卡里同时说
+  //    「我算出来你恢复不够」和「你自己说恢复够不够」——自相矛盾,而且重复造反馈。
+  if (!shown.length) return '';
+  return '<div id="fbCtxBar" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">'
+    + fbCtxInnerHtml() + '</div>';
+}
+// ⚠️ 勾选只是填草稿,不动 at —— at 是「已提交」的标记。
+//    否则点第一个的瞬间就跳成已答状态,第二第三项就勾不上了。
+function fbCtxPick(k) {
+  var c = fbGetCtx();
+  if (!Array.isArray(c.picks)) c.picks = [];
+  var i = c.picks.indexOf(k);
+  if (i >= 0) c.picks.splice(i, 1); else c.picks.push(k);
+  fbSetCtx(c);
+  fbRefreshCtxBar();
+}
+function fbCtxDone() {
+  var c = fbGetCtx();
+  c.at = Date.now();
+  fbSetCtx(c);
+  fbRefreshCtxBar();
+}
+// 「改一下答案」:只清提交标记,保留上次的勾选,让他改而不是重填一遍。
+function fbCtxReset() {
+  var c = fbGetCtx();
+  c.at = 0;
+  fbSetCtx(c);
+  fbRefreshCtxBar();
+}
+function fbRefreshCtxBar() {
+  var el = document.getElementById('fbCtxBar');
+  if (el) el.innerHTML = fbCtxInnerHtml();
+}
+window.fbCtxPick = fbCtxPick;
+window.fbCtxDone = fbCtxDone;
+window.fbCtxReset = fbCtxReset;
