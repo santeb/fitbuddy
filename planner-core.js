@@ -337,9 +337,14 @@ function applyTemplate(i) {
   });
   // 周期长度(快速模板预设;马拉松固定16周不联动)
   if (t.cycleLength && t.goal !== "marathon") {
+    // 模板自带的长度也要过白名单:模板写 4/6/12 都在名单里,但写 3 的话 chip 已经被删了,
+    // 直接查会查出一个都不选中。夹完再回显,和 getCycleLength() 拿到的是同一个值。
+    var wantCycle = (typeof normalizeCycleLength === 'function')
+      ? normalizeCycleLength(t.cycleLength) : parseInt(t.cycleLength, 10);
     document.querySelectorAll('#cycleLenChips .chip').forEach(function(c){
-      c.classList.toggle('active', parseInt(c.dataset.cycle) === t.cycleLength);
+      c.classList.toggle('active', parseInt(c.dataset.cycle) === wantCycle);
     });
+    _cycleLenTouched = true;   // 模板是显式选择,之后切水平不要再把它改掉
   }
   // 设备或跑步环境
   if (t.goal === "marathon") {
@@ -444,7 +449,7 @@ function isInjured(exName) {
 }
 
 // ============ 周期管理 ============
-// 获取当前周期长度（周数）：马拉松固定16周，其余读取用户自定义（默认4周，范围3-12）
+// 获取当前周期长度（周数）：马拉松固定16周，其余读取用户自定义（默认4周，可选 4/6/8/10/12，见 FB_CYCLE_LENGTHS）
 // 上面这句"马拉松固定16周"以前是一句假话 —— 实现只读 prefs.cycleLength, 根本没有 marathon
 // 分支。于是 16 周的马拉松计划跑下来, 每一周是按 (w-1)%cycleLength 去取周期表的:
 //   · 用户先用别的周期生成过计划再切马拉松(prefs.cycleLength 会残留 6 或 12)
@@ -454,18 +459,80 @@ function isInjured(exName) {
 // 同一个文件里 checkAutoAdvanceWeek / renderWeekBar / renderCycleCalendar 早就各自写了一遍
 // goal==="marathon" ? 16 : getCycleLength(), 唯独源头没兑现, 等于每次都要下游自己打补丁。
 // 现在在源头一次性兑现: 那三处的结果不变(16), 取模类调用也终于拿到同一个数。
-function getCycleLength() {
-  try {
-    if (typeof lastPlan !== 'undefined' && lastPlan && lastPlan.goal === 'marathon') return 16;
-  } catch (e) {}
+// 可选周期长度白名单。3 周已取消(减载占 1/3、峰值只到 +5%,等于没有渐进超负荷);
+// 5/7/9/11 这类值不是不能算,而是会撞出不完整的块 —— 减载占比冲到 27-29%,
+// 末尾那一块只爬一两周就被大减载截断。周期表是按"3 周爬坡 + 1 周半减载"成块排的,
+// 长度不落在块边界上,排出来的曲线就是残的。所以只保留能被块结构整除得干净的这几个。
+// ⚠️ 必须显式声明:以前只有三处赋值(模板/存档/点 chip)隐式创建了它,谁都没赋值过就直接读
+//   会抛 ReferenceError —— 而读它的那行正好在顶层初始化序列里,一次抛出让后面整段初始化
+//   全部不执行(等级、成就、补给、计算器那些 var 全停在 undefined),症状是半页白屏。
+var _cycleLenTouched = false;   // 用户有没有亲手选过周期长度(选过就不再按水平自动改)
+
+// 训练水平 → 建议周期长度。新手负荷轻、能连续爬更久;进阶者重量大、疲劳攒得快,
+// 需要更频繁的减载,所以周期反而短。
+var FB_LEVEL_CYCLE_DEFAULT = { beginner: 6, intermediate: 6, advanced: 4 };
+
+var FB_CYCLE_LENGTHS = [4, 6, 8, 10, 12];
+// 把任意取值夹到白名单里最近的一档。老存档/手改 localStorage 里可能存着 3、5、7、9、11。
+function normalizeCycleLength(len) {
+  var n = parseInt(len, 10);
+  if (isNaN(n)) return 4;
+  var best = 4, dist = Infinity;
+  for (var i = 0; i < FB_CYCLE_LENGTHS.length; i++) {
+    var d = Math.abs(FB_CYCLE_LENGTHS[i] - n);
+    if (d < dist) { dist = d; best = FB_CYCLE_LENGTHS[i]; }
+  }
+  return best; // 并列时取小的那个:宁可周期短一点、减载来得勤一点,也别让人一直爬不到底
+}
+// 取周期长度。两条路径必须分开读, 混着用就会错:
+//   · 生成新计划(传 goalOverride): 用表单里"这一次选的"长度。此刻 lastPlan 还是上一份,
+//     读它会拿到旧长度 —— doGenerate 里算 weekOffset 那行就跑在 lastPlan 更新之前,
+//     从增肌切马拉松时会拿到 4 而不是 16, 排出的周偏移和按 16 周渲染的卡片对不上。
+//   · 渲染当前计划(不传): 用这份计划生成时记下的 lastPlan.cycleLength, 不是 prefs。
+//     否则用户把 chip 从 12 改成 4、还没点生成, 界面立刻按 4 周显示(「第 9/4 周」),
+//     可屏幕上那份计划还是按 12 周排的动作 —— 长度先变了、内容没变, 两件事对不上。
+//     周期长度生效的唯一时机是「生成计划」那一瞬间, 不是点 chip 那一瞬间。
+function getCycleLength(goalOverride) {
+  if (goalOverride === 'marathon') return 16;
+  if (!goalOverride) {
+    try {
+      if (typeof lastPlan !== 'undefined' && lastPlan) {
+        if (lastPlan.goal === 'marathon') return 16;
+        if (lastPlan.cycleLength) return normalizeCycleLength(lastPlan.cycleLength);
+      }
+    } catch (e) {}
+  }
   try {
     var p = JSON.parse(localStorage.getItem("fitbuddy_prefs") || "{}");
-    var len = parseInt(p.cycleLength) || 4;
-    if (isNaN(len)) len = 4;
-    if (len < 3) len = 3;
-    if (len > 12) len = 12;
-    return len;
+    return normalizeCycleLength(p.cycleLength);
   } catch(e) { return 4; }
+}
+
+// 周期长度改小 / 切了目标之后, currentWeek 可能已经越过新周期的长度。
+// 12 周跑到第 9 周时改成 4 周: 每一处取模都变成 (9-1)%4 = 第 1 周, 进度条显示「第 9/4 周」,
+// 而自动跳周里的 currentWeek >= totalWeeks 从此永远成立 —— 计划就卡死在这一周, 再也不往前走。
+// 折回当前周期内的位置, 已经跑过的整周期数记到 currentCycle 上: 进度不丢, 减载节奏也不乱。
+function fbReconcileWeekToCycle(N) {
+  N = parseInt(N, 10);
+  if (!N || N < 1) return false;
+  if (typeof currentWeek === 'undefined') return false;
+  var w = parseInt(currentWeek, 10);
+  if (isNaN(w) || w <= N) return false;
+  var cyclesDone = Math.floor((w - 1) / N);
+  currentWeek = ((w - 1) % N) + 1;
+  if (typeof currentCycle === 'undefined' || isNaN(parseInt(currentCycle, 10))) currentCycle = 1;
+  currentCycle += cyclesDone;
+  try { savePrefs(); } catch (e) {}
+  try { if (typeof lastPlan !== 'undefined' && lastPlan) lastPlan.cycle = currentCycle; } catch (e) {}
+  return true;
+}
+
+// 这套计划到现在跑过几周(跨周期累计)。用它判断"还没到该减载的时候", 比只看周数靠谱。
+function fbPlanElapsedWeeks(N) {
+  N = parseInt(N, 10) || 4;
+  var c = (typeof currentCycle !== 'undefined' && parseInt(currentCycle, 10)) || 1;
+  var w = (typeof currentWeek !== 'undefined' && parseInt(currentWeek, 10)) || 1;
+  return (c - 1) * N + w;
 }
 function nextCycle() {
   currentCycle++;
@@ -1296,17 +1363,30 @@ function estimateExE1RM(entries) {
 
 // 主入口:从 trainingLog 估算训练水平档位
 // 返回 null(数据不足/已关闭) 或 {level, from, evidence:[...], sampleCount, exerciseCount, bodyWeight, gender}
+//
+// ⚠️ 判据是两道闸, 取较小值, 必须同时过:
+//    ① 相对力量 = 估算1RM / 体重  ② 绝对力量 = 估算1RM(kg)
+//    只按 ① 判时, 减脂用户体重掉 5kg 就能让倍数从 0.90× 涨到 0.96× 并跨过中级线 ——
+//    "变轻"被当成"变强", 系统据此加组数上难度, 而力量一点没涨。② 就是拦这个的:
+//    绝对重量没涨, 倍数再高也不升档。
+//    两道闸都在 data-constants.js(LEVEL_BENCHMARKS / LEVEL_ABS_BENCHMARKS), 这里不重造数值。
 function estimateLevelFromLog() {
   try {
     if (typeof trainingLog === 'undefined' || !trainingLog) return null;
     if (localStorage.getItem(LEVEL_CAL_OFF_KEY) === '1') return null; // 用户已明确拒绝
-    var bw = getBodyWeightForCalibration();
-    if (!bw) return null;                       // 没体重 → 无法换算倍数
+    var bw = getBodyWeightForCalibration();     // 没体重也允许校准: 走绝对重量单闸
     if (typeof LEVEL_BENCHMARKS === 'undefined') return null;
     var prof = {};
     try { prof = JSON.parse(localStorage.getItem('fitbuddy_profile') || '{}'); } catch(e) {}
     var gender = (prof.gender === 'female') ? 'female' : 'male';
     var bench = LEVEL_BENCHMARKS[gender] || LEVEL_BENCHMARKS.male;
+    // 绝对重量闸按动作名索引;表缺失时退回单闸(老行为),不会因为少一张表就整个不校准
+    var absMap = {};
+    if (typeof LEVEL_ABS_BENCHMARKS !== 'undefined') {
+      (LEVEL_ABS_BENCHMARKS[gender] || LEVEL_ABS_BENCHMARKS.male || []).forEach(function(a) {
+        absMap[a.ex] = a;
+      });
+    }
     var cutoff = Date.now() - 90 * 864e5;       // 只看近 90 天,久远数据不代表当前水平
     var evidence = [], sampleCount = 0;
     bench.forEach(function(b) {
@@ -1322,9 +1402,23 @@ function estimateLevelFromLog() {
       if (recent.length < 2) return;                            // 单条记录偶然性太大
       var e1rm = estimateExE1RM(recent);
       if (!(e1rm > 0)) return;
-      var ratio = e1rm / bw;
-      var tier = ratio >= b.top ? 2 : (ratio >= b.mid ? 1 : 0);
-      evidence.push({ex:b.ex, e1rm:Math.round(e1rm*10)/10, ratio:Math.round(ratio*100)/100, mid:b.mid, top:b.top, tier:tier});
+      var ratio = bw ? e1rm / bw : 0;
+      var ratioTier = bw ? (ratio >= b.top ? 2 : (ratio >= b.mid ? 1 : 0)) : null;
+      var a = absMap[b.ex];
+      var absTier = a ? (e1rm >= a.absTop ? 2 : (e1rm >= a.absMid ? 1 : 0)) : null;
+      var tier;
+      if (ratioTier === null && absTier === null) return;        // 两道闸都缺数据 → 这个动作不作证
+      else if (ratioTier === null) tier = absTier;
+      else if (absTier === null) tier = ratioTier;
+      else tier = Math.min(ratioTier, absTier);                  // 取小:宁可低判不高判
+      evidence.push({
+        ex: b.ex,
+        e1rm: Math.round(e1rm * 10) / 10,
+        ratio: bw ? Math.round(ratio * 100) / 100 : 0,
+        mid: b.mid, top: b.top,
+        absMid: a ? a.absMid : 0, absTop: a ? a.absTop : 0,
+        ratioTier: ratioTier, absTier: absTier, tier: tier
+      });
       sampleCount += recent.length;
     });
     if (evidence.length < 2) return null;                       // 至少 2 个不同动作才敢动档位
@@ -1373,17 +1467,21 @@ function renderLevelCalibrationBanner() {
   var cal = _lastLevelCalibration;
   if (!cal || !cal.from || cal.from === cal.level) return '';
   var names = {beginner:'新手 🌱', intermediate:'中级 ⚡', advanced:'进阶 🔥'};
-  var ev = (cal.evidence || []).slice().sort(function(a,b){ return b.ratio - a.ratio; }).slice(0, 3);
+  var ev = (cal.evidence || []).slice().sort(function(a,b){ return (b.e1rm||0) - (a.e1rm||0); }).slice(0, 3);
   var rows = ev.map(function(e){
     var mark = e.tier >= 2 ? '🔥' : (e.tier >= 1 ? '⚡' : '🌱');
+    var absTxt = e.absMid ? '（绝对中级线 '+e.absMid+'kg）' : '';
+    var relTxt = e.ratio ? ' ≈ <b>'+e.ratio+'×</b> 体重（相对中级线 '+e.mid+'×）' : '';
     return '<div style="font-size:12px;color:var(--text2);margin-top:3px;">'+mark+' '+
-      e.ex.replace(/'/g, "")+' 估算 1RM <b>'+e.e1rm+'kg</b> ≈ <b>'+e.ratio+'×</b> 体重</div>';
+      e.ex.replace(/'/g, "")+' 估算 1RM <b>'+e.e1rm+'kg</b>'+absTxt+relTxt+'</div>';
   }).join('');
   return '<div class="adaptive-banner">'+
     '<div class="adaptive-title">🧠 已按你的训练记录自动校准</div>'+
     '<div class="adaptive-body">近 90 天里有 <b>'+cal.exerciseCount+'</b> 个动作、<b>'+cal.sampleCount+
-      '</b> 条带重量的记录(体重 '+cal.bodyWeight+'kg),水平已从 <b>'+names[cal.from]+
-      '</b> 上调为 <b>'+names[cal.level]+'</b>。</div>'+
+      '</b> 条带重量的记录'+(cal.bodyWeight ? '（体重 '+cal.bodyWeight+'kg）' : '')+',水平已从 <b>'+names[cal.from]+
+      '</b> 上调为 <b>'+names[cal.level]+'</b>。'+
+      '<div style="font-size:11px;opacity:0.8;margin-top:4px;">判据:相对力量(倍体重)与绝对重量(kg)两条线同时过 —— '+
+      '减脂掉体重不会把"变轻"算成"变强"。</div></div>'+
     rows+
     '<div style="margin-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
       '<button class="adaptive-undo" onclick="undoLevelCalibration(\''+cal.from+'\')">↩ 改回 '+names[cal.from]+'</button>'+
@@ -2066,7 +2164,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",band:"自重+弹力带 🎀",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var cycleLen = getCycleLength();
   // goal 必须传进去: 马拉松按自己的四期分期排周, 不能套力量的波浪周期
-  var wkInfo = buildCycleWeekInfo(cycleLen, goal)[(currentWeek - 1) % cycleLen];
+  // level 必须传进去: 新手不排双减载, 只有周期表知道这件事, 漏传就退回"第5周半减载"
+  var wkInfo = buildCycleWeekInfo(cycleLen, goal, level)[(currentWeek - 1) % cycleLen];
   // 心肺目标:使用心肺专用周期化配置覆盖 wkInfo 和 goalCfg
   var cardioWeekCfg = null;
   if (goal === 'cardio' && typeof CARDIO_WEEK_CONFIG !== 'undefined') {
@@ -2082,6 +2181,12 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
       rpe: cardioWeekCfg.rpe
     });
   }
+  // 周期表自动排的减载周也要记进减载日志。以前只有用户手动按「本周减载」才记(见 fbSetDeloadOverride),
+  // 于是 fbWeeksSinceDeload() 永远返回 99, 疲劳诊断卡天天挂着「从记录上看还没减载过」——
+  // 哪怕他这周刚跑完 -30% 的大减载周。日志按周 key 去重, 同一周反复渲染不会堆记录。
+  try {
+    if (wkInfo && wkInfo.deload && typeof fbPushDeloadLog === 'function') fbPushDeloadLog(fbWeekKey());
+  } catch (e) {}
   var warmup = getWarmup(level, goal);
   var tips = GOAL_TIPS[goal] || [];
   // 运动消耗:用体重+目标+水平的正确算法(而非逐动作瞎估)
@@ -2141,7 +2246,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } else {
     html += '<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center;">第 '+currentCycle+' 周期 · 第 '+currentWeek+' 周</div>';
   }
-  // 👑 BOSS 战卡片(非马拉松计划,周期最后一周解锁)
+  // 👑 BOSS 战卡片(非马拉松计划;解锁窗口是"减载走完之后",减载周本身不出现)
   html += renderBossCard(goal);
   // 周选择器 + 进度面板
   html += renderWeekBar(goal);
@@ -2578,7 +2683,11 @@ function doGenerate() {
       }
 
       var schedule = getSchedule(days);
-      var weekOffset = goal === "marathon" ? (currentWeek - 1) : getWeekOffset(((currentWeek - 1) % getCycleLength()) + 1, getCycleLength());
+      // ⚠️ 这一行在 lastPlan 更新(下方 2670)之前执行, 周期长度必须按本次 goal 算, 不能读 lastPlan:
+      //    从增肌切马拉松时会拿到旧的 4, 排出的 weekOffset 和下面按 16 周渲染的卡片对不上。
+      var _cycleLenNow = getCycleLength(goal);
+      fbReconcileWeekToCycle(_cycleLenNow); // 周期改小后 currentWeek 越界 → 折回, 否则自动跳周停摆
+      var weekOffset = goal === "marathon" ? (currentWeek - 1) : getWeekOffset(((currentWeek - 1) % _cycleLenNow) + 1, _cycleLenNow);
       var trainingDays;
       var pearFixedUsed = false;
       if (_forcePearFixed) {
@@ -2618,7 +2727,9 @@ function doGenerate() {
           fbSetLevelAt(_prevLv, level);
         }
       } catch (e) {}
-      lastPlan = { goal:goal, level:level, days:days, equip:equip, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
+      // cycleLength 存进去: 这份计划是按几周排的, 以后就一直按几周显示它。
+      // 用户之后改了 chip 但还没生成时, 界面读的是这里的值而不是表单 —— 长度和内容同源。
+      lastPlan = { goal:goal, level:level, days:days, equip:equip, cycleLength:_cycleLenNow, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
       lastPlan._pearFixed = pearFixedUsed; // 🍐 当前计划是否为梨形固定计划(渲染/统计用)
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄,用于心率 Zone 计算
@@ -2760,7 +2871,9 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   var isBwMap = (equip === "bodyweight" && goal !== "cardio" && goal !== "marathon");
   if (isBwMap) {
     var cycleLen = getCycleLength();
-    var wkArr = buildCycleWeekInfo(cycleLen);
+    // goal / level 与主计划传同一套: 自重变式升降档读的就是这张表, 口径错位会直接
+    // 反映成"动作难度跳了一档" —— 用户看得见。
+    var wkArr = buildCycleWeekInfo(cycleLen, goal, level);
     var wkNum = ((currentWeek - 1) % cycleLen) + 1;
     var wk = wkArr[wkNum - 1];
     var shift = getBwShift(wk ? wk.weightAdjust : "+0%");
@@ -6287,7 +6400,10 @@ function fbReadyExCount() {
 }
 function fbPlanReviewHtml() {
   var age = fbPlanAgeWeeks();
-  if (age < FB_PLAN_REVIEW_WEEKS) return '';
+  // 门槛跟着周期长度走: 4 周周期跑完第一轮(第 4 周)就该看一次, 死守 6 周会让他第一轮
+  // 结束还看不到这条; 12 周周期第一轮跑到一半就被催着复盘又太早。取两者里较小的。
+  var reviewGate = Math.min(FB_PLAN_REVIEW_WEEKS, fbPeriodTotalWeeks());
+  if (age < reviewGate) return '';
   var last = 0;
   try { last = parseInt(localStorage.getItem('fitbuddy_planreview_at') || '0', 10) || 0; } catch (e) {}
   if (age - last < FB_PLAN_REVIEW_SNOOZE) return '';
@@ -7848,9 +7964,17 @@ function loadPrefs() {
     // loadPrefs 在 loadAllData 之后执行,这里只兜底无计划时的周数恢复
     if (p.week && (!lastPlan || !lastPlan.week)) currentWeek = p.week;
     if (p.cycleLength) {
-      document.querySelectorAll('#cycleLenChips .chip').forEach(function(c){ c.classList.remove("active"); });
-      var cc = document.querySelector('#cycleLenChips .chip[data-cycle="'+p.cycleLength+'"]');
-      if (cc) cc.classList.add("active");
+      // 先夹白名单再回显:老存档里可能存着已取消的 3 周、或从来没得选的 5/7/9/11。
+      // 直接拿原值去查 chip 会查不到,结果一个都不选中 —— 用户看到的是"周期长度: 空",
+      // 而 getCycleLength() 那边已经夹成 4 了,两边又对不上。
+      var want = (typeof normalizeCycleLength === 'function')
+        ? normalizeCycleLength(p.cycleLength) : parseInt(p.cycleLength, 10);
+      var cc = document.querySelector('#cycleLenChips .chip[data-cycle="'+want+'"]');
+      if (cc) {
+        document.querySelectorAll('#cycleLenChips .chip').forEach(function(c){ c.classList.remove("active"); });
+        cc.classList.add("active");
+      }
+      _cycleLenTouched = true;  // 存档里的长度算用户选过的,切水平时不覆盖
     }
   } catch(e) {}
 }
@@ -7922,8 +8046,17 @@ document.querySelectorAll("#cycleLenChips .chip").forEach(function(c){
   c.addEventListener("click", function(){
     document.querySelectorAll("#cycleLenChips .chip").forEach(function(x){ x.classList.remove("active"); });
     c.classList.add("active");
+    _cycleLenTouched = true;   // 用户自己选过了,以后切训练水平不要再替他改
+    // 旧长度必须在 savePrefs 之前取: prefs 一写, 没有 lastPlan 时就读回新值了,
+    // toast 会变成"当前这份还是 4 周"(其实是 4 周, 等于自己跟自己说了一遍, 毫无信息量)。
+    var _oldLen = getCycleLength();
+    var _newLen = parseInt(c.dataset.cycle, 10);
     savePrefs();
-    showToast("周期长度已设为 " + c.dataset.cycle + " 周，点击「生成我的计划」后生效 ✨");
+    // 说清"改的是下一份"这件事: 周期长度跟着计划走, 屏幕上这份还是按旧长度排的,
+    // 不说清楚用户会以为点了没反应。
+    showToast(_oldLen === _newLen
+      ? ("周期长度保持 " + _newLen + " 周 ✨")
+      : ("下一份计划按 " + _newLen + " 周排；当前这份仍是 " + _oldLen + " 周，点「生成我的计划」后切换 ✨"));
   });
 });
 
@@ -7933,6 +8066,33 @@ document.querySelectorAll("#injuryChips .chip").forEach(function(c){
     c.classList.toggle("active");
   });
 });
+
+// 训练水平 ↔ 周期长度联动:没亲手选过周期长度的人,给一个跟水平匹配的默认值。
+// 亲手选过(_cycleLenTouched)就一次都不动 —— 自动改掉用户明确选的东西比不改更糟。
+// 返回是否真的改了(只有改了才值得弹 toast,启动时静默对齐不该打扰人)。
+function syncCycleLenToLevel(silent) {
+  try {
+    if (_cycleLenTouched) return false;
+    var lvEl = document.querySelector('input[name="level"]:checked');
+    var lv = lvEl ? lvEl.value : 'beginner';
+    var want = normalizeCycleLength(FB_LEVEL_CYCLE_DEFAULT[lv] || 6);
+    var chips = document.querySelectorAll('#cycleLenChips .chip');
+    var cur = null;
+    chips.forEach(function(c){ if (c.classList.contains('active')) cur = parseInt(c.dataset.cycle, 10); });
+    if (cur === want) return false;
+    chips.forEach(function(c){ c.classList.toggle('active', parseInt(c.dataset.cycle, 10) === want); });
+    savePrefs();   // chip 是唯一真源,savePrefs 从 chip 读;不写回去下次进还是旧的
+    if (!silent && typeof showToast === 'function') {
+      showToast('周期长度按训练水平调整为 ' + want + ' 周（点上方 chip 可自己改）✨');
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+// 训练水平单选的 onchange(index.html 里三个 radio 都挂了这个)。
+function onLevelChange() {
+  syncCycleLenToLevel(false);
+}
 
 // 初始化
 // 启动时清理可能损坏的 JSON localStorage 键
@@ -7956,12 +8116,24 @@ document.querySelectorAll("#injuryChips .chip").forEach(function(c){
   });
 })();
 
-loadAllData();
-loadPrefs();
-toggleEquip();
-mergeCustomExes();
-migrateBodyweightLog(); // 一次性修复:自重动作误存的重量字段(PR 假记录)
-renderLib();
+// 顶层初始化是一串挨着执行的语句,任何一步抛出,后面整段都不执行 ——
+// 曾经漏定义一个函数,结果 LEVELS / ACHIEVEMENTS / SUPPS_DATA / _calcTabMap 这些
+// 后面的 var 全停在 undefined,症状是进度页、补给页空白 + 计算器 tab 点了没反应,
+// 而控制台只有一行不起眼的 ReferenceError。逐步隔离:坏一步只坏一步,并且报出名号。
+function _initStep(name, fn) {
+  try { fn(); } catch (e) { console.error('[FitBuddy] 初始化步骤失败:', name, e); }
+}
+_initStep('loadAllData', loadAllData);
+_initStep('loadPrefs', loadPrefs);
+// 首次打开(没有存档、也就没手动选过周期)时把周期长度跟训练水平对上:
+// 默认水平是新手,周期就该是 6 周而不是默认的 4 周。有存档时 loadPrefs 已经把
+// _cycleLenTouched 置起来了,这一步会自动跳过,不会覆盖用户自己的选择。
+// silent=true: 启动时静默对齐,不弹 toast。
+_initStep('syncCycleLenToLevel', function(){ syncCycleLenToLevel(true); });
+_initStep('toggleEquip', toggleEquip);
+_initStep('mergeCustomExes', mergeCustomExes);
+_initStep('migrateBodyweightLog', migrateBodyweightLog); // 一次性修复:自重动作误存的重量字段(PR 假记录)
+_initStep('renderLib', renderLib);
 
 // 如果有上次生成的计划,直接渲染 HTML(用 doGenerateInternal,不触发按钮 Loading)
 // 延迟到 DOMContentLoaded 后执行，确保后续脚本已加载
@@ -8056,7 +8228,7 @@ var ACHIEVEMENTS = [
   { id: 'train_100',  cat: '💪 训练次数', icon: '💪', name: '百战之躯', desc: '累计完成100次训练' },
   { id: 'ex_10',      cat: '🔍 探索发现', icon: '🔍', name: '动作达人', desc: '解锁10个不同动作' },
   { id: 'equip_3',    cat: '🔍 探索发现', icon: '🔍', name: '全能战士', desc: '使用过3种不同器械训练' },
-  { id: 'boss_first', cat: '👑 BOSS战', icon: '👑', name: '初次击杀', desc: '首次击败周期BOSS' },
+  { id: 'boss_first', cat: '👑 BOSS战', icon: '👑', name: '初次击杀', desc: '首次击败减载后BOSS' },
   { id: 'boss_5',     cat: '👑 BOSS战', icon: '👑', name: '五度称王', desc: '累计击败BOSS 5次' }
 ];
 
@@ -8220,7 +8392,7 @@ function showAchievementToast(ach) {
 
 // ============ 👑 BOSS 战(周期末测试日) + 🌙 休息日彩蛋 ============
 // 设计原则:
-// - BOSS = 渐进超负荷的游戏化呈现:每个周期最后一周解锁一次极限测试
+// - BOSS = 渐进超负荷的游戏化呈现:每个周期解锁一次极限测试(窗口是减载走完之后,不是减载周里)
 // - 奇数周期=俯卧撑AMRAP(力量耐力),偶数周期=平板支撑(核心耐力),都无需器械、安全可测
 // - 击败条件 = 打破自己上个周期的纪录;首次挑战自动"首杀"
 // - 失败零惩罚:只显示"下个周期卷土重来",不扣任何东西
@@ -8289,10 +8461,34 @@ function fbEnsureGameCss() {
 }
 
 // BOSS 卡片(渲染进计划页)
+// 👑 BOSS 战解锁窗口: 减载走完之后, 而不是减载周里。
+// 为什么挪: 减载周(重量 -30%)的意义是清除疲劳, 同一周再安排一次力竭测试, 等于把减载取消了;
+//   而且疲劳状态下测出的成绩偏低, 拿它当"这轮练得怎么样"会失真 —— 用户看到自己退步了,
+//   其实是测早了。减载之后测到的才是真实水平, 语义也从"周期末硬撑"变成"恢复了, 来验证"。
+// 判定两条: ① 确实走过一次减载(已进下一周期, 或周数已越过本周期长度)
+//           ② 当前这一周本身不是减载周
+function fbBossWindowOpen() {
+  try {
+    var N = 4;
+    if (typeof getCycleLength === 'function') {
+      var n = parseInt(getCycleLength(), 10);
+      // 下限 4(不是 3): 3 周周期已从 UI 取消, 兜底值不该再是一个用户选不到的长度。
+      if (n >= 4 && n <= 16) N = n;
+    }
+    var passedDeload = (typeof currentCycle !== 'undefined' && currentCycle >= 2)
+      || (typeof currentWeek !== 'undefined' && currentWeek > N);
+    if (!passedDeload) return false;
+    if (typeof fbPeriodIsDeloadWeek === 'function') {
+      try { if (fbPeriodIsDeloadWeek(currentWeek)) return false; } catch (e) {}
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
 function renderBossCard(goal) {
   try {
     if (goal === 'marathon') return '';
-    if (currentWeek < getCycleLength()) return '';
+    if (!fbBossWindowOpen()) return '';
     fbEnsureGameCss();
     var type = fbBossTypeForCycle(currentCycle);
     var meta = FB_BOSS_META[type];
@@ -8305,7 +8501,7 @@ function renderBossCard(goal) {
     var attempts = 0;
     (fbGetBossData().records || []).forEach(function(r) { if (r.cycle === currentCycle) attempts++; });
     var html = '<div class="fb-boss-card' + (done ? ' defeated' : '') + '">'
-      + '<div class="fb-boss-head"><span class="fb-boss-tag">👑 周期末 · BOSS 战</span>'
+      + '<div class="fb-boss-head"><span class="fb-boss-tag">👑 减载后 · BOSS 战</span>'
       + '<span class="fb-boss-cycle">第 ' + currentCycle + ' 周期</span></div>'
       + '<div class="fb-boss-name">' + meta.icon + ' ' + meta.name + '</div>';
     if (done && thisCycleRec) {
@@ -8320,7 +8516,9 @@ function renderBossCard(goal) {
         + '<button class="fb-boss-btn ghost" style="flex:1;" onclick="nextCycle()">▶ 下一周期</button>'
         + '</div>';
     } else {
-      html += '<div class="fb-boss-desc">' + meta.desc + '</div>'
+      html += '<div class="fb-boss-desc">' + meta.desc
+        + '<div style="font-size:11px;opacity:0.75;margin-top:5px;">刚走完减载周,疲劳清得差不多了 —— '+
+          '这时候测到的数字,才是这轮训练真实的收获。</div></div>'
         + '<div class="fb-boss-best">'
         + (best === null ? '🗡 首次挑战,完成的瞬间就是"首杀"' : '🎯 当前纪录:' + best + ' ' + meta.unit + ' · 超过它就算击败')
         + '</div>'
@@ -10388,14 +10586,25 @@ function fbDeloadSignals() {
     });
   }
 
-  // 信号6: 太久没减载。6 周是疲劳债的临界点, 但这条单独出现不足以判断, 只给 15 分。
-  if (res.weeksSince >= 6) {
+  // 信号6: 太久没减载。阈值跟着周期长度走, 不写死 6/10:
+  //   4 周周期的人每 4 周就减一次, 用 6 周去衡量他, 会在刚减完的下一周就说"太久没减载";
+  //   12 周周期的人两次减载相隔最多 7 周, 又该更宽松。正常节奏下 weeksSince 不会超过 N,
+  //   超过 N 就是真的漏了一次。
+  //   还有 99(从没减载过)这个特殊值: 新用户第一周也是 99, 但他根本还没到该减载的时候 ——
+  //   只有"已经跑完至少一个完整周期却一次没减"才算异常。
+  var _N = fbPeriodTotalWeeks();
+  var _stale = res.weeksSince >= 99
+    ? (fbPlanElapsedWeeks(_N) > _N)
+    : (res.weeksSince >= _N);
+  if (_stale) {
     res.hasData = true;
     res.signals.push({
       key: 'stale', color: '#8B5CF6',
-      score: res.weeksSince >= 10 ? 20 : 15,
+      score: (res.weeksSince >= 99 || res.weeksSince >= _N + 4) ? 20 : 15,
       label: '太久没减载',
-      detail: res.weeksSince >= 99 ? '从记录上看还没减载过' : ('距离上次减载已经 ' + res.weeksSince + ' 周')
+      detail: res.weeksSince >= 99
+        ? '已经跑过一个周期了，记录里还没有一次减载'
+        : ('距离上次减载已经 ' + res.weeksSince + ' 周')
     });
   }
 
@@ -10590,7 +10799,7 @@ function fbMonthlyReport(offset) {
 // 强度是 0.25~1.0 的系数, 乘到当周的计划组数上。FB_PERIOD_BASE 是中位, 等于"不增不减"。
 //
 // ⚠️ 周期长度与小周期排布必须跟随主计划, 这张卡不许自己再写一套。
-//    曾经这里写死 16 周 + 固定"每 4 周减载", 而主计划用的是用户自选周期(3-12 周) +
+//    曾经这里写死 16 周 + 固定"每 4 周减载", 而主计划用的是用户自选周期(4/6/8/10/12 周) +
 //    buildCycleWeekInfo() 的排布规则 —— 只有用户选了 4 周时两套才重合。选 6/12 周的用户
 //    在卡上看到的减载周跟自己那天实际练的完全错位(爬坡周被标成减载、减载周反而加量),
 //    而快速模板里绝大多数不是 4 周。
@@ -10608,6 +10817,19 @@ function fbCurrentGoal() {
   return '';
 }
 
+// 当前计划的训练水平。和 goal 是同一个道理: 周期表需要它来判断新手档排不排双减载,
+// 判断来源必须和主计划生成处一致, 否则 P1 卡上的曲线和用户那天实际练的又是两套。
+function fbCurrentLevel() {
+  try {
+    if (typeof lastPlan !== 'undefined' && lastPlan && lastPlan.level) return lastPlan.level;
+  } catch (e) {}
+  try {
+    var el = document.querySelector('input[name="level"]:checked');
+    if (el && el.value) return el.value;
+  } catch (e) {}
+  return '';
+}
+
 // 周期长度 = 用户的计划周期, 和主计划 buildCycleWeekInfo(cycleLen) 用的是同一个值。
 function fbPeriodTotalWeeks() {
   if (typeof getCycleLength === 'function') {
@@ -10615,7 +10837,8 @@ function fbPeriodTotalWeeks() {
       var n = parseInt(getCycleLength(), 10);
       // 上限 16(r 而不是 12): getCycleLength() 对马拉松返回 16, 夹到 12 会被兜底成默认的 4,
       // P1 卡就会用 4 周曲线去描述一个 16 周的计划 —— 又是同一类"两处说法不一致"。
-      if (n >= 3 && n <= 16) return n;
+      // 下限 4: 3 周周期已取消,兜底值不该再是一个用户选不到的长度。
+      if (n >= 4 && n <= 16) return n;
     } catch (e) {}
   }
   return 4;
@@ -10631,7 +10854,7 @@ function fbPeriodWeekInfo(week) {
   if (typeof buildCycleWeekInfo === 'function') {
     try {
       // 第二个参数不能省: 省了马拉松就拿到力量的波浪表, 第15周会是 +25%(实际那周跑量 -59%)
-      var list = buildCycleWeekInfo(N, fbCurrentGoal());
+      var list = buildCycleWeekInfo(N, fbCurrentGoal(), fbCurrentLevel());
       if (list && list[idx]) return list[idx];
     } catch (e) {}
   }
@@ -10649,6 +10872,34 @@ function fbPeriodWeekPct(week) {
 function fbPeriodIsDeloadWeek(week) {
   var info = fbPeriodWeekInfo(week);
   return !!(info && info.deload);
+}
+
+// 这一周"实际上"有没有在减载 —— 光看周期表不够, 还得看开关和减载决策卡的手动标记。
+// 周期化卡以前只读 fbPeriodIsDeloadWeek(周期表), 于是同一屏两张卡互相打脸:
+//   ① 上方「减载决策」按了「⚡ 本周按减载执行」→ 组数已经按减载砍了(isDeloadWeekActive 里
+//      override 的优先级高于日历), 而周期图上这周还是蓝色爬坡柱 + 「强度 +15%」;
+//   ② 计划页关掉「减载周自动化」→ 组数一点没降, 周期图上那周依然灰着标着「减载周」。
+// 只对当前周生效: override 是按「本周周一」存的(fbWeekKey()), 历史周和未来周都没有这个
+// 标记 —— 给它们画上去等于凭空编一次减载。
+function fbPeriodWeekDeloadState(week) {
+  var out = { deload: false, manual: false, disabled: false };
+  var w = parseInt(week, 10);
+  if (isNaN(w) || w < 1) return out;
+  var byTable = !!fbPeriodIsDeloadWeek(w);
+  var isNow = false;
+  try { isNow = (typeof currentWeek !== 'undefined') && (parseInt(currentWeek, 10) === w); } catch (e) {}
+  if (!isNow) { out.deload = byTable; return out; }
+  var enabled = true;
+  try {
+    var raw = localStorage.getItem('fitbuddy_deload');
+    if (raw) enabled = (JSON.parse(raw) || {}).enabled !== false;
+  } catch (e) {}
+  var override = false;
+  try { if (typeof fbDeloadOverrideActive === 'function') override = !!fbDeloadOverrideActive(); } catch (e) {}
+  if (override) { out.deload = true; out.manual = true; return out; }
+  out.deload = byTable && enabled;   // 开关关了: 表上还是减载周, 但这一周不执行减载
+  out.disabled = byTable && !enabled;
+  return out;
 }
 
 // ============ 减载「降多少」的唯一真源 ============
@@ -10727,7 +10978,9 @@ function fbPeriodEdited() {
 function fbPeriodIntensity(week) {
   var p = fbPeriodPlan();
   var v = fbPeriodBaseIntensity(week);
-  if (fbPeriodIsDeloadWeek(week)) v += (parseFloat(p.adj[week]) || 0);
+  // 判定改用"实际执行态": 以前这里问的是周期表(fbPeriodIsDeloadWeek), 而减载决策卡手动
+  // 标的那周在周期表上是爬坡周 —— 用户刚决定减载, 点一下「整体 +5%」就把它加满了。
+  if (fbPeriodWeekDeloadState(week).deload) v += (parseFloat(p.adj[week]) || 0);
   else v += p.global + (parseFloat(p.adj[week]) || 0);
   return Math.max(0.25, Math.min(1, v));
 }

@@ -291,8 +291,9 @@ function isDeloadWeekActive(weekNum, cycle) {
 
   // 哪一周减载, 唯一真源是主计划的周期表 —— 用户选了 N 周周期, 那周的 deload 标记就说了算。
   // 这里曾经写死"第4周为减载周"(ir 无视用户周期), 与主计划 buildCycleWeekInfo(N) 错位:
-  // 10 个可选周期长度里只有 N=4 对得上。N=6 时它砍的是第 4 周(主计划的 +15% 冲击周),
-  // 而真正该减载的第 5、6 周一次没减; N=3 更极端, 整个周期从头到尾没有减载过。
+  // 只按数字夹范围时有 10 种取值,其中只有 N=4 对得上。N=6 时它砍的是第 4 周(主计划的
+  // +15% 冲击周),而真正该减载的第 5、6 周一次没减。
+  // (现在周期长度只放 4/6/8/10/12 五档,3 周已取消 —— 见 planner-core 的 FB_CYCLE_LENGTHS)
   // 就算产品经理没发现, 用户也会发现: 他这周明明被安排轻练, 计划却给了最多的组数。
   if (typeof fbPeriodIsDeloadWeek === 'function') {
     try { return !!fbPeriodIsDeloadWeek(weekNum); } catch (e) {}
@@ -608,19 +609,33 @@ function fbPeriodEditorInner() {
   var sel = PeriodCtrl.selected || cw;
   if (sel > N || sel < 1) sel = cw;
 
+  // 减载设置: 手动减载周按 reduction 降组数, 卡片必须显示那根柱子矮下去, 而不是照周期表
+  // 画一根爬坡柱 —— 上面「减载决策」卡刚说这周该减, 下面这张图却画成冲峰值, 等于互相拆台。
+  var ds = (typeof getDeloadSettings === 'function') ? getDeloadSettings() : { enabled: true, reduction: 40 };
+  var redPct = Math.max(0, Math.min(90, parseFloat(ds.reduction) || 40));
+  // planner-core 没加载(缓存版本错配)时退回周期表判定, 卡片不该因为少一个函数就画不出来
+  var stateOf = function (w) {
+    if (typeof fbPeriodWeekDeloadState === 'function') {
+      try { return fbPeriodWeekDeloadState(w); } catch (e) {}
+    }
+    return { deload: !!(typeof fbPeriodIsDeloadWeek === 'function' && fbPeriodIsDeloadWeek(w)), manual: false, disabled: false };
+  };
+
   var html = '<div style="display:flex;align-items:flex-end;gap:2px;height:64px;padding:0 1px;">';
   for (var w = 1; w <= N; w++) {
+    var st = stateOf(w);
     var inten = fbPeriodIntensity(w);
+    var shown = st.manual ? inten * (1 - redPct / 100) : inten;   // 只影响这根柱子的高度
     // 高度映射不做 0 起点: 强度实际只在 0.5~0.95 之间, 从 0 画的话
     // 所有柱子都顶在上面, 看不出波浪, 也就失去了这张图的意义。
-    var hPct = Math.max(10, Math.min(100, (inten - 0.4) / 0.6 * 100));
-    var isNow = (w === cw), isSel = (w === sel), isDl = fbPeriodIsDeloadWeek(w);
-    var color = isSel ? '#FF6B35' : (isDl ? '#94A3B8' : '#3B82F6');
+    var hPct = Math.max(10, Math.min(100, (shown - 0.4) / 0.6 * 100));
+    var isNow = (w === cw), isSel = (w === sel), isDl = st.deload;
+    var color = isSel ? '#FF6B35' : (st.manual ? '#8B5CF6' : (isDl ? '#94A3B8' : '#3B82F6'));
     html += '<div onclick="PeriodCtrl.select(' + w + ')" style="flex:1;height:100%;display:flex;flex-direction:column;' +
       'justify-content:flex-end;align-items:center;cursor:pointer;border-radius:4px;' +
       (isNow ? 'background:#FF6B3518;' : '') + '">' +
       '<div style="width:100%;max-width:16px;height:' + hPct.toFixed(1) + '%;background:' + color +
-        ';border-radius:3px;opacity:' + (isDl && !isSel ? 0.6 : 1) + ';' +
+        ';border-radius:3px;opacity:' + (isDl && !isSel ? (st.disabled ? 0.35 : 0.6) : 1) + ';' +
         (isSel ? 'box-shadow:0 0 0 2px #FF6B3540;' : '') + '"></div></div>';
   }
   html += '</div>';
@@ -633,20 +648,36 @@ function fbPeriodEditorInner() {
   }
   html += '</div>';
 
+  var selSt = stateOf(sel);
   var curI = fbPeriodIntensity(sel);
   var pct = Math.round(curI * 100);
   var edited = (typeof fbPeriodEdited === 'function') ? fbPeriodEdited() : false;
-  var weekSub = '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作';
+  // 手动减载周不再报强度百分比: 那周组数是按 reduction 砍的, 周期表上的 +15% 是没执行的,
+  // 报出来只会让人以为"说好的减载呢"。报实际执行的口径。
+  var weekSub = selSt.manual
+    ? '本周按减载执行 · 组数 −' + redPct + '%'
+    : (selSt.disabled
+      ? '强度 ' + pct + '% · 减载已关闭，这周不自动降量'
+      : '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作');
+  // 减载周(含手动)的组数走 isDeload 分支, 根本不读 P1 强度 —— 这时候 ± 是"看着能拧实际拧不动"
+  var lockAdj = !!selSt.manual;
+  var btnBase = 'width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;';
+  var btnOff = btnBase + 'opacity:.4;cursor:not-allowed;';
+  var btnOn = btnBase + 'cursor:pointer;';
 
   html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:9px 12px;background:var(--bg);border-radius:10px;">' +
     '<div><div style="font-size:13px;font-weight:700;color:var(--text);">第 ' + sel + ' 周' +
       (sel === cw ? '<span style="font-size:10px;font-weight:700;color:#FF6B35;margin-left:5px;">本周</span>' : '') +
-      (fbPeriodIsDeloadWeek(sel) ? '<span style="font-size:10px;font-weight:700;color:var(--text3);margin-left:5px;">减载周</span>' : '') +
+      (selSt.manual
+        ? '<span style="font-size:10px;font-weight:700;color:#8B5CF6;margin-left:5px;">减载中 · 手动</span>'
+        : (fbPeriodIsDeloadWeek(sel)
+          ? '<span style="font-size:10px;font-weight:700;color:var(--text3);margin-left:5px;">减载周' + (selSt.disabled ? ' · 未启用' : '') + '</span>'
+          : '')) +
       '</div>' +
       '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + weekSub + '</div></div>' +
     '<div style="display:flex;gap:6px;">' +
-      '<button onclick="PeriodCtrl.adjust(-0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">−</button>' +
-      '<button onclick="PeriodCtrl.adjust(0.05)" style="width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;cursor:pointer;">＋</button>' +
+      '<button onclick="PeriodCtrl.adjust(-0.05)" ' + (lockAdj ? 'disabled ' : '') + 'style="' + (lockAdj ? btnOff : btnOn) + '">−</button>' +
+      '<button onclick="PeriodCtrl.adjust(0.05)" ' + (lockAdj ? 'disabled ' : '') + 'style="' + (lockAdj ? btnOff : btnOn) + '">＋</button>' +
       '</div>' +
     '</div>';
 
@@ -656,9 +687,33 @@ function fbPeriodEditorInner() {
     (edited ? '<button onclick="PeriodCtrl.reset()" style="flex:none;padding:8px 12px;border-radius:9px;background:var(--bg);color:var(--text3);border:1.5px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;">恢复默认</button>' : '') +
     '</div>';
 
+  // 周期长度待生效提示: 这张图跟着"这份计划生成时的周期"走(getCycleLength 读 lastPlan),
+  // 用户在上方表单改了 chip 但还没点生成, 图上不会变 —— 不明说, 他会以为改了没生效。
+  var pendingN = 0;
+  try {
+    var g0 = (typeof fbCurrentGoal === 'function') ? fbCurrentGoal() : '';
+    if (g0 !== 'marathon' && g0 !== 'cardio') {   // 跑步/有氧的周期长度是分期内定的, 不跟 chip
+      var pf = JSON.parse(localStorage.getItem('fitbuddy_prefs') || '{}') || {};
+      var pn = parseInt(pf.cycleLength, 10);
+      if (pn >= 4 && pn <= 16 && pn !== N) pendingN = pn;
+    }
+  } catch (e) {}
+
   html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
     '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 ' + N + ' 周（减载周不受影响）。<br>' +
-    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。</div>';
+    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。';
+  if (stateOf(cw).manual) {
+    html += '<br><span style="color:#8B5CF6;">⚡ 紫色那周是你在上方「减载决策」卡上手动标记的减载：组数按减载设置降 ' +
+      redPct + '%，这一周的 ± 不参与。</span>';
+  }
+  if (ds.enabled === false) {
+    html += '<br><span style="color:var(--text3);">减载自动化已关闭 —— 灰色的减载周仍按周期表画出来，但计划不会自动降量。</span>';
+  }
+  if (pendingN) {
+    html += '<br><span style="color:var(--text3);">上方表单现在选的是 <b style="color:var(--text2);">' + pendingN +
+      ' 周</b>，点「生成计划」后这张图才跟着变（周期长度生效在那一次）。</span>';
+  }
+  html += '</div>';
   return html;
 }
 

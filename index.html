@@ -964,9 +964,9 @@ input,select{font-family:inherit;}
       <div class="form-group">
         <label>训练水平</label>
         <div class="radio-group" role="radiogroup" aria-label="训练水平">
-          <div class="radio-item"><input type="radio" name="level" id="l1" value="beginner" checked><label for="l1">🌱 新手</label></div>
-          <div class="radio-item"><input type="radio" name="level" id="l2" value="intermediate"><label for="l2">⚡ 中级</label></div>
-          <div class="radio-item"><input type="radio" name="level" id="l3" value="advanced"><label for="l3">🔥 进阶</label></div>
+          <div class="radio-item"><input type="radio" name="level" id="l1" value="beginner" checked onchange="onLevelChange()"><label for="l1">🌱 新手</label></div>
+          <div class="radio-item"><input type="radio" name="level" id="l2" value="intermediate" onchange="onLevelChange()"><label for="l2">⚡ 中级</label></div>
+          <div class="radio-item"><input type="radio" name="level" id="l3" value="advanced" onchange="onLevelChange()"><label for="l3">🔥 进阶</label></div>
         </div>
       </div>
 
@@ -982,9 +982,8 @@ input,select{font-family:inherit;}
       </div>
 
       <div class="form-group" id="cycleLengthGroup">
-        <label>周期长度 <span style="font-size:11px;color:var(--text3);font-weight:400;">（每个周期持续几周，自动循环进阶）</span></label>
+        <label>周期长度 <span style="font-size:11px;color:var(--text3);font-weight:400;">（每个周期持续几周，自动循环进阶；新手默认 6 周）</span></label>
         <div class="chip-group" id="cycleLenChips">
-          <div class="chip" data-cycle="3">3周</div>
           <div class="chip active" data-cycle="4">4周</div>
           <div class="chip" data-cycle="6">6周</div>
           <div class="chip" data-cycle="8">8周</div>
@@ -1278,12 +1277,12 @@ input,select{font-family:inherit;}
 
 <script src="analytics.js?v=5" defer></script>
 <script src="onboarding.js?v=3" defer></script>
-<script src="data-constants.js?v=36" defer></script>
+<script src="data-constants.js?v=37" defer></script>
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=105" defer></script>
-<script src="pro-tools.js?v=21" defer></script>
+<script src="planner-core.js?v=107" defer></script>
+<script src="pro-tools.js?v=23" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>

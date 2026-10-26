@@ -366,6 +366,47 @@ var LEVEL_BENCHMARKS = {
   ]
 };
 
+// ============ 训练水平自动校准: 第二道闸 = 绝对重量下限(kg) ============
+// 为什么不能只看倍数: 倍数 = 估算1RM / 体重。减脂用户体重往下掉, 分子没动、分母变小,
+//   倍数自己就涨上去了 —— 掉 5kg 能把 0.90× 推到 0.96×, 足以跨过中级线。
+//   于是"变轻了"被误判成"变强了", 系统据此加组数、上难度, 而用户其实一点没进步。
+// 现在的判据: 档位 = min(倍数档, 绝对档), 两道闸都得过。绝对重量没涨上去的,
+//   倍数再高也不升档 —— 减脂掉体重正好卡在这里, 不会再被推去练中级量。
+// 数值来源: 参考体重 80kg(男) / 60kg(女) × 上表倍数后取整到常用杠铃片重量,
+//   口径与 LEVEL_BENCHMARKS 一致(哑铃动作记单只重量)。同样"宁可低判不高判"。
+var LEVEL_ABS_BENCHMARKS = {
+  male: [
+    {ex:"杠铃深蹲",         absMid:100, absTop:140},
+    {ex:"史密斯深蹲",       absMid:105, absTop:145},
+    {ex:"硬拉",             absMid:130, absTop:180},
+    {ex:"罗马尼亚硬拉",     absMid:80,  absTop:115},
+    {ex:"哑铃深蹲",         absMid:40,  absTop:55},
+    {ex:"杠铃卧推",         absMid:72,  absTop:100},
+    {ex:"史密斯机卧推",     absMid:75,  absTop:105},
+    {ex:"哑铃平板卧推",     absMid:36,  absTop:50},
+    {ex:"杠铃肩推",         absMid:48,  absTop:68},
+    {ex:"哑铃肩推",         absMid:24,  absTop:34},
+    {ex:"杠铃俯身划船",     absMid:75,  absTop:105},
+    {ex:"高位下拉（宽握）", absMid:80,  absTop:110},
+    {ex:"哑铃单臂划船",     absMid:40,  absTop:55}
+  ],
+  female: [
+    {ex:"杠铃深蹲",         absMid:54, absTop:75},
+    {ex:"史密斯深蹲",       absMid:56, absTop:78},
+    {ex:"硬拉",             absMid:69, absTop:96},
+    {ex:"罗马尼亚硬拉",     absMid:43, absTop:60},
+    {ex:"哑铃深蹲",         absMid:22, absTop:30},
+    {ex:"杠铃卧推",         absMid:30, absTop:42},
+    {ex:"史密斯机卧推",     absMid:31, absTop:43},
+    {ex:"哑铃平板卧推",     absMid:15, absTop:22},
+    {ex:"杠铃肩推",         absMid:20, absTop:28},
+    {ex:"哑铃肩推",         absMid:10, absTop:14},
+    {ex:"杠铃俯身划船",     absMid:31, absTop:43},
+    {ex:"高位下拉（宽握）", absMid:36, absTop:49},
+    {ex:"哑铃单臂划船",     absMid:17, absTop:23}
+  ]
+};
+
 // RPE 自感强度参考表
 var RPE_SCALE = [
   {rpe:1, desc:"几乎不动", pct:"<10%"},{rpe:2, desc:"非常轻松", pct:"10-20%"},{rpe:3, desc:"轻松", pct:"20-30%"},
@@ -451,6 +492,19 @@ var _CYCLE_DELOAD_WEEK = {
   deload: true,
   weightAdjust: "-15%"
 };
+// 新手档的"巩固周"：顶替紧贴末尾的那次半减载（见 buildCycleWeekInfo 里的 newbie 分支）
+// 为什么新手不该排双减载：新手有 8-12 周的线性加重视窗（新手效应），这段时间几乎不需要
+//   减载。6 周周期原本是「-15% + -30%」连续两周减量，等于把三分之一的进步窗口直接扔掉。
+//   改成巩固周：重量持平、不降，只把动作做扎实，再进最后一周大减载 —— 减载次数不变，
+//   但不再是连着两周往回退。
+// weightAdjust 写 +0% 只是兜底值:真正用的是"上一周的调整值"(见 buildCycleWeekInfo),
+//   写死 +0% 会出现"note 说维持上周、实际从上周的 +15% 掉回基准"这同一行自相矛盾的毛病。
+//   巩固 = 不再往上加,但也不往回退 —— 重量和上周一样,把动作做扎实。
+var _CYCLE_NEWBIE_HOLD = {
+  note: "巩固周 — 重量维持上周，把动作做扎实，下周进入减载收尾",
+  deload: false,
+  weightAdjust: "+0%"
+};
 // 半恢复周（心肺类）：总量-15%，时长0.85x；3周周期也用它做轻恢复收尾
 var _CYCLE_CARDIO_RECOVERY = {
   note: "恢复周 — 时长与强度回落，让心肺充分适应后继续进阶",
@@ -463,25 +517,49 @@ var _CYCLE_CARDIO_RECOVERY = {
   rpe: "RPE 4-5"
 };
 // goal 传进来的原因: 马拉松不是"力量的短周期", 它有自己的四期分期, 不能套这张波浪表。
+// level 传进来的原因: 新手不排双减载(见 _CYCLE_NEWBIE_HOLD)。周期表和主计划必须是同一张,
+//   所以这个判断只能在这里做 —— 放在调用点各算一套, 又会出现"卡上写着减载、实际在爬坡"。
 // 不传就是老行为(力量周期), 现有调用点不会因为漏传一个参数就换掉自己的周期表。
-function buildCycleWeekInfo(totalWeeks, goal) {
+function buildCycleWeekInfo(totalWeeks, goal, level) {
   totalWeeks = totalWeeks || 4;
   // 马拉松: 每一周的排布交给 buildMarathonCycleWeekInfo, 长度固定 16
   if (goal === 'marathon' && typeof buildMarathonCycleWeekInfo === 'function') {
     return buildMarathonCycleWeekInfo();
   }
+  var isNewbie = (level === 'beginner' || level === '新手' || level === '新手 🌱');
+  // 3 周已从 UI 取消(减载占 1/3、峰值只到 +5%,没有渐进超负荷空间)。
+  // 这一段留着只是兜底:老存档里 cycleLength 可能还是 3,让它排出一个能用的短周期,
+  // 而不是掉进下面的通用逻辑排出个残缺块。
   if (totalWeeks === 3) return [WEEK_INFO[0], WEEK_INFO[1], Object.assign({}, _CYCLE_DELOAD_WEEK)]; // 适应 → 爬坡 → 轻减载
   if (totalWeeks <= 4) return WEEK_INFO.slice(0, totalWeeks);
   var list = [WEEK_INFO[0]]; // 第1周:适应
   var block = 1, posInBlock = 0;
   for (var k = 2; k <= totalWeeks - 1; k++) {
     posInBlock++;
-    // 半减载:每块第4周插入;即使落在倒数第2周也插入,与最后一周大减载组成双减载taper
-    if (posInBlock === 4) {
+    // 半减载:每块第4周插入。中间块里的半减载后面还有爬坡周,恢复能兑现,保留不动。
+    if (posInBlock === 4 && k !== totalWeeks - 1) {
       list.push(Object.assign({}, _CYCLE_DELOAD_WEEK));
       block++; posInBlock = 0;
       continue;
     }
+    // 紧贴大减载的那次半减载(= 倒数第2周)不排减载,所有水平都一样。
+    // 理由:它后面直接接 -30% 大减载,中间没有一个爬坡周 —— 恢复完立刻又减一次,
+    //   这次恢复的收益是零,本质就是连续两周减量,还白占掉一周本来能进阶的训练。
+    //   真正的 taper(赛前连续减量)前提是后面有比赛/测试要冲,这里周期结束就进下一轮,没有。
+    // 分叉:新手换巩固周(+0%,周期末不该冲峰值);中高级继续爬坡(多拿一周渐进超负荷)。
+    if (posInBlock === 4 && k === totalWeeks - 1 && isNewbie) {
+      var hold = Object.assign({}, _CYCLE_NEWBIE_HOLD);
+      // 维持上周 = 沿用上一周的调整值,而不是写死的 +0%。否则第 4 周 +15%、第 5 周 +0%,
+      // 实际降了 15%,卡片却写着"维持上周" —— 用户一对比就发现这行在自相矛盾。
+      var prev = list[list.length - 1];
+      if (prev && typeof prev.weightAdjust === 'string' && prev.weightAdjust.charAt(0) === '+') {
+        hold.weightAdjust = prev.weightAdjust;
+      }
+      list.push(hold);
+      block++; posInBlock = 0;
+      continue;
+    }
+    // 中高级落到这里:posInBlock 保持 4、block 不重置,下面的 boost 自然多上一档
     var boost = Math.min(block * 5 + (posInBlock - 1) * 5, 30);
     // 文案和百分比必须由同一个数驱动。以前 note 取 _CYCLE_MID_NOTES[(posInBlock-1)%4],
     // 每块都重新从"渐进超负荷"开头讲, 而 boost 是跨块累加的 —— N>=7 时第 2/3 块会出现
