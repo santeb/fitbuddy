@@ -406,7 +406,26 @@ function renderMuscleBalance() {
   var html = '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:12px;padding:10px 12px;background:var(--bg);border-radius:10px;">' +
     '统计最近 <b style="color:var(--text);">' + rep.spanDays + ' 天</b>每个部位的平均周容量，' +
     '对照主流容量区间，再看<b style="color:var(--text);">推/拉、上/下肢</b>有没有练歪。<br>' +
-    '<span style="color:var(--text3);">组数按当天动作数占比摊算，是估算值，别当精账。</span></div>';
+    '<span style="color:var(--text3);">「组」= 单个动作做完一轮算 1 组（3 组 × 10 次就是 3 组）。' +
+    '推/拉按<b>动作</b>判：二头算拉、三头算推。<br>' +
+    '柱状图是摊到每周的平均值，恢复训练头几周会被空窗稀释；「本周已完成」是即时口径，勾完立刻更新。<br>' +
+    '更早的老打卡只记了动作个数，已按每动作 3-5 组折算，仍是估算值。</span></div>';
+
+  // 即时口径: 平均周容量被历史空窗稀释, "勾了没加"的疑虑靠这行打消。
+  // 只列本周真练过的部位, 全空(刚开新周还没练)就不显示, 不占地方。
+  try {
+    var wk = (typeof fbWeekMuscleSets === 'function') ? fbWeekMuscleSets() : null;
+    if (wk && wk.hasData) {
+      var wkParts = [];
+      FB_BALANCE_MUSCLES.forEach(function (m) {
+        if (wk.sets[m] > 0) wkParts.push(ptEsc(m) + ' <b style="color:var(--text);">' + Math.round(wk.sets[m]) + '</b>');
+      });
+      if (wkParts.length) {
+        html += '<div style="margin:-4px 0 12px;padding:8px 12px;background:#22C55E14;border-radius:10px;font-size:12px;color:var(--text2);line-height:1.7;">' +
+          '📅 <b style="color:var(--text);">本周已完成</b>（周一起）：' + wkParts.join(' · ') + ' 组</div>';
+      }
+    }
+  } catch (eWk) {}
 
   if (rep.findings.length) {
     rep.findings.forEach(function (f) {
@@ -460,13 +479,17 @@ function renderMuscleBalance() {
   if (target) {
     var add = Math.max(2, Math.round(target.target[0] - target.setsPerWeek));
     var aid = (typeof fbBalanceAid === 'function') ? fbBalanceAid(target.muscle) : '';
+    // 处方里的组数必须跟着 add 走。写死「3 组 × 10 次」的话, 上面算出要加 9 组、
+    // 下面却说做 3 组, 用户照着做永远补不上 —— 而且 3 组没法"分到 2 次训练里"。
+    var per = Math.max(1, Math.round(add / 2));
     html += '<div style="margin-top:12px;padding:11px 12px;background:var(--bg);border-radius:10px;">' +
       '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">🧭 下一步：' +
         ptEsc(target.label) + '每周加 ' + add + ' 组</div>' +
       '<div style="font-size:12px;color:var(--text2);line-height:1.7;">' +
-        (aid ? ('加 <b style="color:var(--text);">' + ptEsc(aid) + ' 3 组 × 10 次</b>，排在' +
+        (aid ? ('加 <b style="color:var(--text);">' + ptEsc(aid) + ' ' + per + ' 组 × 10 次</b>，' +
+                 '安排在 2 次训练里（每次 ' + per + ' 组），排在' +
                  ptEsc(target.label) + '主项之后<br>') : '') +
-        '分到 2 次训练里，别一次加完 —— 单次容量涨超 20% 就是在攒疲劳<br>' +
+        '分 2 次加，别一次加完 —— 单次容量涨超 20% 就是在攒疲劳<br>' +
         '4 周后回来看这张卡：' + ptEsc(target.label) + '的柱子进阴影段就算补上了' +
       '</div></div>';
   }

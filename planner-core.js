@@ -4228,7 +4228,11 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
 
       var injuryClass = isInjuredEx ? ' injury-skipped' : '';
 
-      html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+'>'+
+      // data-sets: 这个动作安排了几组(v109 起打卡按"组"记, 不按"动作个数")。
+      // 有氧/马拉松没有组的概念, 不挂 —— 挂了会把「跑 10km」记成 3 组力量容量。
+      var setsData = isLiftEx ? ' data-sets="'+Math.max(1, sets + _setsAdj)+'"' : '';
+
+      html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+'>'+
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
         '<div class="ex-left" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
@@ -4878,7 +4882,7 @@ function generateShareImage() {
   var goalName = plan ? ({muscle:'增肌',strength:'力量',cut:'减脂',shape:'塑形',cardio:'心肺',marathon:'马拉松'})[plan.goal] || '健身' : '健身';
   var levelName = plan ? ({beginner:'入门',intermediate:'进阶',advanced:'高手'})[plan.level] || '' : '';
   var totalSessions = new Set(hist.map(function(h){ return h.date; })).size;
-  var totalSets = hist.reduce(function(s,h){ return s + (h.count||h.sets||1); }, 0);
+  var totalSets = hist.reduce(function(s,h){ return s + fbHistSets(h); }, 0);
   var topEx = Object.keys(trainingLog).sort(function(a,b){
     return (trainingLog[b]||[]).length - (trainingLog[a]||[]).length;
   }).slice(0,3);
@@ -5386,11 +5390,11 @@ function exportDiary() {
     var d = h.date;
     if (!byDay[d]) byDay[d] = {items:[], totalSets:0};
     byDay[d].items.push(h);
-    byDay[d].totalSets += h.count || h.sets || 1;
+    byDay[d].totalSets += fbHistSets(h);
   });
   var dates = Object.keys(byDay).sort();
   var totalSessions = dates.length;
-  var totalSets = hist.reduce(function(s,h){ return s + (h.count||h.sets||1); }, 0);
+  var totalSets = hist.reduce(function(s,h){ return s + fbHistSets(h); }, 0);
 
   var planName = plan ? ({
     muscle:'增肌', strength:'力量', cut:'减脂', cardio:'心肺', marathon:'马拉松'
@@ -5711,6 +5715,9 @@ function toggleDone(id) {
     }
   }
   var dist = parseFloat(el.getAttribute("data-dist")) || 0;
+  // 该动作安排了几组(v109: 打卡记"组"不记"动作个数")。取不到按当前水平兜底。
+  var exSets = parseInt(el.getAttribute("data-sets"), 10);
+  if (!isFinite(exSets) || exSets <= 0) exSets = (typeof fbSetsPerEx === 'function') ? fbSetsPerEx() : 3;
   // 该动作所在训练日的实际动作数(用于热量里的热身均摊,保证与计划页日估算一致)
   var dayExCnt = fbDayExCount(id);
   // [DEBUG] console.log('toggleDone:', isDone ? '取消勾选' : '勾选', 'exName='+exName, 'exDiff='+exDiff, 'dist='+dist);
@@ -5726,8 +5733,12 @@ function toggleDone(id) {
     var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
     var found = hist.find(function(h){ return h.date === today; });
     if (found) {
-      // 减少计数
-      found.count = Math.max(0, (found.count||0) - 1);
+      // 减少计数(扣的是组数, 跟勾选时加的口径一致)
+      found.count = Math.max(0, (found.count||0) - exSets);
+      if (found.setMap && exName) {
+        found.setMap[exName] = Math.max(0, (found.setMap[exName]||0) - exSets);
+        if (found.setMap[exName] <= 0) delete found.setMap[exName];
+      }
       // 移除动作名
       if (exName && found.exercises) {
         var idx = found.exercises.indexOf(exName);
@@ -5763,7 +5774,7 @@ function toggleDone(id) {
     // 🔊 语音播报:动作完成(不打断已有语音时排队)
     if (exName) speakText(exName + "，完成", true);
     // 记录训练历史(动作信息已在上方获取)
-    recordHistory(dist, exName, exDiff, exM, dayExCnt);
+    recordHistory(dist, exName, exDiff, exM, dayExCnt, exSets);
     // 🎯 打卡顺手把成绩带进训练记录(默认零操作;改过数字则以用户填的为准)
     fbProgNudgeOnCheck(id, exName);
     // ⚡ 即时反馈: 勾选时 +N kcal 飘字
@@ -6640,7 +6651,7 @@ function fbWeekSum(hist, weekOffset) {
     var d = new Date(h.date + 'T00:00:00');
     if (d >= monday && d < end) {
       s.days++;
-      s.sets += h.count || 0;
+      s.sets += fbHistSets(h);
       s.cal += h.calories || 0;
     }
   });
@@ -7119,7 +7130,7 @@ function showWeeklySummary() {
   }
   var weekHist = hist.filter(function(h) { return weekDays.indexOf(h.date) >= 0; });
   var trainedDays = new Set(weekHist.map(function(h) { return h.date; }));
-  var totalSets = weekHist.reduce(function(s, h) { return s + (h.count || 0); }, 0);
+  var totalSets = weekHist.reduce(function(s, h) { return s + fbHistSets(h); }, 0);
   var totalCal = weekHist.reduce(function(s, h) { return s + (h.calories || 0); }, 0);
 
   var streak = 0;
@@ -7198,7 +7209,9 @@ function fmtDate(d){ return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" +
 // ============ 🔥 训练热力图(最近90天,类GitHub日历) ============
 function renderHeatmap(hist) {
   var byDate = {};
-  hist.forEach(function(h){ if (h.date) byDate[h.date] = (byDate[h.date]||0) + (h.count||0); });
+  // 热力图数的是"做了几项", 不是"做了几组" —— 格子深浅表示当天练了多少动作,
+  // 换成组数的话一天 15 组会把色阶顶满, 5 组以下的日子全变成最浅一档。
+  hist.forEach(function(h){ if (h.date) byDate[h.date] = (byDate[h.date]||0) + fbHistActions(h); });
   var today = new Date(); today.setHours(0,0,0,0);
   var days = [], i, d;
   for (i = 89; i >= 0; i--) { d = new Date(today); d.setDate(today.getDate() - i); days.push(d); }
@@ -7458,7 +7471,7 @@ function applyPlanParams(goal, level, days, equip) {
   setTimeout(function(){ doGenerate(); }, 300);
 }
 
-function recordHistory(dist, exName, exDiff, exM, dayExCnt) {
+function recordHistory(dist, exName, exDiff, exM, dayExCnt, exSets) {
   var hist = JSON.parse(localStorage.getItem("fitbuddy_history") || "[]");
   var today = new Date().toISOString().slice(0,10);
   var found = hist.find(function(h){ return h.date === today; });
@@ -7466,20 +7479,28 @@ function recordHistory(dist, exName, exDiff, exM, dayExCnt) {
   // 计算本次动作热量(跑步用距离,力量用MET)
   var thisCal = (exName && exDiff) ? estimateCalories(exDiff, exM, dist, exName, dayExCnt) : 0;
 
+  // v109: count 改记"组数"。exSets 来自计划行上的 data-sets(该动作安排了几组);
+  // 取不到(老页面/有氧动作)就按当前水平的每动作组数兜底 —— 宁可估, 也不能退回 1。
+  var s = parseInt(exSets, 10);
+  if (!isFinite(s) || s <= 0) s = (typeof fbSetsPerEx === 'function') ? fbSetsPerEx() : 3;
+
   if (found) {
-    found.count = (found.count||0)+1;
-    if (dist) found.distance = (found.distance||0) + dist;
+    found.v = FB_HIST_V_SETS;                       // 打上口径标记, 老数据靠这个区分
+    found.count = (found.count||0) + s;
+    if (!found.setMap) found.setMap = {};           // 逐动作组数(精账, 部位统计优先读它)
     if (exName) {
+      found.setMap[exName] = (found.setMap[exName]||0) + s;
       if (!found.exercises) found.exercises = [];
       found.exercises.push(exName);
       // 去重(同一动作可能多次打卡)
       found.exercises = found.exercises.filter(function(v,i,a){ return a.indexOf(v)===i; });
     }
+    if (dist) found.distance = (found.distance||0) + dist;
     if (thisCal) found.calories = (found.calories||0) + thisCal;
   } else {
     var plan = JSON.parse(localStorage.getItem("fitbuddy_lastplan") || "null");
-    var rec = {date:today, count:1, distance:dist||0};
-    if (exName) rec.exercises = [exName];
+    var rec = {date:today, count:s, v:FB_HIST_V_SETS, distance:dist||0};
+    if (exName) { rec.exercises = [exName]; rec.setMap = {}; rec.setMap[exName] = s; }
     if (thisCal) rec.calories = thisCal;
     if (plan && plan.goal) rec.goal = plan.goal;
     hist.push(rec);
@@ -7660,11 +7681,13 @@ function renderProgress() {
   var monday = new Date(today);
   monday.setDate(today.getDate() - dayOfWeek + 1);
   monday.setHours(0,0,0,0);
-  var weekCount = 0, weekDist = 0, weekCal = 0;
+  // 跑步看"练了几次", 力量看"做了几组" —— 两个口径都在, 各用各的。
+  var weekCount = 0, weekSets = 0, weekDist = 0, weekCal = 0;
   hist.forEach(function(h){
     var d = new Date(h.date + "T00:00:00");
     if (d >= monday && d <= today) {
-      weekCount += h.count;
+      weekCount += fbHistActions(h);
+      weekSets += fbHistSets(h);
       weekDist += (h.distance || 0);
       weekCal += (h.calories || 0);
     }
@@ -7691,9 +7714,9 @@ function renderProgress() {
       });
     }
     var targetSets = totalExPerWeek > 0 ? totalExPerWeek * (plan && plan.level === 'advanced' ? 5 : plan && plan.level === 'intermediate' ? 4 : 3) : daysThisWeek * 15;
-    var pct = targetSets > 0 ? Math.min(100, Math.round(weekCount / targetSets * 100)) : 0;
+    var pct = targetSets > 0 ? Math.min(100, Math.round(weekSets / targetSets * 100)) : 0;
     var wkBody2 =
-      '<div class="progress-stat"><span class="progress-stat-label">已完成动作组数</span><span class="progress-stat-value">'+weekCount+'</span></div>'+
+      '<div class="progress-stat"><span class="progress-stat-label">已完成动作组数</span><span class="progress-stat-value">'+Math.round(weekSets)+'</span></div>'+
       '<div class="progress-stat"><span class="progress-stat-label">估算消耗热量</span><span class="progress-stat-value">'+Math.round(weekCal)+' kcal</span></div>'+
       '<div style="margin-top:10px;"><div style="font-size:12px;color:var(--text3);margin-bottom:4px;">完成度</div>'+
       '<div class="progress-bar"><div class="progress-bar-fill" style="width:'+pct+'%;"></div></div>'+
@@ -7830,7 +7853,7 @@ function renderProgress() {
       if (exercises.length) valParts.push(exercises.length + ' 项');
       if (h.calories) valParts.push(h.calories + ' kcal');
       if (h.distance) valParts.push(Math.round(h.distance) + 'km');
-      var valText = valParts.length ? valParts.join(' · ') : h.count + ' 组';
+      var valText = valParts.length ? valParts.join(' · ') : fbHistSets(h) + ' 组';
       var exList = '';
       if (exercises.length) {
         var showEx = exercises.slice(0, 3).join('、');
@@ -7940,7 +7963,7 @@ function renderProgress() {
   // 渲染图表(延迟以确保 canvas 已插入 DOM)
   setTimeout(function(){
     if (hist.length >= 2) {
-      var chartData = hist.map(function(h){ return {l:h.date.slice(5), v: isRunning ? Math.round(h.distance||0) : h.count}; });
+      var chartData = hist.map(function(h){ return {l:h.date.slice(5), v: isRunning ? Math.round(h.distance||0) : fbHistSets(h)}; });
       drawChart('chartVolume', chartData, {type:isRunning?'bar':'bar', color:isRunning?'#3B82F6':'#FF6B35', yMax:0, title:''});
     }
     // 渲染热量消耗趋势
@@ -10268,80 +10291,125 @@ function fbBestByDate(raw, mode) {
   return out;
 }
 
-// 某部位在最近 winDays 天里的容量与频率。
-// ⚠️ history 只有"当天总组数"(h.count)没有逐动作组数，只能按动作数占比摊到部位 ——
-//    是估算，所以处方里一律写"约 N 组"，不编精确到个位的假精度。
-// ⚠️ 窗口天数做成参数是为了让 P0(卡点诊断,14天) 和 P2(部位平衡,28天) 共用同一套算法。
-//    两处各算一遍必然漂移：同一个人的背，卡点诊断说 6 组/周、平衡卡说 12 组/周，
-//    用户一眼看出是自相矛盾的，信任就没了。fbMuscleLoad14d 是它的 14 天特例。
-// ⚠️ 只打卡不写 total 组的老数据没有 h.count，退回按当次动作数算，至少不丢。
-function fbMuscleLoadWin(muscle, winDays) {
-  var out = { daysPerWeek: 0, setsPerWeek: 0, days14: 0, sets14: 0, hasData: false };
-  if (!muscle) return out;
+// ============ 容量口径统一 (v109) ============
+// history.count 的口径改过一次:
+//   · v2 起 = 当天完成的**总组数**(一个动作安排 3 组就 +3, 动作做 3 组 × 10 次 = 3 组)
+//   · v2 之前 = 完成的**动作个数**(勾一个动作 +1)
+// 老记录不能扔, 只能折算: 乘"每动作安排几组"(新手3/中级4/进阶5)。是近似值,
+// 但比把 3 组当 1 组用(低估 3~5 倍、于是所有部位都被判"练太少")强得多。
+// ⚠️ 所有读 count 的地方必须走 fbHistSets(组数) 或 fbHistActions(动作数), 不能直接用 h.count:
+//    漏一处就会出现"进度页 90 组 / 平衡卡 30 组"这种自相矛盾, 用户一眼看出是假的。
+var FB_HIST_V_SETS = 2;
+
+// 当前水平下每个动作安排几组 —— 老数据折算用, 也用于"只记了动作没记组数"的兜底
+function fbSetsPerEx() {
+  try {
+    var p = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+    var lv = (p && p.level) || 'beginner';
+    var c = (typeof CONFIGS !== 'undefined' && CONFIGS[lv]) ? CONFIGS[lv].sets : 3;
+    return c > 0 ? c : 3;
+  } catch (e) { return 3; }
+}
+
+// 一条 history 记录 = 多少组
+function fbHistSets(h) {
+  if (!h) return 0;
+  var c = parseInt(h.count, 10);
+  if (!isFinite(c) || c <= 0) return 0;
+  if (h.v === FB_HIST_V_SETS) return c;              // 新口径: 存的就是组数
+  var hasEx = !!(h.exercises && h.exercises.length); // 老口径: count 是动作个数
+  return Math.round(c * (hasEx ? fbSetsPerEx() : 1));
+}
+
+// 一条 history 记录 = 完成了几个动作(热力图/RPG 任务按"项/次"算, 口径保持不动)
+function fbHistActions(h) {
+  if (!h) return 0;
+  if (h.exercises && h.exercises.length) return h.exercises.length;
+  var s = fbHistSets(h);
+  if (s > 0) return Math.max(1, Math.round(s / fbSetsPerEx()));
+  return parseInt(h.count, 10) || 0;
+}
+
+// 采集窗口内每天的"动作 → 组数"。
+// ⚠️ 抽成公共入口是为了让 P0(卡点诊断) / P2(部位平衡) / 推拉比共用同一份数据:
+//    三处各算一遍必然漂移 —— 同一个人的背, 一处说 6 组、一处说 12 组, 信任就没了。
+function fbCollectDayLoads(winDays) {
   var span = winDays > 0 ? winDays : 14;
   var today = new Date(); today.setHours(0, 0, 0, 0);
   var todayT = today.getTime();
   var from = todayT - (span - 1) * 86400000;
-  var map = {};
-  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+  var days = [], histInWindow = 0, counted = 0;
 
-  // 数据源: history(打卡流水, 带当天总组数) 优先; 它为空时用 trainingLog 逐条累加,
-  // 一条记录算 1 组 —— 用户可能只记了动作没打卡, 那样整页 Pro 全废太亏。
-  var days = [];
-  var histInWindow = 0;   // 窗口内的打卡条数(不论有没有动作明细)
+  // 数据源: history(打卡流水) 优先
   try {
     var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]') || [];
     hist.forEach(function (h) {
       if (!h || !h.date) return;
-      var t = Date.parse(String(h.date).slice(0, 10));
+      // 用 fbParseLocalDate 而不是 Date.parse: 后者把 "2026-10-19" 当 UTC 午夜读,
+      // 在东八区会跟"本地今天"差 8 小时 —— 窗口边界差一天, 周容量就差 5%。
+      var t = fbParseLocalDate(h.date);
       if (!isNaN(t) && (t < from || t > todayT + 86400000)) return;
       histInWindow++;
       var names = h.exercises || [];
       if (!names.length) return;
-      var total = parseInt(h.count, 10) || 0;
-      days.push({ names: names, total: total > 0 ? total : names.length });
+      // setMap: 逐动作组数(v109 起写)。有它是精账, 没有才退回按当天组数均摊。
+      days.push({ names: names, total: fbHistSets(h), map: h.setMap || null });
+      counted++;
     });
   } catch (e) {}
 
   // 打过卡但没记动作 -> 承认不知道, 不许拿猜的组数去下"练太少"的结论。
-  // (一条记录算 1 组会系统性低估, 必然误报频率不足/容量不足)
-  if (!days.length && histInWindow === 0) {
+  if (!counted && histInWindow === 0) {
     try {
       var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : null;
-      if (!log) {
-        log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}') || {};
-      }
+      if (!log) log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}') || {};
       var byDate = {};
       Object.keys(log).forEach(function (n) {
         (log[n] || []).forEach(function (e) {
           if (!e || !e.date) return;
           var d = String(e.date).slice(0, 10);
-          var t = Date.parse(d);
+          var t = fbParseLocalDate(d);
           if (!isNaN(t) && (t < from || t > todayT + 86400000)) return;
           if (!byDate[d]) byDate[d] = [];
           byDate[d].push(n);
         });
       });
       Object.keys(byDate).forEach(function (d) {
-        days.push({ names: byDate[d], total: byDate[d].length });
+        // 一条训练记录 = 练了一个动作, 按当前水平的每动作组数折算
+        days.push({ names: byDate[d], total: byDate[d].length * fbSetsPerEx(), map: null });
+        counted++;
       });
     } catch (e2) {}
   }
+  return { days: days, weeks: span / 7, counted: counted, histInWindow: histInWindow };
+}
 
-  var counted = 0;
-  days.forEach(function (d) {
-    counted++;
-    var hit = 0;
+// 某部位在最近 winDays 天里的容量与频率。
+// ⚠️ 窗口天数做成参数是为了让 P0(卡点诊断,14天) 和 P2(部位平衡,28天) 共用同一套算法。
+//    两处各算一遍必然漂移：同一个人的背，卡点诊断说 6 组/周、平衡卡说 12 组/周，
+//    用户一眼看出是自相矛盾的，信任就没了。fbMuscleLoad14d 是它的 14 天特例。
+function fbMuscleLoadWin(muscle, winDays) {
+  var out = { daysPerWeek: 0, setsPerWeek: 0, days14: 0, sets14: 0, hasData: false };
+  if (!muscle) return out;
+  var col = fbCollectDayLoads(winDays);
+  var map = {};
+  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+
+  col.days.forEach(function (d) {
+    var hitSets = 0, hit = 0;
     d.names.forEach(function (n) {
       var m = map[n] || fbMuscleOfName(n);
-      if (m === muscle) hit++;
+      if (m !== muscle) return;
+      hit++;
+      // 有逐动作组数(setMap)就是精账; 没有(老记录 / trainingLog 兜底)才按当天组数均摊
+      hitSets += (d.map && d.map[n] > 0) ? d.map[n] : (d.total / d.names.length);
     });
     if (!hit) return;
     out.days14 += 1;
-    out.sets14 += d.total * hit / d.names.length;
+    out.sets14 += hitSets;
   });
-  out.hasData = counted > 0;
-  var weeks = span / 7;
+  out.hasData = col.counted > 0;
+  var weeks = col.weeks || 1;
   out.daysPerWeek = out.days14 / weeks;
   out.setsPerWeek = out.sets14 / weeks;
   out.days14 = Math.round(out.days14);
@@ -10349,8 +10417,107 @@ function fbMuscleLoadWin(muscle, winDays) {
   return out;
 }
 
+// 单个动作属于"推"还是"拉"(动作级, 不是部位级)。
+// ⚠️ 为什么必须拆到动作: 「臂」这块里二头是拉、三头是推。整块臂算进拉的话,
+//    一个练了大量绳索三头下压的人会被算成"拉远超推" —— 结论正好是反的,
+//    而按这个错误结论去补背, 圆肩只会更严重。
+// 只标"臂"这一块; 其余部位整块归属(胸肩=推、背=拉、腿=下肢), 核心/有氧/康复不进推拉比。
+var FB_ARM_PUSH_KEYS = ['三头', '臂屈伸', '反屈伸', '下压', '窄距俯卧撑'];
+var FB_ARM_PULL_KEYS = ['二头', '弯举', '锤式'];
+function fbExPushPull(name, muscle) {
+  var n = String(name || '');
+  var m = muscle || fbMuscleOfName(n);
+  if (!m) return '';
+  if (m === '臂') {
+    var i;
+    for (i = 0; i < FB_ARM_PUSH_KEYS.length; i++) if (n.indexOf(FB_ARM_PUSH_KEYS[i]) >= 0) return 'push';
+    for (i = 0; i < FB_ARM_PULL_KEYS.length; i++) if (n.indexOf(FB_ARM_PULL_KEYS[i]) >= 0) return 'pull';
+    return 'pull';   // 兜底沿用旧口径: 臂里没命中关键字的绝大多数是弯举类(拉)
+  }
+  if (FB_BALANCE_GROUPS.push.indexOf(m) >= 0) return 'push';
+  if (FB_BALANCE_GROUPS.pull.indexOf(m) >= 0) return 'pull';
+  if (FB_BALANCE_GROUPS.lower.indexOf(m) >= 0) return 'lower';
+  return '';
+}
+
+// 推/拉/上/下肢的周容量(按动作逐个标注后累加)
+function fbGroupLoadWin(winDays) {
+  var col = fbCollectDayLoads(winDays);
+  var g = { push: 0, pull: 0, lower: 0, upper: 0, weeks: col.weeks || 1, hasData: col.counted > 0 };
+  var map = {};
+  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+  col.days.forEach(function (d) {
+    d.names.forEach(function (n) {
+      var kind = fbExPushPull(n, map[n]);
+      if (!kind) return;
+      var s = (d.map && d.map[n] > 0) ? d.map[n] : (d.total / d.names.length);
+      if (kind === 'push' || kind === 'pull') g.upper += s;
+      if (g[kind] !== undefined) g[kind] += s;
+    });
+  });
+  var w = col.weeks || 1;
+  g.push /= w; g.pull /= w; g.lower /= w; g.upper /= w;
+  return g;
+}
+
 function fbMuscleLoad14d(muscle) {
   return fbMuscleLoadWin(muscle, 14);
+}
+
+// 本周(周一 00:00 起)各部位已完成的组数 —— 即时口径, 不摊算。
+// 平衡卡主口径是"最近 N 天平均周容量", 恢复期/空窗期会被稀释, 刚勾完
+// 看着"没加"观感很差。这行数字勾完立刻涨, 专门回答"到底记没记上"。
+// 组数取值与 fbMuscleLoadWin 完全同口径(setMap 精账优先/老记录均摊), 免得两行数字对不上。
+function fbWeekMuscleSets() {
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  // 周一为一周开始(与本周进度卡同口径): getDay() 周日=0, +6 取模把周一映射到 0
+  var monday = today.getTime() - ((today.getDay() + 6) % 7) * 86400000;
+  var todayEnd = today.getTime() + 86400000;
+  var map = {};
+  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+  var out = {}, counted = 0;
+
+  try {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]') || [];
+    hist.forEach(function (h) {
+      if (!h || !h.date) return;
+      var t = fbParseLocalDate(h.date);
+      if (isNaN(t) || t < monday || t > todayEnd) return;
+      if (!(h.exercises && h.exercises.length)) return;
+      counted++;
+      var total = fbHistSets(h);
+      h.exercises.forEach(function (n) {
+        var m = map[n] || fbMuscleOfName(n);
+        if (!m) return;
+        out[m] = (out[m] || 0) + ((h.setMap && h.setMap[n] > 0) ? h.setMap[n] : (total / h.exercises.length));
+      });
+    });
+  } catch (e1) {}
+
+  // trainingLog 兜底: 本周一条打卡流水都没有才看它(与 fbCollectDayLoads 同思路)
+  if (!counted) {
+    try {
+      var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog
+        : JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}') || {};
+      var byName = {};
+      Object.keys(log).forEach(function (n) {
+        (log[n] || []).forEach(function (ev) {
+          if (!ev || !ev.date) return;
+          var t2 = fbParseLocalDate(String(ev.date).slice(0, 10));
+          if (isNaN(t2) || t2 < monday || t2 > todayEnd) return;
+          byName[n] = (byName[n] || 0) + 1;
+        });
+      });
+      Object.keys(byName).forEach(function (n) {
+        var m = map[n] || fbMuscleOfName(n);
+        if (!m) return;
+        counted++;
+        out[m] = (out[m] || 0) + byName[n] * fbSetsPerEx();
+      });
+    } catch (e2) {}
+  }
+  Object.keys(out).forEach(function (k) { out[k] = Math.round(out[k] * 10) / 10; });
+  return { sets: out, hasData: counted > 0 };
 }
 
 // ============ Pro P2 · 部位平衡与弱点分析 ============
@@ -10360,9 +10527,12 @@ function fbMuscleLoad14d(muscle) {
 //   1) 单部位周容量 vs 推荐区间(FB_VOLUME_TARGET)
 //   2) 推/拉比、上/下肢比 —— 单看一个部位永远发现不了的失衡
 var FB_BALANCE_MUSCLES = ['胸', '背', '腿', '肩', '臂', '核心'];
-// 推 = 胸+肩(肩推是推), 拉 = 背+臂(弯举/划船是拉)。上下肢用于揪"只练上半身"。
+// 推 = 胸+肩(肩推是推), 拉 = 背。上下肢用于揪"只练上半身"。
+// ⚠️ 这里刻意不再写 pull: ['背','臂'] —— 臂是混合块(二头拉/三头推), 整块归拉会把
+//    练三头多的人算成"拉远超推", 结论反的。臂走 fbExPushPull() 按动作逐个判。
+//    本表只用于"非臂部位的整块归属", 推拉总量一律以 fbGroupLoadWin() 为准。
 var FB_BALANCE_GROUPS = {
-  push: ['胸', '肩'], pull: ['背', '臂'], lower: ['腿'], upper: ['胸', '背', '肩', '臂']
+  push: ['胸', '肩'], pull: ['背'], lower: ['腿'], upper: ['胸', '背', '肩', '臂']
 };
 // 推/拉比的健康带。低于它圆肩肩痛, 高于它说明胸练猛了背没跟上。
 var FB_PULL_PUSH_BAND = [0.7, 1.4];
@@ -10377,7 +10547,7 @@ function fbBalanceWindow() {
     var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]') || [];
     hist.forEach(function (h) {
       if (h && h.date) {
-        var t = Date.parse(String(h.date).slice(0, 10));
+        var t = fbParseLocalDate(h.date);
         if (!isNaN(t)) stamps.push(t);
       }
     });
@@ -10388,7 +10558,7 @@ function fbBalanceWindow() {
       Object.keys(log).forEach(function (n) {
         (log[n] || []).forEach(function (e) {
           if (e && e.date) {
-            var t2 = Date.parse(String(e.date).slice(0, 10));
+            var t2 = fbParseLocalDate(e.date);
             if (!isNaN(t2)) stamps.push(t2);
           }
         });
@@ -10407,8 +10577,7 @@ function fbBalanceWindow() {
 // 返回的 items 里 status: low=低于区间下限 / ok=在区间内 / high=明显超上限 / none=没练过。
 function fbBalanceReport() {
   var span = fbBalanceWindow();
-  var items = [], sum = {};
-  Object.keys(FB_BALANCE_GROUPS).forEach(function (g) { sum[g] = 0; });
+  var items = [];
   var anyData = false;
 
   FB_BALANCE_MUSCLES.forEach(function (m) {
@@ -10429,10 +10598,11 @@ function fbBalanceReport() {
       daysPerWeek: load.daysPerWeek, target: tgt, status: status,
       trained: load.sets14 > 0
     });
-    Object.keys(FB_BALANCE_GROUPS).forEach(function (g) {
-      if (FB_BALANCE_GROUPS[g].indexOf(m) >= 0) sum[g] += spw;
-    });
   });
+
+  // 推/拉/上/下肢用动作级口径单独算, 不从上表的部位容量累加 —— 臂要按动作拆给推和拉两边。
+  var g = fbGroupLoadWin(span);
+  var sum = { push: g.push, pull: g.pull, upper: g.upper, lower: g.lower };
 
   var res = {
     hasData: anyData, spanDays: span, items: items,
@@ -10469,14 +10639,14 @@ function fbBalanceReport() {
     if (res.pullPush < FB_PULL_PUSH_BAND[0]) {
       res.findings.push({
         kind: 'push', color: '#EF4444',
-        text: '推（胸+肩）约 ' + Math.round(sum.push) + ' 组/周，拉（背+臂）只有约 ' +
+        text: '推（胸+肩+三头类）约 ' + Math.round(sum.push) + ' 组/周，拉（背+二头类）只有约 ' +
           Math.round(sum.pull) + ' 组/周 —— 推是拉的 ' + (sum.push / sum.pull).toFixed(1) +
           ' 倍。练胸不练背，肩会往前扣，卧推重量早晚卡在肩痛上'
       });
     } else if (res.pullPush > FB_PULL_PUSH_BAND[1]) {
       res.findings.push({
         kind: 'pull', color: '#3B82F6',
-        text: '拉（背+臂）约 ' + Math.round(sum.pull) + ' 组/周，明显多于推（胸+肩）的约 ' +
+        text: '拉（背+二头类）约 ' + Math.round(sum.pull) + ' 组/周，明显多于推（胸+肩+三头类）的约 ' +
           Math.round(sum.push) + ' 组/周 —— 反过来练也失衡，胸会被背拽着走'
       });
     }
@@ -10829,7 +10999,7 @@ function fbMonthlyReport(offset) {
       if (isNaN(t) || t < r.start || t > r.realEnd) return;
       var ds = String(h.date).slice(0, 10);
       if (!daySet[ds]) { daySet[ds] = 1; out.days++; }
-      out.totalSets += parseInt(h.count, 10) || 0;
+      out.totalSets += fbHistSets(h);
       (h.exercises || []).forEach(function (n) {
         var m = fbMuscleOfName(n);
         if (m) out.muscles[m] = (out.muscles[m] || 0) + 1;
