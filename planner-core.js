@@ -555,12 +555,19 @@ var _weekAdvancedKey = null; // 本次跳转的 cycle_week 标记
 // ⏸ 挂起跳周的逻辑在下方「周结束:先记成绩,再进下一周」一节
 function checkAutoAdvanceWeek() {
   if (!lastPlan || !lastPlan.trainingDays) return;
+
+  // 本周所有动作是否已勾选
+  if (!checkWeekComplete()) return;
+
+  // 🎉 v108:周练完 = 成绩刚记完、数据最新 —— 在这一刻问一次「水平够不够升档」。
+  //   ⚠️ 刻意放在「是否最后一周」的判断之前:最后一周本来不跳周(上面那条 return),
+  //      放后面就永远问不到,而最后一周恰恰是整个周期力量最高的时候。
+  try { fbLevelUpCheck(); } catch (e) {}
+
   var goal = lastPlan.goal;
   var totalWeeks = goal === "marathon" ? 16 : getCycleLength();
   if (currentWeek >= totalWeeks) return;
 
-  // 本周所有动作是否已勾选
-  if (!checkWeekComplete()) return;
 
   // ⏸ 先记成绩,再跳周:今天打过卡的力量动作里还有没记成绩的 → 挂起跳周。
   //    因为跳周会 doGenerate 重渲染,而成绩输入框(.prog-row)挂在本周训练日卡片上,
@@ -1516,6 +1523,136 @@ function undoLevelCalibration(targetLevel) {
   doGenerate();
 }
 
+// ============ v108 · 周结束主动提醒:水平够了,改不改由你点 ============
+// 由来:校准只在 doGenerate 里跑 —— 用户练了三个月、深蹲从 80 涨到 105,只要他不点
+//   「生成计划」,界面上一句话都不会说。而周结束(本周勾完)恰恰是数据刚更新的时刻,
+//   也是唯一一个"刚练完、愿意看一眼反馈"的时刻。
+// ⚠️ 为什么不能替他改:自动校准横幅走的是"先改后告",撤销只能永久关掉整个校准。
+//   这里改成"先问后改" —— 问之前 doGenerate 里的自动校准必须让位(见 fbLevelUpSuppressed),
+//   否则用户还没回答,系统已经自己升完了,这张卡就成了马后炮。
+// ⚠️ 14 天过期:提问不能无限期压住自动校准。用户一直不理,两周后恢复原来的自动行为。
+var FB_LEVELUP_PENDING_KEY = 'fitbuddy_levelup_pending';
+var FB_LEVELUP_SNOOZE_PREFIX = 'fitbuddy_levelup_snooze_';
+var FB_LEVELUP_PENDING_TTL = 14 * 864e5;
+var FB_LEVELUP_SHORT = {beginner:'新手', intermediate:'中级', advanced:'进阶'};
+
+function fbLevelUpGetPending() {
+  try {
+    var o = JSON.parse(localStorage.getItem(FB_LEVELUP_PENDING_KEY) || 'null');
+    if (!o || !o.to) return null;
+    if (o.at && Date.now() - o.at > FB_LEVELUP_PENDING_TTL) { fbLevelUpClearPending(); return null; }
+    return o;
+  } catch (e) { return null; }
+}
+function fbLevelUpSetPending(o) {
+  try { localStorage.setItem(FB_LEVELUP_PENDING_KEY, JSON.stringify(o)); } catch (e) {}
+}
+function fbLevelUpClearPending() {
+  try { localStorage.removeItem(FB_LEVELUP_PENDING_KEY); } catch (e) {}
+}
+// 本周已选「先不加」:同周内不再问,也不让自动校准抢先升
+function fbLevelUpSnoozed(to) {
+  try { return localStorage.getItem(FB_LEVELUP_SNOOZE_PREFIX + to) === getCurrentIsoWeek(); }
+  catch (e) { return false; }
+}
+function fbLevelUpSnooze(to) {
+  try { localStorage.setItem(FB_LEVELUP_SNOOZE_PREFIX + to, getCurrentIsoWeek()); } catch (e) {}
+}
+// 自动校准的让位条件:有没回答的提问 / 本周刚推迟过
+function fbLevelUpSuppressed(to) {
+  var p = fbLevelUpGetPending();
+  if (p && p.to === to) return true;
+  return fbLevelUpSnoozed(to);
+}
+
+// 周结束时调用。比的是「当前生效档位(lastPlan.level)」,不是表单里那个 ——
+// 表单 radio 可能还没同步,而 lastPlan 才是这份计划真正按哪一档排出来的。
+function fbLevelUpCheck() {
+  try {
+    if (!lastPlan || !lastPlan.level) return null;
+    var cur = lastPlan.level;
+    var cal = estimateLevelFromLog();          // 内部已含:关掉校准 / 数据不足 / 只认有重量的动作
+    if (!cal || !cal.level) return null;
+    if (LEVEL_RANK[cal.level] <= LEVEL_RANK[cur]) return null;   // 只升不降
+    if (fbLevelUpSnoozed(cal.level)) return null;                // 本周已答「先不加」
+    var old = fbLevelUpGetPending();
+    if (old && old.to === cal.level) return old;                 // 同一档位已经问过,不重复写
+    var info = {
+      from: cur, to: cal.level, at: Date.now(),
+      exerciseCount: cal.exerciseCount, sampleCount: cal.sampleCount, bodyWeight: cal.bodyWeight,
+      evidence: (cal.evidence || []).slice().sort(function (a, b) { return (b.e1rm || 0) - (a.e1rm || 0); })
+        .slice(0, 3).map(function (e) {
+          return { ex: e.ex, e1rm: e.e1rm, ratio: e.ratio, absMid: e.absMid, mid: e.mid };
+        })
+    };
+    fbLevelUpSetPending(info);
+    return info;
+  } catch (e) { return null; }
+}
+window.fbLevelUpCheck = fbLevelUpCheck;
+
+// 卡片:跟结算条同区(计划页最上方),答完才消失
+function fbLevelUpCardHtml() {
+  var p = fbLevelUpGetPending();
+  if (!p) return '';
+  var cur = (lastPlan && lastPlan.level) || p.from;
+  // 档位已经变过了(用户自己升了 / 计划重生成过) → 这个提问作废
+  if (LEVEL_RANK[p.to] <= LEVEL_RANK[cur]) { fbLevelUpClearPending(); return ''; }
+  var toName = FB_LEVELUP_SHORT[p.to] || p.to, curName = FB_LEVELUP_SHORT[cur] || cur;
+  var rows = (p.evidence || []).map(function (e) {
+    var absTxt = e.absMid ? '（绝对中级线 ' + e.absMid + 'kg）' : '';
+    var relTxt = e.ratio ? ' ≈ ' + e.ratio + '× 体重' : '';
+    return '<div style="font-size:11.5px;color:#065F46;margin-top:3px;">· ' + String(e.ex).replace(/'/g, '') +
+      ' 估算 1RM <b>' + e.e1rm + 'kg</b>' + absTxt + relTxt + '</div>';
+  }).join('');
+  return '<div id="fbLevelUpCard" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);' +
+    'border:1.5px solid #10B981;border-radius:16px;padding:14px 16px;margin-bottom:14px;">' +
+    '<div style="font-size:13px;line-height:1.6;color:#065F46;">' +
+      '<b style="font-size:14px;">🎉 你的水平够「' + toName + '」了</b> · 计划现在还是按「' + curName + '」排的</div>' +
+    '<div style="font-size:11.5px;line-height:1.5;color:#047857;margin:6px 0 8px;">' +
+      '近 90 天 ' + p.exerciseCount + ' 个动作、' + p.sampleCount + ' 条带重量的记录' +
+      (p.bodyWeight ? '（体重 ' + p.bodyWeight + 'kg）' : '') + ',估算 1RM 已过' + toName + '线。</div>' +
+    rows +
+    '<div style="display:flex;gap:8px;margin-top:10px;">' +
+      '<button onclick="fbAcceptLevelUp()" style="flex:1;padding:10px 0;border:none;border-radius:12px;' +
+        'background:#10B981;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">按' + toName + '重排</button>' +
+      '<button onclick="fbSnoozeLevelUp()" style="flex:1;padding:10px 0;border:1.5px solid #10B981;border-radius:12px;' +
+        'background:#fff;color:#047857;font-size:13px;font-weight:700;cursor:pointer;">先不加</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#047857;margin-top:7px;line-height:1.55;">' +
+      '重排后组数会涨,21 天内不会再劝你加量 · 以后想升,上面的表单里随时能改' +
+      ' · <span onclick="fbLevelUpOffForever()" style="text-decoration:underline;cursor:pointer;">不再自动校准</span></div>' +
+  '</div>';
+}
+
+function fbAcceptLevelUp() {
+  var p = fbLevelUpGetPending();
+  if (!p) return;
+  fbLevelUpClearPending();
+  var lr = document.querySelector('input[name="level"][value="' + p.to + '"]');
+  if (lr) lr.checked = true;
+  // 升档时间戳(21 天缓冲)由 doGenerate 里 lastPlan.level 的对比自动写入,这里不重复记。
+  // 档位已经提到估算档位 → 自动校准分支不满足「估算 > 当前」,不会再弹一次横幅。
+  if (typeof showToast === 'function') showToast('已按「' + (FB_LEVELUP_SHORT[p.to] || p.to) + '」重排');
+  doGenerate();
+}
+function fbSnoozeLevelUp() {
+  var p = fbLevelUpGetPending();
+  if (!p) return;
+  fbLevelUpSnooze(p.to);      // 只压本周,下周数据更充分时还会再问一次
+  fbLevelUpClearPending();
+  var el = document.getElementById('fbLevelUpCard');
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+  if (typeof showToast === 'function') showToast('这周先按原档位练');
+}
+function fbLevelUpOffForever() {
+  var cur = (lastPlan && lastPlan.level) || 'beginner';
+  try { localStorage.setItem(LEVEL_CAL_OFF_KEY, '1'); } catch (e) {}
+  fbLevelUpClearPending();
+  if (typeof showToast === 'function') showToast('已保持「' + (FB_LEVEL_NAMES[cur] || cur) + '」,以后不再自动校准');
+  doGenerate();
+}
+
 // 📊 当前 ISO 周(用于询问弹窗"本周不再提醒"标记)
 function getCurrentIsoWeek() {
   var d = new Date();
@@ -2222,6 +2359,8 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   var html = "";
   // ⏸ 周结束结算条:成绩没记完时,它盖在计划最上方,压住「进入下一周」的入口
   html += fbWeekCloseBarHtml();
+  // 🎉 v108:水平提升提问 —— 跟着结算条一起出现,答完才消失(状态在 localStorage,跳周也不丢)
+  html += fbLevelUpCardHtml();
   var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : goalCfg.intensity;
   // 马拉松:动态计算实际周跑量,覆盖静态配置
   if (goal === "marathon" && trainingDays) {
@@ -2658,7 +2797,9 @@ function doGenerate() {
       _lastLevelCalibration = null;
       try {
         var cal = estimateLevelFromLog();
-        if (cal && LEVEL_RANK[cal.level] > LEVEL_RANK[level]) {
+        // v108:周结束已经问过用户了(卡片还挂着 / 本周刚答「先不加」) → 这里不许抢先改档,
+        //   等用户自己点。否则卡片弹出时档位早被改掉了,「先不加」这个选项等于不存在。
+        if (cal && LEVEL_RANK[cal.level] > LEVEL_RANK[level] && !fbLevelUpSuppressed(cal.level)) {
           cal.from = level;
           level = cal.level;
           _lastLevelCalibration = cal;
