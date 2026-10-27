@@ -697,12 +697,36 @@ function fbPeriodEditorInner() {
     if (typeof fbPeriodIsStepUpWeek === 'function') selUp = fbPeriodIsStepUpWeek(sel);
   } catch (e) {}
   var holdWeight = (!selSt.deload && selUp === false && selWkPct > 0);
+  // v119: 本周的处方次数。走 planner-core 的 fbPeriodWeekReps —— 与计划页 ex-row、
+  // 周信息条同一出口, 卡片不许再自己算一套(以前这里报"4 组"而计划页给 3, 同款毛病)。
+  var _selLowOf = 0, _selStep = 0;
+  try {
+    var _pl  = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null');
+    var _lv3 = (_pl && _pl.level) || 'beginner';
+    var _gl3 = (_pl && _pl.goal) || 'muscle';
+    var _b3  = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lv3] && CONFIGS[_lv3][_gl3]) || {}).reps || '';
+    var _n3  = (typeof fbPeriodWeekReps === 'function')
+      ? fbPeriodWeekReps(sel, _b3, !!(_pl && _pl.equip === 'bodyweight')) : _b3;
+    _selLowOf = (typeof fbRepsLowOf === 'function') ? fbRepsLowOf(_n3) : 0;
+    _selStep  = _selLowOf - ((typeof fbRepsLowOf === 'function') ? fbRepsLowOf(_b3) : 0);
+  } catch (e) {}
+  // "多做几次/加组数" 是空话: 加一组 = +25% 远超一周爬坡幅度, 周期内根本不加组;
+  // "几次"又是范围。这里直接报本周每组的次数下限, 加档周另说(那周靠重量)。
+  var _repsTip = '';
+  if (_selLowOf > 0) {
+    if (holdWeight) {
+      _repsTip = '<span style="color:var(--text3);"> · 重量维持，每组 ' + _selLowOf + ' 次' +
+        (_selStep > 0 ? '（比基准 +' + _selStep + ' 次）' : '') + '</span>';
+    } else if (selUp === true) {
+      // 措辞与首页周信息条保持一致(renderWeekInfo 那行是"每组维持 N 次", 不写"次/组")。
+      _repsTip = '<span style="color:var(--text3);"> · 本周加重量，每组维持 ' + _selLowOf + ' 次</span>';
+    }
+  }
   var weekSub = selSt.manual
     ? '本周按减载执行 · ' + baseSets + ' 组 → <b style="color:var(--text);">' + setsTxt + '</b> 组/动作'
     : (selSt.disabled
       ? '强度 ' + pct + '% · 减载已关闭，这周不自动降量 · 约 ' + setsTxt + ' 组/动作'
-      : '强度 ' + pct + '% · 约 ' + setsTxt + ' 组/动作' +
-        (holdWeight ? '<span style="color:var(--text3);"> · 这周重量维持，' + selWkPct + '% 靠多做几次/加组数兑现</span>' : ''));
+      : '强度 ' + pct + '% · 约 ' + setsTxt + ' 组/动作' + _repsTip);
   // 减载周(含手动)的组数走 isDeload 分支, 根本不读 P1 强度 —— 这时候 ± 是"看着能拧实际拧不动"
   var lockAdj = !!selSt.manual;
   var btnBase = 'width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;';

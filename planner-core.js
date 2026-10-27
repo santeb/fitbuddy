@@ -3525,7 +3525,9 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
   } else if (goalCfg.totalDuration) {
     presTag = goalCfg.totalDuration + ' 总时长';
   } else {
-    presTag = sets + '组 x ' + goalCfg.reps;
+    // v119: 次数按本周的周期台阶算(fbPeriodWeekReps), 不再是永远不变的静态字符串 ——
+    //   周期表写着 +5%、处方却一整周期不动, 用户会以为计划坏了。
+    presTag = sets + '组 x ' + fbCurrentWeekReps(goalCfg.reps);
   }
   var split = getSplitInfo(goal, days);
   return '<div class="summary-card">'+
@@ -3625,14 +3627,42 @@ function renderWeekInfo(wk) {
   // weightAdjust 取键的通用表 —— 那张表里 "+0%" 恒等于"基础适应周", 会盖掉长周期 W1 的语义。
   var note = isBw ? (wk.bwNote || BW_NOTE_TEXT[wk.weightAdjust] || wk.note)
                   : wk.note;
-  // 器械力量:周期表写着"重量调整 +15%"、这一周却不在加档预算里(见 fbPeriodStepUpBudget) →
-  // 当场说明那 15% 靠什么兑现。否则用户拿到"重量维持"的建议会以为计划坏了。
+  // 器械力量:周期表写着"重量调整 +5%/+10%", 而这周要么加重量、要么不动 ——
+  // 两种情况的处方完全不同, 必须当场说清那几个百分点靠什么兑现。
+  // 否则用户拿到"重量维持"的建议会以为计划坏了(v119 重写这一段)。
   // 心肺走"总量 ±%"、自重走"难度调整", 两套都不是单次重量口径, 不加这句话。
   if (!isCardio && !isBw && !wk.deload && typeof fbPeriodIsStepUpWeek === 'function') {
     var _isUp = null;
     try { _isUp = fbPeriodIsStepUpWeek(displayWeek); } catch (e) { _isUp = null; }
-    if (_isUp === false && /^\+[1-9]/.test(String(wk.weightAdjust || ''))) {
-      note += '<span style="font-weight:400;color:var(--text3);"> · 本周重量维持，靠多做 1-2 次 / 加一组兑现</span>';
+    // 本周处方次数 vs 基准次数: 一律走 fbPeriodWeekReps, 与计划页 ex-row 同一出口,
+    // 免得横幅报一个数字、动作行报另一个(本项目第 5 次"两个数字")。
+    var _lv2 = (lastPlan && lastPlan.level) || 'beginner';
+    var _gl2 = (lastPlan && lastPlan.goal) || 'muscle';
+    var _base2 = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lv2] && CONFIGS[_lv2][_gl2]) || {}).reps || '';
+    var _low2 = fbRepsLowOf(fbPeriodWeekReps(displayWeek, _base2, false));
+    var _d2 = _low2 - fbRepsLowOf(_base2);
+    if (_isUp === true) {
+      // 加档周: 重量涨一档(fbPeriodWeekSteps), 次数不叠 —— 那周的超负荷由重量提供。
+      //   ⚠️ 整体改写, 不追加(v120 改)。WEEK_INFO[2] / _CYCLE_MID_NOTES[1] 写的是
+      //   「继续增加重量或次数」, 后面再补一句「次数维持 9 次/组」, 同一行就成了
+      //   「继续增加…或次数 · 次数维持」—— 两个相反说法(本项目第 6 次同款毛病)。
+      //   周名(挑战周/冲击周/巅峰周)保留, 后半句换成这一周真正会执行的东西。
+      if (_low2 > 0) {
+        var _nm = String(note || '').split('—')[0].replace(/<[^>]*>/g, '').trim() || '本周';
+        note = _nm + ' — 本周加重量，每组维持 ' + _low2 + ' 次';
+      }
+    } else if (_isUp === false && _low2 > 0 && /^\+[1-9]/.test(String(wk.weightAdjust || ''))) {
+      // 非加档爬坡周: 那周重量确定不动, +5% 全靠次数兑现。
+      //   以前这里写"靠多做 1-2 次 / 加一组兑现": 加一组 = +25% 远超一周爬坡幅度,
+      //   周期内根本不会加组; "1-2 次"又是范围, 用户还是不知道做几个。直接给数字。
+      //   顺带把原 note 的"尝试增加重量 2.5-5kg"换掉 —— 这周并不加重量,
+      //   留着就是同一行里两个相反说法(v116 修过同款)。
+      //   巩固周(hold)例外: 它不是渐进超负荷, 名字要留着 —— 换成"渐进超负荷"等于把
+      //   "这周不往上加"说成"这周要往上加"(v120)。
+      var _nm2 = String(note || '').split('—')[0].replace(/<[^>]*>/g, '').trim();
+      note = (wk.hold ? (_nm2 || '巩固周') : '渐进超负荷<span class="term-badge" data-term="progressive">?</span>') +
+             ' — 本周重量维持，每组至少 ' +
+             _low2 + ' 次' + (_d2 > 0 ? '（比基准 +' + _d2 + ' 次）' : '');
     }
   }
   // 减载周: 周期表那句「重量降至80%」只交代了重量, 而组数也会按减载设置(reduction 默认 40%)
@@ -4055,7 +4085,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
   var isMarathon = goal === "marathon";
 
   // 心肺目标:根据训练日类型计算正确的处方显示
-  var presDisplay = sets + '组 x ' + goalCfg.reps;
+  var presDisplay = sets + '组 x ' + fbCurrentWeekReps(goalCfg.reps);
   if (goal === 'cardio') {
     if (day.name.indexOf('LISS') >= 0) {
       presDisplay = goalCfg.totalDuration + ' ' + (goalCfg.lissPerSet || '持续进行');
@@ -4121,7 +4151,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       if (!isMarathon && goal !== 'cardio' && ex.m !== '有氧') {
         try { _setsAdj = (typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0; } catch (e) { _setsAdj = 0; }
       }
-      var _exPres = _setsAdj > 0 ? (sets + _setsAdj) + '组 x ' + goalCfg.reps : presDisplay;
+      var _exPres = _setsAdj > 0 ? (sets + _setsAdj) + '组 x ' + fbCurrentWeekReps(goalCfg.reps) : presDisplay;
 
       // 马拉松专属处方显示
       var exPrescriptionHtml;
@@ -6146,6 +6176,10 @@ function fbPeriodIsStepUpWeek(week) {
   for (var i = 0; i < list.length; i++) {
     var it = list[i];
     if (!it || it.deload) continue;
+    // 巩固周(新手长周期紧贴末尾那一周)语义上就是"不再往上加", 它的 weightAdjust 只是
+    // 为了不和上一周打架才沿用了上周的正值 —— 数字是正的, 但它不该被算进加档候选。
+    // 否则会出现「巩固周 — 重量维持上周 …… · 本周加重量」(v120 修)。
+    if (it.hold) continue;
     var m = String(it.weightAdjust || '').match(/-?\d+(?:\.\d+)?/);
     var p = m ? parseFloat(m[0]) : 0;
     if (p > 0) cands.push(i);
@@ -11699,6 +11733,72 @@ function fbPeriodBaseValue() {
 // 卡片上显示用的入口: 组数基准取当前水平(新手 3 / 中级 4 / 进阶 5)
 function fbPeriodWeekSets(week) {
   return fbPeriodSetsFrom(fbSetsPerEx(), week);
+}
+
+// ============ 加档周该用哪个百分比算次数台阶 ============
+// 加档周的重量已经涨了一档(见 fbPeriodWeekSteps: "加档周一次一档"),
+// 次数再往上叠就是双重加码 —— 那周的超负荷由重量提供, 次数持平即可。
+// 这也是 WEEK_INFO[2].note 里「保持次数」那半句一直没落到实处的东西。
+// 为什么回溯而不是简单"减 1": 长周期里 step 更大, 减 1 会让台阶倒退(第 6 周比第 5 周还少)。
+//   取"上一个非加档、非减载的爬坡周"才保证单调不减。
+function fbPeriodRepsPctOf(week) {
+  var pct = 0, up = null;
+  try { pct = fbPeriodWeekPct(week); } catch (e) {}
+  if (!(pct > 0)) return 0;
+  try { up = fbPeriodIsStepUpWeek(week); } catch (e2) { up = null; }
+  if (up !== true) return pct;
+  var N = 4, w = parseInt(week, 10);
+  try { N = fbPeriodTotalWeeks(); } catch (e3) {}
+  if (!(N > 0)) N = 4;
+  if (isNaN(w) || w < 1) w = 1;
+  for (var k = 1; k < N; k++) {
+    var pw = ((w - 1 - k) % N + N) % N + 1;
+    var pu = null, pp = 0;
+    try { pu = fbPeriodIsStepUpWeek(pw); } catch (e4) {}
+    try { pp = fbPeriodWeekPct(pw); } catch (e5) {}
+    if (pu === false && pp > 0) return pp;
+  }
+  return pct;
+}
+
+// ============ 本周每个动作的处方次数 ============
+// 例: 中级增肌 "8-12次" → W1 "8-12次" / W2 "9-12次" / W3 "9-12次"(加档周, 重量涨) / 减载周 "8-12次"
+// 计划页 ex-row、每日处方、summary 卡、周信息条、Pro 周期卡必须走这一个函数,
+//   各算一套必然又出现"两个数字"(本项目的老毛病, 已修过 4 次)。
+// 边界: 心肺/马拉松的 reps 是 "—" 原样返回; 单一数字(无区间)不动; 减载周回基准。
+// isBw: 自重用户没有重量旋钮, 台阶比例上浮(见 data-constants 的 FB_REPS_RATIO_BW_MUL)。
+function fbPeriodWeekReps(week, repsStr, isBw) {
+  var s = String(repsStr == null ? '' : repsStr);
+  if (!s || s === '—' || s === '-') return s;
+  var m = s.match(/(\d+(?:\.\d+)?)\s*[-~]\s*(\d+(?:\.\d+)?)/);
+  if (!m) return s;
+  var lo = parseFloat(m[1]), hi = parseFloat(m[2]);
+  if (!(hi > lo)) return s;
+  var ratio = fbRepsRatioOf(fbPeriodRepsPctOf(week), isBw);
+  if (!(ratio > 0)) return s;
+  var step = Math.max(1, Math.round((hi - lo) * ratio));
+  var nlo = lo + step;
+  if (nlo >= hi) return hi + '次';            // 台阶把区间填满 → 直接给具体数(不出现 "10-10次")
+  return s.replace(/^\s*\d+(?:\.\d+)?/, String(nlo));
+}
+
+// 取次数区间的下限, 给"比基准 +N 次"这类文案用
+function fbRepsLowOf(repsStr) {
+  var m = String(repsStr == null ? '' : repsStr).match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+// 当前周(计划页口径)的处方次数。渲染点统一调这个, 别各算一套 displayWeek/isBw。
+// 拿不到上下文(页面还没生成计划等)就原样返回, 不会比改动前更糟。
+function fbCurrentWeekReps(repsStr) {
+  try {
+    var N = getCycleLength();
+    if (!(N > 0)) N = 4;
+    var w = ((parseInt(currentWeek, 10) - 1) % N + N) % N + 1;
+    var bw = !!(lastPlan && lastPlan.equip === 'bodyweight' &&
+                lastPlan.goal !== 'cardio' && lastPlan.goal !== 'marathon');
+    return fbPeriodWeekReps(w, repsStr, bw);
+  } catch (e) { return repsStr; }
 }
 
 // 单周只改那一周。想整体加量请用 fbPeriodAdjustGlobal ——

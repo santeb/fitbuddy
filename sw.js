@@ -2,7 +2,11 @@
 // 生产环境禁用 console.log（控制台执行 self._DEBUG=1 可重新启用）
 (function(){ if (!self._DEBUG) { var _noOp=function(){}; try{console.log=_noOp;}catch(e){} } })();
 
-var CACHE_STATIC = 'fitbuddy-static-v6';
+// ⚠️ 发版必须 bump 这个数字: JS/CSS 走 cacheFirst(第 91 行), 只改 index.html 里的 ?v=NNN
+//   不够 —— 旧 key 的条目还躺在同名 cache 里, 用户拿到的仍是旧代码。
+//   名字一变, activate 里"删掉不在白名单的 cache"那段就会自动清掉旧的。
+var APP_VER = '8';
+var CACHE_STATIC = 'fitbuddy-static-v' + APP_VER;
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
 

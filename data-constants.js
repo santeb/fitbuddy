@@ -467,6 +467,34 @@ var WEEK_INFO = [
   {note:"减载周（Deload）— 重量降至80%，让身体充分恢复", deload:true, weightAdjust:"-20%"}
 ];
 
+// ============ 周期强度百分比 → 每组次数台阶(按区间宽度的比例) ============
+// 由来: 周期表写「+5%」, 但组数不会动(加 1 组 = +25%, 远超一周爬坡幅度)、
+//   重量又只在少数加档周才加(见 planner-core 的 fbPeriodWeekSteps) ——
+//   那 5% 落不到任何可见变化上, 用户拿到的是一张空头支票。
+//   训练里最小可执行单位是「1 次」, 所以把百分比翻译成次数台阶。
+// 为什么是"区间宽度的比例"而不是固定次数(v119 改):
+//   "8-10次" 加 2 就填满了, "15-20次" 加 2 才刚起步 —— 同一个 +10% 在两种区间上
+//   完全是两回事。按宽度算才一致。台阶 = round((hi-lo) × ratio)。
+// 为什么不是容量等价换算: 4组×8次 +5% = +1.6 次, 没法执行。取「宁小不大」:
+//   台阶宁可少一步, 也不把一周的爬坡做成 +25%。
+var FB_REPS_RATIO_BY_PCT = { 0:0, 5:0.25, 10:0.5, 15:0.5, 20:0.75, 25:0.75, 30:1.0 };
+var _FB_REPS_RATIO_KEYS = Object.keys(FB_REPS_RATIO_BY_PCT).map(Number)
+  .sort(function(a,b){ return a-b; });
+// 自重: 没有重量旋钮, 次数是主要杠杆, 比例上浮。但不取 2 倍 ——
+//   +10% 那周还要升变式(见 planner-core 的 BW_NOTE_TEXT), 次数再填满就是双重加码。
+//   ×1.5 后 W2 = +2 次, 正好对上 BW_NOTE_TEXT["+5%"] 的「每组次数 +2~3 次」。
+var FB_REPS_RATIO_BW_MUL = 1.5;
+
+function fbRepsRatioOf(pct, isBw) {
+  var p = Math.abs(parseFloat(pct) || 0);
+  var r = 0;
+  for (var i = 0; i < _FB_REPS_RATIO_KEYS.length; i++) {
+    if (p >= _FB_REPS_RATIO_KEYS[i]) r = FB_REPS_RATIO_BY_PCT[_FB_REPS_RATIO_KEYS[i]];
+  }
+  if (isBw) r = Math.min(1, r * FB_REPS_RATIO_BW_MUL);
+  return r;
+}
+
 // 心肺目标4周周期化配置（覆盖 WEEK_INFO 和 goalCfg 中的心肺参数）
 // durationPct: 基础 totalDuration 的百分比（0.8 = 减20%）
 // hiitRoundsAdjust: 在基础 sets 上的增减（控制 HIIT 组数）
@@ -511,7 +539,13 @@ var _CYCLE_DELOAD_WEEK = {
 var _CYCLE_NEWBIE_HOLD = {
   note: "巩固周 — 重量维持上周，把动作做扎实，下周进入减载收尾",
   deload: false,
-  weightAdjust: "+0%"
+  weightAdjust: "+0%",
+  // ⚠️ hold: 这周不参与「加档周」候选(v120 加)。巩固的定义就是"不再往上加, 但也不往回退",
+  //   而 weightAdjust 为了不和上一周打架沿用了上周的正值(见上面注释) —— 于是它会被
+  //   fbPeriodIsStepUpWeek 当成"周期表说要涨强度"的候选, 6 周新手实测第 5 周被选成加档周,
+  //   横幅直接打出「巩固周 — 重量维持上周 …… · 本周加重量」两个相反说法。
+  //   语义 > 数字: 这里必须显式声明它不加重量。
+  hold: true
 };
 // 长周期(>4周)的第 1 周。短周期能直接复用 WEEK_INFO[0] 的"基础适应周",长周期不能:
 //   跨周期时基准回退到上一周期的峰值重量(见 fbCalcNextLoad),12 周周期爬了 11 周之后,
