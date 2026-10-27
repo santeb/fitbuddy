@@ -713,13 +713,27 @@ function fbPeriodEditorInner() {
   // "多做几次/加组数" 是空话: 加一组 = +25% 远超一周爬坡幅度, 周期内根本不加组;
   // "几次"又是范围。这里直接报本周每组的次数下限, 加档周另说(那周靠重量)。
   var _repsTip = '';
+  // 本周处方走 planner-core 的唯一出口 fbWeekRx, 不再自己从 selWkPct/selUp 推(v122):
+  //   这里判断"加不加重量"的口径和首页周信息条、今日目标必须是同一个, 否则用户会在
+  //   同一屏看到"周期卡说维持、今日目标说加 1 档"。
+  var _rx3 = null;
+  try { if (typeof fbWeekRx === 'function') _rx3 = fbWeekRx(sel); } catch (e3) {}
+  var _rxUp = _rx3 ? !!_rx3.stepUp : (selUp === true);
+  var _rxFlat = _rx3 ? (_rx3.hold || !(_rx3.deltaPct > 0)) : true;
   if (_selLowOf > 0) {
-    if (holdWeight) {
-      _repsTip = '<span style="color:var(--text3);"> · 重量维持，每组 ' + _selLowOf + ' 次' +
+    if (_rxUp) {
+      // ⚠️ 措辞与首页周信息条逐字对齐(renderWeekInfo 那行是"加 N 档重量，每组至少 N 次")。
+      //   "维持"→"至少"(v122): 台阶是下限, 用户上次做了 15 次而台阶 14, "维持 14" 与
+      //   今日目标的「×15」又是一组对不上的数字(与 planner-core 同一处修改)。
+      _repsTip = '<span style="color:var(--text3);"> · 本周加 1 档重量，每组至少 ' + _selLowOf + ' 次</span>';
+    } else if (_rxFlat) {
+      _repsTip = '<span style="color:var(--text3);"> · 重量维持，每组至少 ' + _selLowOf + ' 次' +
         (_selStep > 0 ? '（比基准 +' + _selStep + ' 次）' : '') + '</span>';
-    } else if (selUp === true) {
-      // 措辞与首页周信息条保持一致(renderWeekInfo 那行是"每组维持 N 次", 不写"次/组")。
-      _repsTip = '<span style="color:var(--text3);"> · 本周加重量，每组维持 ' + _selLowOf + ' 次</span>';
+    } else {
+      // 非加档爬坡周: 那周重量不动, 增量全靠次数 —— 说"每组加到 N 次"而不是"维持",
+      // 否则用户照着"维持"做完, 这周的强度一点没涨(与周信息条同一措辞)。
+      _repsTip = '<span style="color:var(--text3);"> · 本周重量不变，每组加到 ' + _selLowOf + ' 次' +
+        (_selStep > 0 ? '（比基准 +' + _selStep + ' 次）' : '') + '</span>';
     }
   }
   var weekSub = selSt.manual

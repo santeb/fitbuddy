@@ -3631,9 +3631,13 @@ function renderWeekInfo(wk) {
   // 两种情况的处方完全不同, 必须当场说清那几个百分点靠什么兑现。
   // 否则用户拿到"重量维持"的建议会以为计划坏了(v119 重写这一段)。
   // 心肺走"总量 ±%"、自重走"难度调整", 两套都不是单次重量口径, 不加这句话。
-  if (!isCardio && !isBw && !wk.deload && typeof fbPeriodIsStepUpWeek === 'function') {
-    var _isUp = null;
-    try { _isUp = fbPeriodIsStepUpWeek(displayWeek); } catch (e) { _isUp = null; }
+  // 器械力量:本周指令只说「档 / 次」这两个离散可执行的单位, 不说百分比(v122 改)。
+  //   以前这里报的是 weightAdjust 的周期内累计刻度(+10%), 而今日目标报的是本周真正加的
+  //   那 1 档(+2.5kg) —— 两个摆在同一屏就成了「周期说 +10%、今天只给 2.5kg」。
+  //   口径差异详见 fbWeekRx(本周处方的唯一真源)。
+  // 心肺走"总量 ±%"、自重走"难度调整", 两套都不是单次重量口径, 不加这句话。
+  if (!isCardio && !isBw && !wk.deload && typeof fbWeekRx === 'function') {
+    var _rx = fbWeekRx(displayWeek);
     // 本周处方次数 vs 基准次数: 一律走 fbPeriodWeekReps, 与计划页 ex-row 同一出口,
     // 免得横幅报一个数字、动作行报另一个(本项目第 5 次"两个数字")。
     var _lv2 = (lastPlan && lastPlan.level) || 'beginner';
@@ -3641,18 +3645,20 @@ function renderWeekInfo(wk) {
     var _base2 = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lv2] && CONFIGS[_lv2][_gl2]) || {}).reps || '';
     var _low2 = fbRepsLowOf(fbPeriodWeekReps(displayWeek, _base2, false));
     var _d2 = _low2 - fbRepsLowOf(_base2);
-    if (_isUp === true) {
+    if (_rx.stepUp) {
       // 加档周: 重量涨一档(fbPeriodWeekSteps), 次数不叠 —— 那周的超负荷由重量提供。
       //   ⚠️ 整体改写, 不追加(v120 改)。WEEK_INFO[2] / _CYCLE_MID_NOTES[1] 写的是
       //   「继续增加重量或次数」, 后面再补一句「次数维持 9 次/组」, 同一行就成了
       //   「继续增加…或次数 · 次数维持」—— 两个相反说法(本项目第 6 次同款毛病)。
-      //   周名(挑战周/冲击周/巅峰周)保留, 后半句换成这一周真正会执行的东西。
+      //   ⚠️ 「维持 N 次」→「至少 N 次」(v122): 台阶是下限, 用户上次做了 15 次而台阶 14,
+      //      "维持 14" 与今日目标的「×15」又是一组对不上的数字。改"至少"之后 15 次合法,
+      //      同时也保住了"加档周不要求次数再涨"的原意 —— 它只要求别低于台阶。
       if (_low2 > 0) {
         var _nm = String(note || '').split('—')[0].replace(/<[^>]*>/g, '').trim() || '本周';
-        note = _nm + ' — 本周加重量，每组维持 ' + _low2 + ' 次';
+        note = _nm + ' — 本周加 ' + _rx.steps + ' 档重量，每组至少 ' + _low2 + ' 次';
       }
-    } else if (_isUp === false && _low2 > 0 && /^\+[1-9]/.test(String(wk.weightAdjust || ''))) {
-      // 非加档爬坡周: 那周重量确定不动, +5% 全靠次数兑现。
+    } else if (_rx.cumPct > 0 && _low2 > 0) {
+      // 非加档爬坡周 / 巩固周: 那周重量确定不动, 增量全靠次数兑现。
       //   以前这里写"靠多做 1-2 次 / 加一组兑现": 加一组 = +25% 远超一周爬坡幅度,
       //   周期内根本不会加组; "1-2 次"又是范围, 用户还是不知道做几个。直接给数字。
       //   顺带把原 note 的"尝试增加重量 2.5-5kg"换掉 —— 这周并不加重量,
@@ -3660,9 +3666,11 @@ function renderWeekInfo(wk) {
       //   巩固周(hold)例外: 它不是渐进超负荷, 名字要留着 —— 换成"渐进超负荷"等于把
       //   "这周不往上加"说成"这周要往上加"(v120)。
       var _nm2 = String(note || '').split('—')[0].replace(/<[^>]*>/g, '').trim();
-      note = (wk.hold ? (_nm2 || '巩固周') : '渐进超负荷<span class="term-badge" data-term="progressive">?</span>') +
-             ' — 本周重量维持，每组至少 ' +
-             _low2 + ' 次' + (_d2 > 0 ? '（比基准 +' + _d2 + ' 次）' : '');
+      // 巩固周本周增量为 0(deltaPct=0), 只能说"维持", 写成"每组加到 N 次"就成了
+      // 巩固周还在往上加 —— 又是同一行两个相反说法。
+      var _verb = (_rx.hold || !(_rx.deltaPct > 0)) ? '重量维持，每组至少' : '本周重量不变，每组加到';
+      note = (_rx.hold ? (_nm2 || '巩固周') : '渐进超负荷<span class="term-badge" data-term="progressive">?</span>') +
+             ' — ' + _verb + ' ' + _low2 + ' 次' + (_d2 > 0 ? '（比基准 +' + _d2 + ' 次）' : '');
     }
   }
   // 减载周: 周期表那句「重量降至80%」只交代了重量, 而组数也会按减载设置(reduction 默认 40%)
@@ -3679,8 +3687,18 @@ function renderWeekInfo(wk) {
       }
     } catch (e) {}
   }
+  // ⚠️ 器械非减载周不再显示「重量调整 +10%」(v122)。那串是周期内累计刻度, 而这一屏说的是
+  //   "本周干什么"(加 1 档 / 次数加到 N 次) —— 累计和并排写 = 必然被读成计划坏了。
+  //   累计刻度只留在周期图那根柱子上; 这里换成周进度, 有信息量且不会和 note 打架。
+  //   自重(难度调整)、心肺(总量)、减载周(整体降幅)三套口径各自成立, 保持原样。
+  var _tail = adjustLabel + ': ' + adjustVal;
+  if (!isCardio && !isBw && !wk.deload) {
+    var _N2 = 0;
+    try { _N2 = (typeof getCycleLength === 'function') ? getCycleLength() : 0; } catch (e7) {}
+    if (_N2 > 0) _tail = '本周期 ' + displayWeek + '/' + _N2;
+  }
   return '<div class="week-info">'+icon+' <strong>第'+displayWeek+'周</strong> - '+note+
-    ' <span style="float:right;font-weight:700;">'+adjustLabel+': '+adjustVal+'</span></div>';
+    ' <span style="float:right;font-weight:700;">'+_tail+'</span></div>';
 }
 
 function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
@@ -6286,8 +6304,11 @@ function fbCalcNextLoad(exName) {
     nw = Math.max(step, Math.round(rawW / step) * step);
     why = '减载周 −' + sevPct + '%';
   } else {
-    var wkPct = 0, wkSteps = 0;
+    var wkPct = 0, wkSteps = 0, wkDelta = 0, _rxw = null;
     try { wkPct = fbPeriodWeekPct(currentWeek); wkSteps = fbPeriodWeekSteps(currentWeek); } catch (e) {}
+    // 本周增量, 不是周期内累计(v122): 卡片上要报的是"这周加了多少", 报累计刻度(+10%)
+    // 而实际给的是本周那 1 档(+2.5kg), 摆在一起就是"计划说一套做一套"。
+    try { if (typeof fbWeekRx === 'function') { _rxw = fbWeekRx(currentWeek); wkDelta = _rxw.deltaPct; } } catch (e0) {}
     // 档位是绝对值, 同一个"3 档"落到不同重量上是完全不同的百分比: 深蹲 100kg 是 +15%(正常),
     // 侧平举 10kg 却是 +30%(太猛)。所以再夹一道相对上限 —— 单次涨幅不超过 25%,
     // 保底 1 档(否则小重量动作会被夹成 0 档, 又变回"周期说 +15% 而重量纹丝不动")。
@@ -6307,23 +6328,33 @@ function fbCalcNextLoad(exName) {
       // 上次明显偏轻 → 加, 且巩固周(+0%)也至少加一档:
       // 巩固的是动作模式不是重量, 停一周是浪费渐进机会, 还会出现"强度柱涨而重量四周不动"
       var up = Math.min(Math.max(wkSteps, 1), maxSteps);
-      if (tight) up = Math.min(up, 1);
+      // ⚠️ tight(小重量动作)只在"本来要加 2 档以上"时才真的夹(v122 改)。加档预算下 wkSteps
+      //   已经是 0/1, 夹不夹都一样 —— 这时候还挂一句"小重量只加 1 档"是假限制,
+      //   用户会以为本来能加更多、被克扣了(实测 45kg 深蹲就顶着这句)。
+      var clamped = tight && up > 1;
+      if (clamped) up = 1;
       nw = w + up * step;
-      why = '上次很轻松(RPE' + rpe + ') · 加 ' + up + ' 档' + (tight ? ' · 小重量每次只加 1 档' : '');
+      why = '上次很轻松(RPE' + rpe + ') · 加 ' + up + ' 档（+' + (Math.round(up * step * 10) / 10) + 'kg）'
+            + (clamped ? ' · 小重量每次只加 1 档' : '');
     } else {
       // RPE 7-8 或没记 RPE: 严格听周期, 不叠加。文案必须报夹完上限后的真实档数 ——
       // 否则侧平举 10kg 会显示"加 3 档"而实际只涨了 2kg, 又是两个数字对不上。
       var wkUp = Math.min(wkSteps, maxSteps);
-      // 加档预算下 wkSteps 已经是 0/1, 天然满足"小重量一次只加一档"; 只有老口径(2~3 档)需要夹。
       // (原来写的是 wkSteps>=2 才加 —— 预算一生效 wkSteps 最大就是 1, 侧平举会永远加不了档。)
-      if (tight) wkUp = Math.min(wkUp, 1);
+      var clamped2 = tight && wkUp > 1;
+      if (clamped2) wkUp = 1;
       nw = w + wkUp * step;
       // 第三种"不加"必须单独说: 周期表写着 +15%、卡片给的重量却纹丝不动, 不解释就是"计划坏了"。
       // 实情是那 15% 由次数/组数兑现 —— 加档预算只管重量(见 fbPeriodStepUpBudget)。
-      why = wkUp ? ('本周周期 +' + wkPct + '% · 加 ' + wkUp + ' 档' + (tight ? ' · 小重量只加 1 档' : ''))
+      // ⚠️ 报的是本周增量(deltaPct)而不是周期内累计, 且重量只报"档 + kg"不报百分比:
+      //   一档落在 100kg 卧推上是 2.5%、落在 10kg 侧平举上是 10%, 百分比和档位并排
+      //   写出来必然对不上(见 fbWeekRx 的注释)。
+      var _kg = Math.round(wkUp * step * 10) / 10;
+      var _wkName = (_rxw && _rxw.hold) ? '巩固周' : ((_rxw && _rxw.base) ? '基准重建周' : '本周');
+      why = wkUp ? ('本周加 ' + wkUp + ' 档（+' + _kg + 'kg）' + (clamped2 ? ' · 小重量只加 1 档' : ''))
                  : ((tight && wkSteps) ? ('小重量动作 · 只在挑战周加档,本周维持')
-                 : (wkPct > 0 ? ('本周强度 +' + wkPct + '% 靠多做几次/加组数兑现 · 重量先维持')
-                 : (!rpe ? '巩固周 · 上次没记 RPE,先维持' : '巩固周 · 上次强度合适,维持')));
+                 : (wkDelta > 0 ? ('本周强度 +' + wkDelta + '% 靠次数兑现 · 重量维持')
+                 : (!rpe ? (_wkName + ' · 上次没记 RPE,先维持') : (_wkName + ' · 上次强度合适,维持'))));
     }
     // 完成次数兜底: RPE 是主观的, 很多人做崩了也只打 8 分, 于是重量一路加上去没人拦 ——
     // 实测 12 周里 7 周做不动、末期超出真实能力 31%。但"做不动"一定会如实少做次数,
@@ -11803,6 +11834,47 @@ function fbPeriodWeekReps(week, repsStr, isBw) {
 function fbRepsLowOf(repsStr) {
   var m = String(repsStr == null ? '' : repsStr).match(/(\d+(?:\.\d+)?)/);
   return m ? parseFloat(m[1]) : 0;
+}
+
+// ============ 本周处方的唯一真源(v122 加) ============
+// 周信息条 / Pro 周期卡 / 今日目标 以前各读各的: 前两个报 weightAdjust(周期内累计刻度),
+// 今日目标报"相对上次加了几档"(本周增量)。两个数各自都对, 摆在同一屏就成了
+// 「周期写着 +10%、今日目标只 +2.5kg」—— 用户没有义务知道前者是累计、后者是增量。
+//
+// 根治办法不是再改一次文案(这个项目已经为同款毛病打过 6 次补丁), 而是把"本周要执行什么"
+// 定义成一个对象, 三处都从它读:
+//   cumPct    周期内累计刻度, 只画在周期图的柱子上, 不写进本周指令
+//   deltaPct  本周相对上一周要涨多少(巩固周/基准周/减载周 = 0)
+//   steps     本周加几档重量(加档周 1, 其余 0)
+//   hold/deload
+//
+// ⚠️ 本周指令里不要同时出现「百分比」和「档位」两个单位。百分比是连续目标, 档位是离散的片:
+//   100kg 卧推一档 = 2.5%, 10kg 侧平举一档 = 10% —— 同一个「+5%」落下来差四倍, 只要并排
+//   写出来就必然被判定为对不上。对外只说档 / kg / 次, 百分比留在周期图的趋势刻度上。
+function fbWeekRx(week) {
+  var w = parseInt(week, 10);
+  if (isNaN(w) || w < 1) w = 1;
+  var out = { week: w, cumPct: 0, deltaPct: 0, stepUp: false, steps: 0, hold: false, deload: false, base: false };
+  try { out.cumPct = fbPeriodWeekPct(w); } catch (e) {}
+  try { out.deload = !!fbPeriodIsDeloadWeek(w); } catch (e2) {}
+  if (out.deload) return out;
+  try { var info = fbPeriodWeekInfo(w); if (info && info.hold) out.hold = true; } catch (e3) {}
+  if (!(out.cumPct > 0)) { out.base = true; return out; }   // 基准重建周(+0%): 这周不涨
+  var up = null;
+  try { up = fbPeriodIsStepUpWeek(w); } catch (e4) {}
+  out.stepUp = (up === true);
+  out.steps = out.stepUp ? 1 : 0;
+  // 本周增量 = 本周累计 − 上周累计。上周若是基准周(+0%)或减载周(负值)就从 0 起算 ——
+  //   第 1 周的"上一周"是上一周期的减载周, 不夹住会算出 +20% 这种凭空的涨幅。
+  //   巩固周 weightAdjust 沿用了上周的正值(见 data-constants 的注释), 这里自然得到 0。
+  var prev = 0;
+  try {
+    var N = fbPeriodTotalWeeks(); if (!(N > 0)) N = 4;
+    var pp = fbPeriodWeekPct(((w - 2) % N + N) % N + 1);
+    if (pp > 0) prev = pp;
+  } catch (e5) {}
+  out.deltaPct = Math.max(0, out.cumPct - prev);
+  return out;
 }
 
 // 当前周(计划页口径)的处方次数。渲染点统一调这个, 别各算一套 displayWeek/isBw。
