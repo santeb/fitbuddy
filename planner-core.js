@@ -1466,7 +1466,9 @@ function getAdaptiveIntensityNote(lastWeekRate) {
   if (lastWeekRate >= 0.85) return '本周重量先不加,把动作质量做扎实';
   if (lastWeekRate >= 0.60) return '本周重量维持不加,优先把规定的次数做满';
   if (lastWeekRate >= 0.40) return '本周建议下调重量 5-10%,先把动作模式练顺';
-  return '本周进入减量模式,重量降到 70% —— 休息也是训练的一部分';
+  // 这里说的是"实际会降到的水平", 必须跟减载周真正执行的降幅一致 ——
+  // v118 大减载由 -30% 收到 -20%(见 data-constants WEEK_INFO[3] 注释), 写 70% 就是说一套做一套。
+  return '本周进入减量模式,重量降到 80% —— 休息也是训练的一部分';
 }
 
 // 渲染「水平自动校准」提示条(透明化:说清依据、给出撤销入口)
@@ -3619,7 +3621,34 @@ function renderWeekInfo(wk) {
   var adjustLabel = isCardio ? '强度调整' : (isBw ? '难度调整' : '重量调整');
   var adjustVal = (isBw && BW_ADJUST_TEXT[wk.weightAdjust]) ? BW_ADJUST_TEXT[wk.weightAdjust] : wk.weightAdjust;
   // 仅自重:左侧周阶段文案也用难度语言(去掉"增加重量 2.5-5kg"等器械表述)
-  var note = (isBw && BW_NOTE_TEXT[wk.weightAdjust]) ? BW_NOTE_TEXT[wk.weightAdjust] : wk.note;
+  // 自重那周优先用周期表自带的 bwNote(长周期第 1 周有自己的说法), 没有再退回按
+  // weightAdjust 取键的通用表 —— 那张表里 "+0%" 恒等于"基础适应周", 会盖掉长周期 W1 的语义。
+  var note = isBw ? (wk.bwNote || BW_NOTE_TEXT[wk.weightAdjust] || wk.note)
+                  : wk.note;
+  // 器械力量:周期表写着"重量调整 +15%"、这一周却不在加档预算里(见 fbPeriodStepUpBudget) →
+  // 当场说明那 15% 靠什么兑现。否则用户拿到"重量维持"的建议会以为计划坏了。
+  // 心肺走"总量 ±%"、自重走"难度调整", 两套都不是单次重量口径, 不加这句话。
+  if (!isCardio && !isBw && !wk.deload && typeof fbPeriodIsStepUpWeek === 'function') {
+    var _isUp = null;
+    try { _isUp = fbPeriodIsStepUpWeek(displayWeek); } catch (e) { _isUp = null; }
+    if (_isUp === false && /^\+[1-9]/.test(String(wk.weightAdjust || ''))) {
+      note += '<span style="font-weight:400;color:var(--text3);"> · 本周重量维持，靠多做 1-2 次 / 加一组兑现</span>';
+    }
+  }
+  // 减载周: 周期表那句「重量降至80%」只交代了重量, 而组数也会按减载设置(reduction 默认 40%)
+  // 一起砍 —— 全项目没任何一处说过"两个一起降"。用户打开计划发现重量轻了、组数也少了,
+  // 只会以为计划多砍了一半。这里补一句, 数字直接读计划真正会生成的那个数(fbPeriodWeekSets),
+  // 与 Pro 周期卡、计划页同一出口, 不再另算一套。心肺按时长降, 不套"组数"这个词。
+  if (wk.deload && !isCardio && typeof fbPeriodWeekSets === 'function') {
+    try {
+      var _dSets = fbPeriodWeekSets(displayWeek);
+      var _bSets = (typeof fbSetsPerEx === 'function') ? fbSetsPerEx() : 0;
+      if (_dSets > 0 && _bSets > _dSets) {
+        note += '<span style="font-weight:400;color:var(--text3);"> · 组数同时从 ' + _bSets +
+                ' 组降到 ' + _dSets + ' 组/动作</span>';
+      }
+    } catch (e) {}
+  }
   return '<div class="week-info">'+icon+' <strong>第'+displayWeek+'周</strong> - '+note+
     ' <span style="float:right;font-weight:700;">'+adjustLabel+': '+adjustVal+'</span></div>';
 }
@@ -4662,7 +4691,15 @@ function saveTrainingLog(exName, weight, reps, rpeVal, src) {
   // src: 'manual' = 用户确认/改过的真实成绩(唯一能进 PR 与卡点诊断的数据)
   //      'auto'   = 打卡时按上次成绩自动带入的占位(让趋势线连续,但不得参与结论)
   var mode = (src === 'auto') ? 'auto' : 'manual';
-  var entry = { date: new Date().toISOString().slice(0,10), weight: parseFloat(weight)||0, reps: parseInt(reps)||0, rpe: parseInt(rpeVal)||0, src: mode };
+  // deload: 这条成绩是在减载周做出的。带上它, 下次算目标重量时才知道要跳过这条、
+  // 回到减载前的重量去渐进 —— 否则减载周的轻重量会成为新基准, 每轮周期净掉 30%。
+  var dl = false;
+  try {
+    if (typeof isDeloadWeekActive === 'function' && typeof currentWeek !== 'undefined') {
+      dl = !!isDeloadWeekActive(currentWeek, (typeof currentCycle !== 'undefined' ? currentCycle : 3));
+    }
+  } catch (e) { dl = false; }
+  var entry = { date: new Date().toISOString().slice(0,10), weight: parseFloat(weight)||0, reps: parseInt(reps)||0, rpe: parseInt(rpeVal)||0, src: mode, deload: dl };
   trainingLog[exName].push(entry);
   if (trainingLog[exName].length > 50) trainingLog[exName] = trainingLog[exName].slice(-50);
   localStorage.setItem("fitbuddy_trainlog", JSON.stringify(trainingLog));
@@ -6026,11 +6063,132 @@ function fbNextStreakAch(streak) {
 // Keep 这类"跟练视频"产品里压根没有"重量"概念,所以它结构上做不出这条 ——
 // 这是 FitBuddy 真正不可复制的差异点之一(不是技术差距,是产品形态决定的)。
 // 返回 null = 没有历史数据(首次练),此时不显示目标,让用户自己找感觉,别瞎编重量。
+// ============ 加重要按"档位"加, 不能按百分比乘 ============
+// 以前全项目写死 ±2.5kg, 三个毛病:
+//   ① 深蹲 100kg 一次只加 2.5kg, 新手线性渐进期跟不上;
+//   ② 侧平举 10kg 减载 -30% → 3.5kg → 被 round 到 2.5 的倍数 = 2.5kg, 实际降了 50%(设置说 30%);
+//   ③ 小重量孤立动作加 2.5kg 一次涨 25%, 太猛。
+// 所以档位由「肌群 + 当前重量」共同决定, 不再一刀切。
+function fbWeightStep(exName, w) {
+  var m = '';
+  try {
+    var ex = (typeof getExByNameFuzzy === 'function') ? (getExByNameFuzzy(exName) || getExByName(exName))
+           : ((typeof getExByName === 'function') ? getExByName(exName) : null);
+    if (ex) m = ex.m || '';
+  } catch (e) {}
+  // 单次涨幅的目标是 ~5%, 在标准片里挑一片 —— 而不是给某个肌群固定一个 kg 数。
+  // 固定 kg 的毛病: 腿固定 5kg 时, 50kg 深蹲一档就是 +10%, 4 周周期里 W1 50 → W2 55 → W3 65
+  // (第3周 +18%), 明显过快; 而 100kg 深蹲一档才 5%, 又偏慢。同一个"5%"在不同重量上
+  // 本来就该落不同的片, 这才是真实训练里的加法。
+  // 上肢(胸/背)天花板 2.5kg: 卧推进步本来就慢于深蹲, 100kg 卧推一次加 5kg 不现实。
+  //
+  // 为什么是「向下取不超过 5% 的最大片」而不是「取最接近 5% 的片」:
+  // 取最接近会在边界翻到上一片, 跳变幅度失控 —— 卧推 35kg 是 1kg/档(2.9%), 36kg 突然变
+  // 2.5kg/档(6.9%), 一公斤之差涨幅翻了 2.4 倍; 深蹲 74→76kg 同样从 3.4% 跳到 6.6%。
+  // 向下取之后每档占比随重量单调递减(新手涨得快、老手涨得慢), 且永远不会超过 5%。
+  var target = w * 0.05;
+  var pool = (m === '腿') ? [2.5, 5] : [1, 2.5];
+  var best = pool[0], i;
+  for (i = 0; i < pool.length; i++) {
+    if (pool[i] <= target + 1e-9 && pool[i] > best) best = pool[i];
+  }
+  return best;   // 最小片都比 target 大(极轻重量)时, 保底返回最小片
+}
+
+// 周期表这一周想让加"几档", 而不是"百分之几"。
+// ============ 周期加档预算(只管"重量加档", 不管强度) ============
+// weightAdjust 那个百分比的语义是"本周相对周期起点的累计强度水平" —— data-constants.js 里
+// boost 跨块累加, 半减载之后它会从 +20% 掉回 +10%(增量不该回落)。下面的 fbPeriodWeekSteps
+// 原来把它当"本周要加多少"折成 1~3 档, 于是每个爬坡周都真加档: 12 周周期 W11 排到
+// +100%((50kg 起点排到 100kg), 而真实力量 12 周只涨 5~10% —— 表比人快 10 倍,
+// 结果就是每周都靠 RPE 和完成次数兜底退档, 计划系统性偏离执行。
+//
+// 改法: 强度百分比继续管容量(次数/组数), 重量加档改成按预算发放:
+//   ① 一个周期最多加 N 档(短周期 1 档, 长周期按水平 3/2/1);
+//   ② 只在被选中的"加档周"加, 一次一档; 选中周在所有爬坡周里均匀铺开。
+// 均匀铺开而不是全堆到末尾: 加档 → 次数掉 → 次数涨回 → 再加档, 这才是波浪周期化的节奏。
+// 一次一档而不是按百分比折 2~3 档: 一档(2.5kg)才是"能兑现的最小进步", 折 3 档等于
+// 一周涨 7.5kg, 只有表做得到。
+function fbPeriodStepUpBudget() {
+  var N = 4;
+  try { N = fbPeriodTotalWeeks(); } catch (e) { N = 4; }
+  if (!(N > 0)) N = 4;
+  if (N <= 4) return 1;                 // 短周期只有 2 个爬坡周, 没有更多空间
+  var lv = '';
+  try { lv = fbCurrentLevel(); } catch (e) { lv = ''; }
+  // 判据和 buildCycleWeekInfo 的 isNewbie 保持一致(它认英文值和中文名两种写法)
+  var isNewbie = (lv === 'beginner' || lv === '新手' || lv === '新手 🌱');
+  var isAdv = (lv === 'advanced' || lv === '进阶' || lv === '进阶 🔥');
+  // 新手有 8-12 周线性加重视窗, 一个周期能吃 3 档; 越接近上限, 一个周期能拿到的真实增长越小。
+  return isNewbie ? 3 : (isAdv ? 1 : 2);
+}
+
+// 这一周是不是"加档周"。返回 null = 这张表不适用(马拉松/心肺/取不到周期表) →
+// 调用方退回老口径, 免得这次改动波及本来没问题的目标。
+function fbPeriodIsStepUpWeek(week) {
+  var N, w, idx, list, goal;
+  try {
+    N = fbPeriodTotalWeeks();
+    w = parseInt(week, 10);
+    if (isNaN(w) || w < 1) w = 1;
+    idx = (w - 1) % N;
+    goal = fbCurrentGoal();
+    // 马拉松有自己的四期分期表; 心肺的 weightAdjust 是"总量 ±%"(跑量口径, 不是单次重量)。
+    // 这两种都不该套力量的加档预算。
+    if (goal === 'marathon' || goal === 'cardio') return null;
+    if (typeof buildCycleWeekInfo !== 'function') return null;
+    list = buildCycleWeekInfo(N, goal, fbCurrentLevel());
+  } catch (e) { return null; }
+  if (!list || !list.length) return null;
+
+  // 候选 = 周期表说要涨强度、且不是减载周的那一批
+  var cands = [];
+  for (var i = 0; i < list.length; i++) {
+    var it = list[i];
+    if (!it || it.deload) continue;
+    var m = String(it.weightAdjust || '').match(/-?\d+(?:\.\d+)?/);
+    var p = m ? parseFloat(m[0]) : 0;
+    if (p > 0) cands.push(i);
+  }
+  if (!cands.length) return false;
+  var budget = Math.min(fbPeriodStepUpBudget(), cands.length);
+  for (var b = 0; b < budget; b++) {
+    var pick = cands[Math.min(cands.length - 1, Math.round((b + 0.5) * cands.length / budget))];
+    if (pick === idx) return true;
+  }
+  return false;
+}
+
+// 为什么不直接拿 weightAdjust 乘重量: +15% 乘到 60kg 卧推是 +9kg(一周涨 9kg 不现实),
+// 乘到 10kg 侧平举只有 1.5kg(圆整后又等于没加)。周期表那个百分比是"强度"口径(含容量成分),
+// 落到单次重量上必须离散成档位数, 否则同一周 +10% 和 +15% 会被上限压成同一个数。
+function fbPeriodWeekSteps(week) {
+  var p = 0;
+  try { p = fbPeriodWeekPct(week); } catch (e) { p = 0; }
+  if (!(p > 0)) return 0;   // 巩固周 +0% 或减载周负值 → 周期不主动加
+  var up = null;
+  try { up = fbPeriodIsStepUpWeek(week); } catch (e) { up = null; }
+  if (up === null) {        // 没拿到预算表(马拉松/心肺/兜底) → 老口径, 行为不变
+    if (p < 8) return 1;      // +5%
+    if (p < 13) return 2;     // +10%
+    return 3;                 // +15% 及以上(心肺爬坡周可能更高), 封顶 3 档
+  }
+  return up ? 1 : 0;        // 加档周一次一档; 其余爬坡周的重量不动, 强度靠次数/组数兑现
+}
+
 function fbCalcNextLoad(exName) {
   var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog[exName] : null;
   if (!log || !log.length) return null;
-  var last = log[log.length - 1];
+  // 减载周的记录不作数: 那周的重量是刻意压下来的, 拿它当基准等于"减完再也爬不回去" ——
+  // 4 周周期里爬坡三周累计才约 +15%, 减载一刀 −30%, 每轮净亏 15%, 三个月后卧推腰斩。
+  // 所以跳过尾部连续的减载记录回退到减载前那一次; 连 RPE 也一起回退, 因为减载周的
+  // "很轻松(RPE 5)"是轻重量造出来的假信号, 不能拿来授权加档。
+  // 用 fbLooksLikeDeload 而不是 fbEntryIsDeload: 存下来的标记会漏(详见该函数的注释)。
+  var li = log.length - 1;
+  while (li > 0 && fbLooksLikeDeload(log, li, exName)) li--;
+  var last = log[li];
   if (!last) return null;
+  var skippedDeload = (li < log.length - 1);
 
   var u = (typeof getLogUnit === 'function') ? getLogUnit(exName)
         : { mode: 'weight', unit: 'kg', label: '重量' };
@@ -6043,8 +6201,8 @@ function fbCalcNextLoad(exName) {
     }
   } catch (e) { deload = false; }
 
-  // 减载周降多少: 读唯一真源。这里曾经写死 0.85(=只降 15%), 和周期表的 -15%/-30% 完全脱钩 ——
-  // 大减载周 wkInfo 白纸黑字写着「重量降至70%」, 而这里照旧只降 15%, 同一周两个说法。
+  // 减载周降多少: 读唯一真源。这里曾经写死 0.85(=只降 15%), 和周期表的 -15%/-20% 完全脱钩 ——
+  // 大减载周 wkInfo 白纸黑字写着「重量降至80%」, 而这里照旧只降 15%, 同一周两个说法。
   var sevPct = 15;
   if (deload) {
     try { sevPct = fbDeloadSeverity(currentWeek).weight; } catch (e) { sevPct = 15; }
@@ -6067,17 +6225,108 @@ function fbCalcNextLoad(exName) {
   }
 
   // ---- 重量动作 ----
+  // 优先级: RPE 决定"能不能加", 周期决定"加多少" —— RPE 有一票否决权, 没有一票通过权。
+  // RPE 是上次训练的真实身体反馈(实时信号), 周期表是几周前排的计划意图(预设信号);
+  // 反馈可信度更高(计划不知道你昨天熬夜), 但反馈也不能授权突破周期的渐进节奏。
   var w = parseFloat(last.weight) || 0;
   if (!w) return null;
+  var step = fbWeightStep(exName, w);
   var nw = w;
-  if (rpe && rpe <= 6) nw = w + 2.5;
-  else if (rpe && rpe >= 9) nw = Math.max(0, w - 2.5);
-  if (deload) nw = Math.round(nw * (1 - sevPct / 100) / 2.5) * 2.5;
+  var why = '';
+  if (deload) {
+    // 减载周: RPE 完全不参与, 只按周期降幅走, 最后落到这个动作的档位上。
+    // RPE 是相对上一次"非减载"训练给的反馈, 而降幅本身已经是 -15%/-30%, 再叠一次 -2.5kg
+    // 是双重惩罚。减载周的语义就是"这周整体降", 保持纯净。
+    var rawW = w * (1 - sevPct / 100);
+    nw = Math.max(step, Math.round(rawW / step) * step);
+    why = '减载周 −' + sevPct + '%';
+  } else {
+    var wkPct = 0, wkSteps = 0;
+    try { wkPct = fbPeriodWeekPct(currentWeek); wkSteps = fbPeriodWeekSteps(currentWeek); } catch (e) {}
+    // 档位是绝对值, 同一个"3 档"落到不同重量上是完全不同的百分比: 深蹲 100kg 是 +15%(正常),
+    // 侧平举 10kg 却是 +30%(太猛)。所以再夹一道相对上限 —— 单次涨幅不超过 25%,
+    // 保底 1 档(否则小重量动作会被夹成 0 档, 又变回"周期说 +15% 而重量纹丝不动")。
+    var maxSteps = Math.max(1, Math.floor(w * 0.25 / step));
+    // 小肌群收紧: 这一档相对当前重量超过 5%(侧平举 10kg 一档就是 +10%), 说明现实里
+    // 最小那片对这个动作已经偏大 —— 每周都加会滚成 12 周 +90%。但没法靠"压小单次涨幅"
+    // 来收: 1kg 已是最小的片, 压了只会让 +10% 和 +15% 撞成同一个数。所以收紧的是
+    // "加档频率" —— 只在挑战周(+10% 及以上)加, 而且一次只加一档。
+    var tight = (step / w) > 0.05 + 1e-9;
+    if (rpe && rpe >= 9.5) {
+      nw = w - 2 * step;                       // 上次到力竭: 周期让加也不加, 退两档
+      why = '上次力竭(RPE' + rpe + ') · 降 2 档';
+    } else if (rpe && rpe >= 9) {
+      nw = w - step;                           // RPE 9 是硬闸, 上次练崩这周还冲是往过度训练推
+      why = '上次太吃力(RPE' + rpe + ') · 降 1 档';
+    } else if (rpe && rpe <= 6) {
+      // 上次明显偏轻 → 加, 且巩固周(+0%)也至少加一档:
+      // 巩固的是动作模式不是重量, 停一周是浪费渐进机会, 还会出现"强度柱涨而重量四周不动"
+      var up = Math.min(Math.max(wkSteps, 1), maxSteps);
+      if (tight) up = Math.min(up, 1);
+      nw = w + up * step;
+      why = '上次很轻松(RPE' + rpe + ') · 加 ' + up + ' 档' + (tight ? ' · 小重量每次只加 1 档' : '');
+    } else {
+      // RPE 7-8 或没记 RPE: 严格听周期, 不叠加。文案必须报夹完上限后的真实档数 ——
+      // 否则侧平举 10kg 会显示"加 3 档"而实际只涨了 2kg, 又是两个数字对不上。
+      var wkUp = Math.min(wkSteps, maxSteps);
+      // 加档预算下 wkSteps 已经是 0/1, 天然满足"小重量一次只加一档"; 只有老口径(2~3 档)需要夹。
+      // (原来写的是 wkSteps>=2 才加 —— 预算一生效 wkSteps 最大就是 1, 侧平举会永远加不了档。)
+      if (tight) wkUp = Math.min(wkUp, 1);
+      nw = w + wkUp * step;
+      // 第三种"不加"必须单独说: 周期表写着 +15%、卡片给的重量却纹丝不动, 不解释就是"计划坏了"。
+      // 实情是那 15% 由次数/组数兑现 —— 加档预算只管重量(见 fbPeriodStepUpBudget)。
+      why = wkUp ? ('本周周期 +' + wkPct + '% · 加 ' + wkUp + ' 档' + (tight ? ' · 小重量只加 1 档' : ''))
+                 : ((tight && wkSteps) ? ('小重量动作 · 只在挑战周加档,本周维持')
+                 : (wkPct > 0 ? ('本周强度 +' + wkPct + '% 靠多做几次/加组数兑现 · 重量先维持')
+                 : (!rpe ? '巩固周 · 上次没记 RPE,先维持' : '巩固周 · 上次强度合适,维持')));
+    }
+    // 完成次数兜底: RPE 是主观的, 很多人做崩了也只打 8 分, 于是重量一路加上去没人拦 ——
+    // 实测 12 周里 7 周做不动、末期超出真实能力 31%。但"做不动"一定会如实少做次数,
+    // 这是客观信号。所以: 上次比再上一次少做了 → 那个重量就是做不动, 缺几次退几档(封顶 2)。
+    // 只在 RPE 没喊吃力时启用 —— RPE 9/9.5 已经降过档了, 再叠一次是双重惩罚。
+    // 参照必须是"上一次"而不是"历史最好": 用历史最好时, 某次超常发挥(多做 2 次)会把参照
+    // 永久拉高, 之后每周都算"没达标", 每周期退 2 档 —— 实测卧推 60kg 会一路退到 33kg。
+    // 用上一次则这种超常只误伤一周(退完参照就回落到正常水平, 自动自愈)。
+    // 参照同样跳过减载周: 那周重量降到 80%, 谁都能多做几次, 拿它当参照会误判所有人。
+    if (rpe && rpe < 9) {
+      var refReps = 0, ri;
+      for (ri = li - 1; ri >= 0; ri--) {
+        if (fbEntryIsDeload(log[ri])) continue;
+        refReps = parseInt(log[ri].reps, 10) || 0;
+        break;
+      }
+      var lastReps = parseInt(last.reps, 10) || 0;
+      if (refReps > 0 && lastReps > 0 && lastReps < refReps) {
+        var miss = Math.min(refReps - lastReps, 2);
+        nw = nw - miss * step;
+        why += ' · 上次少做 ' + (refReps - lastReps) + ' 次,退 ' + miss + ' 档';
+      }
+    }
+    nw = Math.max(step, nw);
+    // 绝对天花板: 周期表和 RPE 都是相对信号(比上次重一点/轻一点), 谁都不知道用户的绝对能力
+    // 在哪 —— 一直报"轻松 RPE 6" 目标就能一路飘到真实 10RM 的 231%(实测 24 周)。e1RM 是
+    // 系统里唯一的绝对锚点, 拿它当天花板。只拦加档, 不主动降重(见下面 max(w, ...))。
+    if (!deload) {
+      var cap = fbE1RMCapWeight(log, parseInt(last.reps, 10) || 0);
+      if (cap > 0 && nw > cap) {
+        var capped = Math.max(w, Math.floor(cap / step + 1e-9) * step);
+        if (capped < nw) {
+          nw = capped;
+          why += ' · 已到估算极限 ' + (Math.round(cap * 10) / 10) + 'kg,做次测试更新 1RM';
+        }
+      }
+    }
+    if (skippedDeload && !deload) why += ' · 已回到减载前基准';
+  }
   return {
     mode: 'weight', unit: 'kg', target: Math.round(nw * 10) / 10, lastVal: w, rpe: rpe,
     delta: Math.round((nw - w) * 10) / 10, deload: deload, reps: parseInt(last.reps, 10) || 0,
-    reason: deload ? '减载周 -' + sevPct + '%' : (!rpe ? '上次没记 RPE,先维持'
-      : (rpe <= 6 ? '上次很轻松,加 2.5kg' : (rpe >= 9 ? '上次太吃力,降 2.5kg' : '上次强度合适,维持')))
+    step: step,
+    // skipped=true 表示 lastVal/rpe 是回退到减载前拿到的基准, 不是用户真正最后一次做的成绩。
+    // 卡片要能把两者分开显示, 否则减载后一周会写成"上次 57.5kg", 而用户明明只做了 40kg。
+    skipped: skippedDeload,
+    realLastVal: skippedDeload ? (parseFloat(log[log.length - 1].weight) || 0) : 0,
+    reason: why
   };
 }
 
@@ -6090,9 +6339,16 @@ function fbTodayLoadLines(day) {
     if (!ex || !ex.n) continue;
     var r = fbCalcNextLoad(ex.n);
     if (!r) continue;
-    var lastTxt = r.mode === 'weight'
-      ? ('上次 ' + r.lastVal + 'kg' + (r.reps ? ' × ' + r.reps : '') + (r.rpe ? ' @RPE' + r.rpe : ''))
-      : ('上次 ' + r.lastVal + (r.unit || '次') + (r.rpe ? ' @RPE' + r.rpe : ''));
+    var lastTxt;
+    if (r.skipped && r.mode === 'weight') {
+      // 减载周那条记录被跳过了, 这里要如实说"减载周做到了多少",
+      // 而不是把回退后的基准说成"上次" —— 用户实际没举过那个重量。
+      lastTxt = '减载周做到 ' + r.realLastVal + 'kg(不作数) · 基准 ' + r.lastVal + 'kg';
+    } else if (r.mode === 'weight') {
+      lastTxt = '上次 ' + r.lastVal + 'kg' + (r.reps ? ' × ' + r.reps : '') + (r.rpe ? ' @RPE' + r.rpe : '');
+    } else {
+      lastTxt = '上次 ' + r.lastVal + (r.unit || '次') + (r.rpe ? ' @RPE' + r.rpe : '');
+    }
     var tgtTxt = r.mode === 'weight'
       ? ('<b>' + r.target + 'kg</b>' + (r.reps ? ' × ' + r.reps : ''))
       : ('<b>' + r.target + (r.unit || '次') + '</b>');
@@ -6107,7 +6363,7 @@ function fbTodayLoadLines(day) {
   }
   if (!rows.length) return '';
   return '<div style="background:rgba(0,0,0,0.16);border-radius:12px;padding:9px 12px;margin-bottom:10px;">'
-    + '<div style="font-size:11px;opacity:0.85;margin-bottom:3px;">🎯 今日目标 · 按上次 RPE 推算</div>'
+    + '<div style="font-size:11px;opacity:0.85;margin-bottom:3px;">🎯 今日目标 · 上次 RPE + 本周周期</div>'
     + rows.join('') + '</div>';
 }
 
@@ -6224,7 +6480,7 @@ function fbComebackHtml(isRest) {
   }
 
   // 第二行: 判断。这才是这一行存在的理由, 所以门槛比第一行高得多。
-  // ⚠️ 刻意不给百分比。「降到 70%」「减 20%」这种数字一旦写进这里, 就会变成
+  // ⚠️ 刻意不给百分比。「降到 80%」「减 20%」这种数字一旦写进这里, 就会变成
   //    第三套降幅口径(减载有 fbDeloadSeverity、周期有 fbPeriodBaseVal),
   //    对不上是迟早的事。给行为, 不给比率 —— 行为不会和别的卡矛盾。
   var advice = '';
@@ -10699,11 +10955,95 @@ var FB_DELOAD_OVERRIDE_KEY = 'fitbuddy_deload_override';
 // 以"本周周一"作为周的唯一键。用周一而不是周数, 是为了跨年不出错,
 // 也免得 ISO 周数和用户理解的"第几周"对不上。
 function fbWeekKey() {
-  var d = new Date();
+  return fbWeekKeyOf(null);
+}
+
+// 某个日期所在那一周的周键。'YYYY-MM-DD' 手动拆开解析, 不能直接 new Date(str) ——
+// 那会被当成 UTC 午夜, 东八区以西的时区会整差一天, 周一/周日边界就会算错周。
+function fbWeekKeyOf(dateStr) {
+  var d = null;
+  if (dateStr) {
+    var p = String(dateStr).split('-');
+    if (p.length >= 3) d = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+  }
+  if (!d || isNaN(d.getTime())) d = new Date();
   var day = d.getDay() || 7;
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - (day - 1));
   return fbLocalDateStr(d.getTime());
+}
+
+// 这条训练记录是不是减载周写下的。减载周的重量是刻意降下来的, 不能拿来当下一周的基准 ——
+// 否则每走完一轮周期就实打实掉 30%, 三个月后卧推腰斩(详见 fbCalcNextLoad 的基准回退)。
+function fbEntryIsDeload(e) {
+  if (!e) return false;
+  if (typeof e.deload === 'boolean') return e.deload;   // 新记录: 存的时候就打好了标记
+  if (!e.date) return false;
+  try {                                                  // 老记录: 查那周的周一有没有进减载日志
+    var keys = (typeof fbDeloadLog === 'function') ? fbDeloadLog() : [];
+    return keys.indexOf(fbWeekKeyOf(e.date)) >= 0;       // (周期表自动减载和手动减载都会记进去)
+  } catch (err) { return false; }
+}
+
+// 这条记录"看起来"是减载周写下的吗 —— 存下来的标记 + 事后兜底。
+//
+// 为什么需要兜底: saveTrainingLog 打标记只看"保存那一刻的 currentWeek", 而减载周常常正好是
+// 周期最后一周 —— 用户勾完打卡 → 自动跳到新周期第 1 周 → 才补填成绩, 此刻 currentWeek 已是 1,
+// isDeloadWeekActive 为假, 存进去的 deload 是 false。回退基准时不跳过这条, 基准就掉到减载重量,
+// 每轮周期实打实净亏 30%(12 周实测卧推 60kg → 27kg)。
+// 而 e.deload 是 boolean, 会短路上面那个按日期查减载日志的兜底, 所以老路子救不回来。
+//
+// 判据两个, 必须同时成立 —— 单靠"骤降"会把受伤后主动大降重误判成减载, 反而把目标顶回伤前重量:
+//   1) 比上一条骤降 ≥3 档。用档位数不是百分比: 正常降档最多 2 档(RPE 9.5 力竭), 大减载 −30%
+//      (深蹲 100kg = 6 档)、半减载 −15%(3 档)都够得着, 而小重量的侧平举 10kg 一档就是 10%,
+//      用百分比会把正常降 2 档(20%)误判。
+//   2) 那次训练 RPE ∈ (0, 7]。减载周本该轻松; 要求 >0 是为了排除没记 RPE 的条目(0 不代表轻松)。
+function fbLooksLikeDeload(log, i, exName) {
+  var e = log[i];
+  if (fbEntryIsDeload(e)) return true;
+  var prev = log[i - 1];
+  if (!e || !prev) return false;
+  var w = parseFloat(e.weight) || 0, pw = parseFloat(prev.weight) || 0;
+  if (!w || !pw || w >= pw) return false;
+  var rpe = parseFloat(e.rpe) || 0;
+  if (rpe <= 0 || rpe > 7) return false;
+  var step = fbWeightStep(exName, pw);
+  // 阈值是 2 档不是 3 档(v118 改)。这条兜底的存在意义是"deload 标记漏打时, 靠骤降认出减载周",
+  // 所以它必须覆盖真实减载的最小降幅: 大减载原是 -30%, v118 收到 -20% 后 ——
+  //   深蹲 100kg(5kg/档): -20kg = 4 档, 仍远超阈值, 无所谓;
+  //   侧平举 10kg(1kg/档, 已是最小片): -20% = -2kg = **2 档**, 按 3 档判就认不出来 ——
+  //   小重量动作漏标 deload 时基准会掉到减载周重量, 正是这条兜底要防的事。
+  // 放宽到 2 档不会误伤: 正常每周降档最多 -2 档(RPE 9.5), 而那种 RPE 被上面 rpe<=7 的条件挡掉。
+  return step > 0 && (pw - w) / step >= 2;
+}
+
+// 目标重量的绝对天花板 = 估算 1RM × 一个系数。返回 0 表示"不启用"(样本太少, 估不准)。
+//
+// 为什么需要: 周期表和 RPE 都只是相对信号(比上次重一点/轻一点), 谁都不知道用户绝对能力在哪
+// —— 一直报"轻松 RPE 6", 目标就能一路飘到真实 10RM 的 231%(实测 24 周)。e1RM 是系统里
+// 唯一的绝对锚点。它跟着能力走(e1RM 涨, 天花板也涨), 所以不会把进步卡死。
+//
+// 系数按上次做的次数定, 不能写死 0.8: 10 次约 75% 1RM、5 次约 87%, 拿 0.8 去夹 5×5 那种
+// 低次数大重量训练会直接夹死(60kg×3 估出 1RM 66kg, ×0.8 = 52.8kg < 当前 60kg)。
+// 取历史最好的 e1RM 而不是最近一次: 天花板是"能力上限", 不该因为最近状态差就往下压。
+//
+// 夹住不是死锁 —— 用户真做到了(次数先涨到 12) 日志一更新, e1RM 和天花板一起上移。
+// 相当于把"先加次数、次数够了再加重量"这条渐进顺序显式化了。
+function fbE1RMCapWeight(log, reps) {
+  if (typeof computeE1RM !== 'function') return 0;
+  var n = 0, best = 0;
+  for (var i = 0; i < (log ? log.length : 0); i++) {
+    var e = log[i];
+    if (!e) continue;
+    var w = parseFloat(e.weight) || 0, r = parseInt(e.reps, 10) || 0;
+    if (!(w > 0) || r < 1 || r > 12) continue;   // 与 estimateExE1RM 同口径: >12 次 Epley 失真
+    n++;
+    var v = computeE1RM(w, r);
+    if (v > best) best = v;
+  }
+  if (n < 3 || best <= 0) return 0;              // <3 条不启用: 头几次估不准, 误夹的代价更大
+  var ratio = (reps >= 9) ? 0.80 : (reps >= 6 ? 0.85 : 0.90);
+  return best * ratio;
 }
 
 function fbDeloadLog() {
@@ -10947,16 +11287,24 @@ function fbDeloadPlan() {
     sev = fbDeloadSeverity((typeof currentWeek !== 'undefined' ? currentWeek : 1));
   } catch (e) {}
   var keepW = Math.round(100 - sev.weight);
-  // 4 组按 40% 削减是 2.4 组 → 实际落到 2 组; 用「约 2 组」而不是精确百分比, 避免
-  // 用户拿秤重的数字去对 "-40%" 这种取过整的百分比然后对不上。
-  var fromSets = 4;
-  var toSets = Math.max(1, Math.round(fromSets * (1 - sev.sets / 100)));
+  // 组数基准必须读当前水平(新手 3 / 中级 4 / 进阶 5), 而且降完的结果必须走 fbPeriodSetsFrom ——
+  // 那才是计划页真正会生成的那个数。以前这里把基准写死 4 组、再自己拿百分比乘一遍:
+  // 新手(3 组)看到的是"约 2 组(主项按 4 组算)"—— 括号里那个 4 组他根本没有;
+  // reduction 调到 25% 时自己乘得 3 组、实际执行砍到 2 组 —— 建议和指令又不是一回事了。
+  var fromSets = (typeof fbSetsPerEx === 'function') ? fbSetsPerEx() : 3;
+  var toSets = (typeof fbPeriodSetsFrom === 'function')
+    ? fbPeriodSetsFrom(fromSets, (typeof currentWeek !== 'undefined' ? currentWeek : 1), true)
+    : Math.max(1, fromSets - Math.max(1, Math.round(fromSets * sev.sets / 100)));
   return [
     '重量降到平时的 ' + keepW + '%：能轻松做完 10 次的重量，别再冲组',
     '组数降到约 ' + toSets + ' 组（主项按 ' + fromSets + ' 组算）：辅助动作能不做就不做',
     '频率别降：原来一周练几次还是几次，只降强度不降次数，动作感觉才不会丢',
     '这一周的目标不是练爽，是走的时候比来的时候轻松',
-    '下周回到 ' + Math.round(90) + '% 起步（减载前水平的 90%），之后每周加 2.5kg'
+    // 以前这条写死"回到 90% 起步，之后每周加 2.5kg" —— 两个数字都是老口径的残骸:
+    // 代码是跳过减载周记录直接回到减载前那一次(100%, 不是 90%), 加档也不再是每周固定
+    // 2.5kg(现在是约 5% 一档, 且一个周期只在少数几周加)。照着 90% 去调重量的人会自己
+    // 先砍掉一成, 那是凭空掉重量。
+    '下一周直接回到减载前的重量：这周的轻成绩不会被当成新基准，不用自己往回加'
   ];
 }
 
@@ -11222,8 +11570,8 @@ function fbPeriodWeekDeloadState(week) {
 // 现在对齐两处「本来就预设好的」口径, 一个数字也不新造:
 //   组数(容量) = 用户设置的 reduction(默认 40) —— 这是 getDeloadSettings 的默认值, 也是
 //                Pro 开关卡上写着给用户的那个数字
-//   重量(强度) = 周期表这一周的 weightAdjust: 半减载 -15% / 大减载 -30%
-//                —— 这本来就是写在 wkInfo 里给用户看的文案(「重量降至85%」/「降至70%」),
+//   重量(强度) = 周期表这一周的 weightAdjust: 半减载 -15% / 大减载 -20%(v118 由 -30% 收窄,
+//                —— 这本来就是写在 wkInfo 里给用户看的文案(「重量降至85%」/「降至80%」),
 //                   之前只有首页横幅读它, 真正干活的地方全是另外一套
 function fbDeloadSeverity(week) {
   var sets = 40;
@@ -11240,7 +11588,7 @@ function fbDeloadSeverity(week) {
     var p = Math.abs(fbPeriodWeekPct(week));
     // 上限 80 而不是 60: 马拉松减量期第 16 周是 -70%(taperRate 0.3, 跑量降到 30%),
     // 夹到 60 会让 P3 建议和今天的重量指令比周期表少说 10 个点 —— 又一处"两个数字"。
-    // 力量的最大降幅是 -30%(大减载), 抬高上限碰不到它, 这个改动对力量训练没有影响。
+    // 力量的最大降幅是 -20%(大减载, v118 由 -30% 收窄), 抬高上限碰不到它, 这个改动对力量训练没有影响。
     if (p > 0) weight = Math.min(80, p);
   } catch (e) {}
   return { sets: sets, weight: weight };
@@ -11294,6 +11642,63 @@ function fbPeriodIntensity(week) {
   if (fbPeriodWeekDeloadState(week).deload) v += (parseFloat(p.adj[week]) || 0);
   else v += p.global + (parseFloat(p.adj[week]) || 0);
   return Math.max(0.25, Math.min(1, v));
+}
+
+// ============ 某一周每个动作安排几组 ============
+// ⚠️ 计划页生成(pro-tools 的 doGenerateInternal 包装)和进度页周期卡(选中周的副标题)
+//    必须走这一个函数。以前卡片里把基准写死成 4 组 —— 新手(3 组)看到卡片报 4 组、
+//    计划页给 3 组; 减载周卡片按"强度比例"算成 3 组、计划页按 reduction 砍到 2 组。
+//    同一份计划两个数字, 用户第一反应是"到底哪个是真的"。
+// baseSets 传计划实际配置(CONFIGS[level].sets); 卡片上传 fbSetsPerEx(), 同一个值。
+// isDeload 由调用方给(生成路径用自己的 isDeloadWeekActive); 不传就问唯一真源。
+function fbPeriodSetsFrom(baseSets, week, isDeload) {
+  var base = parseInt(baseSets, 10);
+  if (!isFinite(base) || base <= 0) base = 3;
+  var w = parseInt(week, 10);
+  if (isNaN(w) || w < 1) return base;
+
+  var deload = (typeof isDeload === 'undefined') ? null : !!isDeload;
+  if (deload === null) {
+    try { deload = !!(fbPeriodWeekDeloadState(w).deload); } catch (e) { deload = false; }
+  }
+
+  // 减载周: 按减载设置(reduction 默认 40%)砍容量, 与周期强度无关 ——
+  // 减载周根本不读 P1 强度, 拿强度比例去算它就是第三套数字。
+  if (deload) {
+    var sev = { sets: 40 };
+    try { sev = fbDeloadSeverity(w) || sev; } catch (e1) {}
+    // ⚠️ 向下取整(floor), 不能用 round(v118 改)。组数是整数, 四舍五入会把设定值放大:
+    //   中级 4 组 × 40% = 1.6 → round 得 2 → 实际砍了 50%, 比用户设的 40% 还狠;
+    //   同一个 reduction 在三档水平落出 33% / 50% / 40% 三种实际降幅, 中级最惨 —— 没人设计过,
+    //   纯粹是取整的副产品。floor 之后实际降幅「永远不超过设定值」, 且 reduction 旋钮依然有效
+    //   (60% → 中级 2 组、进阶 2 组; 80% → 中级 1 组), 不会退化成拧不动的阀门。
+    var cut = Math.floor(base * (parseFloat(sev.sets) || 40) / 100);
+    var reduced = base - cut;
+    // 保底减 1 组: 组数是整数, 3 组降 40% 四舍五入容易被夹回原值,
+    // 减载周必须让用户一眼看出比平时少。
+    if (reduced >= base) reduced = base - 1;
+    return Math.max(1, reduced);
+  }
+
+  // 非减载周: 只有用户在周期卡上调过强度才缩放, 没调过原样返回(不悄悄改计划)
+  var edited = false;
+  try { edited = !!fbPeriodEdited(); } catch (e2) {}
+  if (!edited) return base;
+  var inten = fbPeriodIntensity(w);
+  var base0 = fbPeriodBaseValue();
+  return Math.max(2, Math.round(base * (inten / base0)));
+}
+
+// FB_PERIOD_BASE 的取用口: pro-tools 有同名 fbPeriodBaseVal(带版本错配兜底),
+// 这里再写一遍是为了 planner-core 单独加载时也不会算出 NaN 组数。
+function fbPeriodBaseValue() {
+  var v = (typeof FB_PERIOD_BASE !== 'undefined') ? parseFloat(FB_PERIOD_BASE) : 0.74;
+  return (v > 0.05 && v < 2) ? v : 0.74;
+}
+
+// 卡片上显示用的入口: 组数基准取当前水平(新手 3 / 中级 4 / 进阶 5)
+function fbPeriodWeekSets(week) {
+  return fbPeriodSetsFrom(fbSetsPerEx(), week);
 }
 
 // 单周只改那一周。想整体加量请用 fbPeriodAdjustGlobal ——

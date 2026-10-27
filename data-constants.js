@@ -456,7 +456,15 @@ var WEEK_INFO = [
   {note:"基础适应周 — 重点掌握动作模式，不追求重量", deload:false, weightAdjust:"+0%"},
   {note:"渐进超负荷<span class='term-badge' data-term='progressive'>?</span> — 尝试增加重量 2.5-5kg，保持次数", deload:false, weightAdjust:"+5%"},
   {note:"挑战周 — 继续增加重量或次数，接近力竭", deload:false, weightAdjust:"+10%"},
-  {note:"减载周（Deload）— 重量降至70%，让身体充分恢复", deload:true, weightAdjust:"-30%"}
+  // ⚠️ 大减载是 -20% 不是 -30%(v118 改)。原来照搬 -30%, 那本不是为减载设计的数:
+  // 它是波浪周期的低谷(峰值周之后自然回落), 被当成"减载该降多少"直接用了 —— 两件事合成一个旋钮。
+  // deload 的原则是「砍容量、保强度」: 疲劳主要来自容量, 力量与神经适应靠强度维持。
+  // 重量掉到 70%(≈50% 1RM)已跌破有效刺激阈值(约 60-65% 1RM), 那一周是低质量空转 ——
+  // 恢复效果一样, 却把动作模式和发力感也一起丢掉。收到 80% 后, 与组数下调叠加的总量
+  // 落在 48-60%(主流 deload 建议 40-60%), 且强度仍留在有效区间。
+  // ⚠️ note 里的百分比必须等于 100 - |weightAdjust|: 这两句被 renderWeekInfo 渲染在同一行,
+  //    写成两个数字用户一眼就看出自相矛盾(v116 修过同款)。
+  {note:"减载周（Deload）— 重量降至80%，让身体充分恢复", deload:true, weightAdjust:"-20%"}
 ];
 
 // 心肺目标4周周期化配置（覆盖 WEEK_INFO 和 goalCfg 中的心肺参数）
@@ -505,6 +513,20 @@ var _CYCLE_NEWBIE_HOLD = {
   deload: false,
   weightAdjust: "+0%"
 };
+// 长周期(>4周)的第 1 周。短周期能直接复用 WEEK_INFO[0] 的"基础适应周",长周期不能:
+//   跨周期时基准回退到上一周期的峰值重量(见 fbCalcNextLoad),12 周周期爬了 11 周之后,
+//   新一轮第 1 周就是全周期最重的几周之一 —— 实测 90kg vs 真实 10RM 84.9(RPE 9.2),
+//   卡片却写着"重点掌握动作模式、不追求重量",和用户手里的重量直接打架。
+//   那周的真实任务是"回到减载前的重量、找回发力感",不是从头学动作。
+var _CYCLE_LONG_W1 = {
+  note: "基准重建周 — 回到减载前的重量，找回发力感，这周不必冲击新重量",
+  // 自重用户那周的 note 走 BW_NOTE_TEXT(按 weightAdjust 取键, 见 planner-core),
+  // 那张表里 "+0%" 写的是"基础适应周" —— 长周期第 1 周并不是从头学动作, 必须给自己的说法,
+  // 否则同一周两种表述, 又是一处"两个数字"。
+  bwNote: "基准重建周 — 回到减载前的难度，找回发力感，这周不必冲新变式",
+  deload: false,
+  weightAdjust: "+0%"
+};
 // 半恢复周（心肺类）：总量-15%，时长0.85x；3周周期也用它做轻恢复收尾
 var _CYCLE_CARDIO_RECOVERY = {
   note: "恢复周 — 时长与强度回落，让心肺充分适应后继续进阶",
@@ -532,7 +554,7 @@ function buildCycleWeekInfo(totalWeeks, goal, level) {
   // 而不是掉进下面的通用逻辑排出个残缺块。
   if (totalWeeks === 3) return [WEEK_INFO[0], WEEK_INFO[1], Object.assign({}, _CYCLE_DELOAD_WEEK)]; // 适应 → 爬坡 → 轻减载
   if (totalWeeks <= 4) return WEEK_INFO.slice(0, totalWeeks);
-  var list = [WEEK_INFO[0]]; // 第1周:适应
+  var list = [_CYCLE_LONG_W1]; // 第1周:回到减载前基准(不是适应周,见该常量注释)
   var block = 1, posInBlock = 0;
   for (var k = 2; k <= totalWeeks - 1; k++) {
     posInBlock++;

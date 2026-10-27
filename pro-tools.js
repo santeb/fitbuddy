@@ -677,11 +677,32 @@ function fbPeriodEditorInner() {
   var edited = (typeof fbPeriodEdited === 'function') ? fbPeriodEdited() : false;
   // 手动减载周不再报强度百分比: 那周组数是按 reduction 砍的, 周期表上的 +15% 是没执行的,
   // 报出来只会让人以为"说好的减载呢"。报实际执行的口径。
+  // 组数报的是"计划页真的会生成的那个数": 基准取当前水平(新手3/中级4/进阶5),
+  // 减载周走 reduction 砍, 与生成路径同一函数 —— 以前这里写死 4 组, 新手看到卡片报 4
+  // 而计划页给 3, 减载周卡片 3 而计划页 2。减载自动化关掉时它也跟着不降量。
+  var setsTxt = (typeof fbPeriodWeekSets === 'function')
+    ? fbPeriodWeekSets(sel)
+    : Math.max(2, Math.round(4 * curI / fbPeriodBaseVal()));
+  // 常规(非减载)周每个动作几组 —— 减载周那行要说"从几组降到几组"用得上。
+  // 减载周报的是 reduction 设置的百分比, 但组数是整数: 新手 3 组降 40% 得 1.8 → 保底减 1 → 2 组,
+  // 实际降了 33%; 中级 4 组降完直接掉到 2 组(50%)。一行里写"−40% · 约 2 组", 用户拿 3 一算
+  // 就发现两个数对不上 —— 报实际的前后组数, 不报那个算了也落不到整数上的百分比。
+  var baseSets = (typeof fbSetsPerEx === 'function') ? fbSetsPerEx() : 3;
+  // 加档预算(v116): 不是每个爬坡周都加重量 —— 一个周期只有少数几周是"加档周", 其余爬坡周的
+  // +10%/+15% 靠多做几次 / 多一组兑现(见 planner-core 的 fbPeriodStepUpBudget)。
+  // 卡片上这里不明说, 用户会在首页看到"周期表写着 +15%、今日目标却一点没动", 判定为坏了。
+  var selWkPct = 0, selUp = null;
+  try {
+    if (typeof fbPeriodWeekPct === 'function') selWkPct = fbPeriodWeekPct(sel);
+    if (typeof fbPeriodIsStepUpWeek === 'function') selUp = fbPeriodIsStepUpWeek(sel);
+  } catch (e) {}
+  var holdWeight = (!selSt.deload && selUp === false && selWkPct > 0);
   var weekSub = selSt.manual
-    ? '本周按减载执行 · 组数 −' + redPct + '%'
+    ? '本周按减载执行 · ' + baseSets + ' 组 → <b style="color:var(--text);">' + setsTxt + '</b> 组/动作'
     : (selSt.disabled
-      ? '强度 ' + pct + '% · 减载已关闭，这周不自动降量'
-      : '强度 ' + pct + '% · 约 ' + Math.max(2, Math.round(4 * curI / fbPeriodBaseVal())) + ' 组/动作');
+      ? '强度 ' + pct + '% · 减载已关闭，这周不自动降量 · 约 ' + setsTxt + ' 组/动作'
+      : '强度 ' + pct + '% · 约 ' + setsTxt + ' 组/动作' +
+        (holdWeight ? '<span style="color:var(--text3);"> · 这周重量维持，' + selWkPct + '% 靠多做几次/加组数兑现</span>' : ''));
   // 减载周(含手动)的组数走 isDeload 分支, 根本不读 P1 强度 —— 这时候 ± 是"看着能拧实际拧不动"
   var lockAdj = !!selSt.manual;
   var btnBase = 'width:32px;height:32px;border-radius:8px;background:var(--card);color:var(--text);border:1.5px solid var(--border);font-size:15px;font-weight:700;';
@@ -724,10 +745,15 @@ function fbPeriodEditorInner() {
 
   html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6;">' +
     '点柱子选中某一周，± 只改那一周；整体 ±5% 会一次性重排全部 ' + N + ' 周（减载周不受影响）。<br>' +
-    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减组数。';
+    '改动<b style="color:var(--text2);">立即作用到本周计划</b>：计划页会按新强度增减<b>组数</b>。<br>' +
+    '<span style="color:var(--text3);">± 拧的是容量（组数），不直接改重量 —— 单次举多重由首页「🎯 今日目标」' +
+    '按<b>上次 RPE + 本周周期</b>算：一个台阶约为当前重量的 5%（腿最多 5kg，胸背等最多 2.5kg，' +
+    '小重量动作 1kg），且一个周期只在少数几周加重量，其余爬坡周靠多做几次/加一组兑现。</span>';
   if (stateOf(cw).manual) {
-    html += '<br><span style="color:#8B5CF6;">⚡ 紫色那周是你在上方「减载决策」卡上手动标记的减载：组数按减载设置降 ' +
-      redPct + '%，这一周的 ± 不参与。</span>';
+    // 同上: 报实际前后组数, 不报落不到整数上的百分比
+    var cwSets = (typeof fbPeriodWeekSets === 'function') ? fbPeriodWeekSets(cw) : baseSets;
+    html += '<br><span style="color:#8B5CF6;">⚡ 紫色那周是你在上方「减载决策」卡上手动标记的减载：组数从 ' +
+      baseSets + ' 组降到 ' + cwSets + ' 组（按减载设置 ' + redPct + '%），这一周的 ± 不参与。</span>';
   }
   if (ds.enabled === false) {
     html += '<br><span style="color:var(--text3);">减载自动化已关闭 —— 灰色的减载周仍按周期表画出来，但计划不会自动降量。</span>';
@@ -1304,36 +1330,19 @@ window.initProToolsPlan = function() {
     window.doGenerateInternal = function(goal, level, days, equip, trainingDays, schedule, cfg, goalCfg) {
       // 减载周自动降量:减少组数
       var isDeload = isDeloadWeekActive(currentWeek, currentCycle);
-      var effectiveCfg = cfg;
-      if (isDeload) {
-        // 降幅读唯一真源: 预设是 reduction(默认 40)。这里曾被 *0.5 / *0.4 两层衰减打成
-        // 实际只降 25%, 而且 4 组的动作设 40% 和设 60% 算出来都是 3 组 —— 用户以为在调强度,
-        // 实际在调空气。设计了一个拧不动的阀门, 比压根没有这个阀门更伤信任。
-        var sev = (typeof fbDeloadSeverity === 'function')
-          ? fbDeloadSeverity(currentWeek)
-          : { sets: 40, weight: 15 };
-        var cut = Math.round(cfg.sets * sev.sets / 100);
-        var reduced = cfg.sets - cut;
-        // 组数是整数, 四舍五入会把小动作的削减抹平: 2 组降 40% 算下来是 0.8 → 1, 再被
-        // 下限夹回 2, 这一周就"减了个寂寞"。保底减 1 组 —— 减载周必须让用户看得出来比平时少。
-        if (reduced >= cfg.sets) reduced = cfg.sets - 1;
-        effectiveCfg = Object.assign({}, cfg, { sets: Math.max(1, reduced) });
-      } else {
-        // P1: 用户在周期化卡上调过强度 → 按这一周的强度缩放组数。
-        // ⚠️ 只有真的改过才动。没改过就走原逻辑, 否则每个用户的计划都被悄悄改一遍,
-        //    出了问题是排查不出来的 —— 新功能默认不改变任何既有行为。
-        try {
-          if (typeof fbPeriodEdited === 'function' && fbPeriodEdited() &&
-              typeof fbPeriodIntensity === 'function') {
-            var inten = fbPeriodIntensity(currentWeek);
-            // FB_PERIOD_BASE 是默认波浪的中位, 以它为 1.0 基准, 上下按比例缩放
-            var ratio = inten / fbPeriodBaseVal();
-            effectiveCfg = Object.assign({}, cfg, {
-              sets: Math.max(2, Math.round(cfg.sets * ratio))
-            });
-          }
-        } catch (e) {}
-      }
+      // ⚠️ 组数只在这里算一次, 和进度页周期卡共用 fbPeriodSetsFrom ——
+      // 以前两处各算一套, 新手(3 组)在周期卡上看到 4 组、减载周看到 3 组而计划页是 2 组。
+      // 减载降幅读唯一真源(reduction, 默认 40%): 这里曾被 *0.5 / *0.4 两层衰减打成实际
+      // 只降 25%, 4 组的动作设 40% 和设 60% 都得到 3 组 —— 用户以为在调强度, 实际在调空气。
+      // 设计了一个拧不动的阀门, 比压根没有这个阀门更伤信任。
+      var weekSets = cfg.sets;
+      try {
+        weekSets = (typeof fbPeriodSetsFrom === 'function')
+          ? fbPeriodSetsFrom(cfg.sets, currentWeek, isDeload)
+          : cfg.sets;
+      } catch (e) { weekSets = cfg.sets; }
+      // 没改过强度、也不是减载周 → 原样传下去, 绝不悄悄改计划
+      var effectiveCfg = (weekSets !== cfg.sets) ? Object.assign({}, cfg, { sets: weekSets }) : cfg;
 
       _originalDoGenerateInternal(goal, level, days, equip, trainingDays, schedule, effectiveCfg, goalCfg);
       // 在计划渲染后追加Pro模块(try-catch保护,不影响主功能)
