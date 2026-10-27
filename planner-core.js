@@ -6150,7 +6150,14 @@ function fbPeriodStepUpBudget() {
   var isNewbie = (lv === 'beginner' || lv === '新手' || lv === '新手 🌱');
   var isAdv = (lv === 'advanced' || lv === '进阶' || lv === '进阶 🔥');
   // 新手有 8-12 周线性加重视窗, 一个周期能吃 3 档; 越接近上限, 一个周期能拿到的真实增长越小。
-  return isNewbie ? 3 : (isAdv ? 1 : 2);
+  var base = isNewbie ? 3 : (isAdv ? 1 : 2);
+  // ⚠️ 进阶在 N>=6 时保底 2 档(v121 加)。base 是不看周期长度的: 4 周周期每 4 周 1 档
+  //   (0.25 档/周), 而进阶选 6 周还是 1 档(0.167 档/周) —— 周期拉长一半, 进步速率反而降 1/3,
+  //   还多爬了次数、多攒了一周疲劳。选长周期不该变慢, 这是"表比人快"之外的另一种倒挂。
+  //   补到 2 档只是把长周期拉回不低于短周期的速率, 不是让进阶变激进 —— 一档 = 动作最小片,
+  //   进阶基数大, 同一档的百分比增长本就比新手小, 水平差异没被抹平。
+  if (isAdv && N >= 6) return Math.max(base, 2);
+  return base;
 }
 
 // 这一周是不是"加档周"。返回 null = 这张表不适用(马拉松/心肺/取不到周期表) →
@@ -6187,7 +6194,11 @@ function fbPeriodIsStepUpWeek(week) {
   if (!cands.length) return false;
   var budget = Math.min(fbPeriodStepUpBudget(), cands.length);
   for (var b = 0; b < budget; b++) {
-    var pick = cands[Math.min(cands.length - 1, Math.round((b + 0.5) * cands.length / budget))];
+    // ⚠️ floor 不是 round(v121 改)。(b+0.5)*len/budget 是"取每段的中间那个候选",
+    //   只有向下取整才真的是均匀铺开: round 遇到 .5 一律进位, 预算与候选数相等时直接错位 ——
+    //   6 周新手 cands=[W2,W3,W4]、预算 3, 取到 W3/W4/W4 —— W2 落空、W4 重复,
+    //   说好 3 档只兑现 2 档, 而空掉的正是最适合起步的第 2 周。
+    var pick = cands[Math.min(cands.length - 1, Math.floor((b + 0.5) * cands.length / budget))];
     if (pick === idx) return true;
   }
   return false;
@@ -11755,6 +11766,12 @@ function fbPeriodRepsPctOf(week) {
     var pw = ((w - 1 - k) % N + N) % N + 1;
     var pu = null, pp = 0;
     try { pu = fbPeriodIsStepUpWeek(pw); } catch (e4) {}
+    // ⚠️ 减载周是强度重置点, 回溯不能越过它(v121 加)。两个理由:
+    //   ① 减载那一周是刻意压下来的, 它的存在就意味着"上一块的台阶到此为止";
+    //   ② 更实际的是周期会循环: 第 2 周加档时前面只有 +0% 的基准重建周, 循环会一路绕到
+    //      上一周期末尾的 +15% 周(6 周新手实测 W2 直接顶到 14 次, 而整个周期最高就 14),
+    //      "每组维持 N 次"那句于是从第一周起就再也不动 —— 台阶本该一级级上, 变成一步登顶。
+    try { if (fbPeriodIsDeloadWeek(pw)) break; } catch (e6) {}
     try { pp = fbPeriodWeekPct(pw); } catch (e5) {}
     if (pu === false && pp > 0) return pp;
   }
