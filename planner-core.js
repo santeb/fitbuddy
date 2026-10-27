@@ -6309,6 +6309,34 @@ function fbCalcNextLoad(exName) {
     // 本周增量, 不是周期内累计(v122): 卡片上要报的是"这周加了多少", 报累计刻度(+10%)
     // 而实际给的是本周那 1 档(+2.5kg), 摆在一起就是"计划说一套做一套"。
     try { if (typeof fbWeekRx === 'function') { _rxw = fbWeekRx(currentWeek); wkDelta = _rxw.deltaPct; } } catch (e0) {}
+
+    // ---- 目标次数: 抬到本周周期台阶(v123) ----
+    // 以前今日目标永远报"上次做了几次", 而周信息条 / 计划页动作行报的是周期台阶(每组至少 N 次)。
+    //   两个出口不通气的结果: ① 用户照卡片的「×12」做完, 下次还报 ×12, 台阶却一路涨到 14 ——
+    //   永不收敛; ② 非加档爬坡周最彻底: 重量不动、次数不动、组数不动, 那 5% 一点没兑现,
+    //   用户照做几周会得出"这 app 不会加量"的结论。
+    //   现在取 max(上次次数, 本周台阶): 上次已经够的(腿弯举 15 ≥ 14)不动, 落后台阶的
+    //   (深蹲 12 < 14)补到台阶 —— 周信息条那句"至少 N 次"这才真的落到今日目标上。
+    // ⚠️ 闸和重量共用一条: 只在 RPE < 9 时抬。上次练崩(RPE9+)时重量正在降, 次数再涨是往
+    //   过度训练上推。
+    // ⚠️ 单次抬升封顶 2 次: 台阶是相对"计划基准"算的, 用户某次只做了 8 次而台阶 14 时,
+    //   一次补齐 6 次是跳变(约 +25% 容量)。宁可两三个周期慢慢补, 也不要一次推到做不动。
+    var lastRepsN = parseInt(last.reps, 10) || 0;
+    var targetReps = lastRepsN, repsUp = 0;
+    if (lastRepsN > 0 && (!rpe || rpe < 9)) {
+      var floorReps = 0;
+      try {
+        var _lvl = (typeof fbCurrentLevel === 'function' ? fbCurrentLevel() : '') || 'beginner';
+        var _glb = (typeof fbCurrentGoal === 'function' ? fbCurrentGoal() : '') || 'muscle';
+        var _bReps = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lvl] && CONFIGS[_lvl][_glb]) || {}).reps || '';
+        floorReps = fbRepsLowOf(fbPeriodWeekReps(currentWeek, _bReps, false));
+      } catch (e8) { floorReps = 0; }
+      if (floorReps > targetReps) {
+        repsUp = Math.min(floorReps - targetReps, 2);
+        targetReps = lastRepsN + repsUp;
+      }
+    }
+
     // 档位是绝对值, 同一个"3 档"落到不同重量上是完全不同的百分比: 深蹲 100kg 是 +15%(正常),
     // 侧平举 10kg 却是 +30%(太猛)。所以再夹一道相对上限 —— 单次涨幅不超过 25%,
     // 保底 1 档(否则小重量动作会被夹成 0 档, 又变回"周期说 +15% 而重量纹丝不动")。
@@ -6351,9 +6379,12 @@ function fbCalcNextLoad(exName) {
       //   写出来必然对不上(见 fbWeekRx 的注释)。
       var _kg = Math.round(wkUp * step * 10) / 10;
       var _wkName = (_rxw && _rxw.hold) ? '巩固周' : ((_rxw && _rxw.base) ? '基准重建周' : '本周');
+      // ⚠️ "靠次数兑现"必须真的兑现才说: 上次次数已经≥台阶时次数不会动(见上面的 max),
+      //    这时还说"靠次数兑现"等于又一句空话。改成如实报"上次次数已达标"(v123)。
       why = wkUp ? ('本周加 ' + wkUp + ' 档（+' + _kg + 'kg）' + (clamped2 ? ' · 小重量只加 1 档' : ''))
                  : ((tight && wkSteps) ? ('小重量动作 · 只在挑战周加档,本周维持')
-                 : (wkDelta > 0 ? ('本周强度 +' + wkDelta + '% 靠次数兑现 · 重量维持')
+                 : (wkDelta > 0 ? ('本周强度 +' + wkDelta + '% · ' +
+                      (repsUp > 0 ? ('次数加到 ' + targetReps + ' 次') : '上次次数已达标') + ' · 重量维持')
                  : (!rpe ? (_wkName + ' · 上次没记 RPE,先维持') : (_wkName + ' · 上次强度合适,维持'))));
     }
     // 完成次数兜底: RPE 是主观的, 很多人做崩了也只打 8 分, 于是重量一路加上去没人拦 ——
@@ -6393,10 +6424,16 @@ function fbCalcNextLoad(exName) {
       }
     }
     if (skippedDeload && !deload) why += ' · 已回到减载前基准';
+    // 次数抬升统一在末尾补一句(前面的分支各自已经报了重量那半句)。
+    //   "靠次数兑现"那条分支里已经写明具体次数了, 这里只补没提到次数的分支, 免得一句里出现两个次数。
+    if (repsUp > 0 && !/次数/.test(why)) why += ' · 次数按本周台阶加到 ' + targetReps + ' 次';
   }
   return {
     mode: 'weight', unit: 'kg', target: Math.round(nw * 10) / 10, lastVal: w, rpe: rpe,
     delta: Math.round((nw - w) * 10) / 10, deload: deload, reps: parseInt(last.reps, 10) || 0,
+    // 本周要做的次数 = max(上次次数, 周期台阶), 抬升见上面的注释。渲染目标行用 targetReps,
+    // 而"上次 × N"那半句必须用 reps(真实做过的次数), 两个不是一回事。
+    targetReps: (typeof targetReps !== 'undefined' ? targetReps : (parseInt(last.reps, 10) || 0)),
     step: step,
     // skipped=true 表示 lastVal/rpe 是回退到减载前拿到的基准, 不是用户真正最后一次做的成绩。
     // 卡片要能把两者分开显示, 否则减载后一周会写成"上次 57.5kg", 而用户明明只做了 40kg。
@@ -6425,8 +6462,12 @@ function fbTodayLoadLines(day) {
     } else {
       lastTxt = '上次 ' + r.lastVal + (r.unit || '次') + (r.rpe ? ' @RPE' + r.rpe : '');
     }
+    // ⚠️ 目标行的次数用 targetReps(本周台阶, v123) 而不是 reps(上次真实次数):
+    //   卡片写「×12」而周信息条写「每组至少 14 次」就是又一组对不上的数字;
+    //   "上次 × 12" 那半句仍然必须报真实做过的次数, 所以 lastTxt 保持用 r.reps。
+    var _tgtReps = (typeof r.targetReps === 'number' && r.targetReps > 0) ? r.targetReps : r.reps;
     var tgtTxt = r.mode === 'weight'
-      ? ('<b>' + r.target + 'kg</b>' + (r.reps ? ' × ' + r.reps : ''))
+      ? ('<b>' + r.target + 'kg</b>' + (_tgtReps ? ' × ' + _tgtReps : ''))
       : ('<b>' + r.target + (r.unit || '次') + '</b>');
     var dTxt = r.delta > 0 ? ('+' + r.delta + (r.mode === 'weight' ? 'kg' : ''))
              : (r.delta < 0 ? (r.delta + (r.mode === 'weight' ? 'kg' : '')) : '维持');
