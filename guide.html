@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FitBuddy 使用教程</title>
+<style>
+:root{
+  --bg:#0F1115; --card:#181B22; --text:#F2F4F8; --text2:#A9B1C0; --text3:#6B7484;
+  --border:#262B35; --primary:#FF6B35; --accent:#FF3E7F; --ok:#22C55E; --warn:#F59E0B;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#F5F6F8; --card:#FFFFFF; --text:#14181F; --text2:#5A6474; --text3:#9AA3B2;
+         --border:#E6E9EF; }
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  line-height:1.75;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:680px;margin:0 auto;padding:20px 18px 80px;}
+h1{font-size:26px;font-weight:800;margin:6px 0 4px;}
+.sub{color:var(--text2);font-size:14px;margin-bottom:22px;}
+.sec{margin:26px 0 0;}
+.sec-t{font-size:17px;font-weight:800;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 16px;margin-bottom:12px;}
+.step{display:flex;gap:12px;align-items:flex-start;}
+.num{flex:0 0 28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--primary),var(--accent));}
+.step-b{flex:1;min-width:0;}
+.step-b b{display:block;font-size:15px;margin-bottom:2px;}
+.step-b span{font-size:13.5px;color:var(--text2);}
+.row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--border);font-size:14px;}
+.row:last-child{border-bottom:none;}
+.ico{flex:0 0 26px;text-align:center;font-size:15px;}
+.row b{font-weight:700;}
+.row span{color:var(--text2);}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;
+  background:rgba(255,107,53,.14);color:var(--primary);vertical-align:1px;margin-left:4px;}
+.warn-box{border-left:3px solid var(--warn);background:rgba(245,158,11,.08);
+  padding:10px 12px;border-radius:0 10px 10px 0;font-size:13.5px;color:var(--text2);margin:10px 0 0;}
+.ok-box{border-left:3px solid var(--ok);background:rgba(34,197,94,.08);
+  padding:10px 12px;border-radius:0 10px 10px 0;font-size:13.5px;color:var(--text2);margin:10px 0 0;}
+.q{font-size:14.5px;font-weight:700;margin:14px 0 2px;}
+.a{font-size:13.5px;color:var(--text2);margin:0;}
+.foot{margin-top:34px;text-align:center;}
+a.btn{display:inline-block;padding:13px 26px;border-radius:14px;color:#fff;text-decoration:none;
+  font-weight:700;font-size:15px;background:linear-gradient(135deg,var(--primary),var(--accent));
+  box-shadow:0 6px 18px rgba(255,107,53,.35);}
+.tip{font-size:12px;color:var(--text3);margin-top:8px;text-align:center;}
+hr{border:none;border-top:1px solid var(--border);margin:26px 0 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🏋️ FitBuddy 使用教程</h1>
+  <div class="sub">免注册 · 免费 · 数据只存在你自己手机里。看完这篇大概 3 分钟。</div>
+
+  <!-- 快速开始 -->
+  <div class="sec">
+    <div class="sec-t">⚡ 30 秒出计划</div>
+    <div class="card">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="step-b"><b>打开就点一个模板</b>
+        <span>首屏「⚡ 选一个，直接出计划」有 6 个：梨形塑形 / 新手 6 周 / 增肌 12 周 / 减脂塑形 / 居家徒手 / 马拉松新手。点一下，计划立刻生成，不用填任何表。</span></div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="step-b"><b>不满意再展开「🎯 手动调参数」</b>
+        <span>目标（增肌/力量/减脂/塑形/心肺/马拉松）、水平（新手/中级/进阶）、每周练几天、周期长度、器械（健身房/哑铃/徒手/弹力带）、伤病限制、身高体重年龄。改完点「✨ 生成我的计划」。</span></div>
+      </div>
+      <div style="height:12px"></div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="step-b"><b>照着练，练完打勾</b>
+        <span>每天的动作、组数、次数、建议重量、组间休息都排好了。做完一个动作就点它左边的圆圈 ✓。</span></div>
+      </div>
+      <div class="ok-box">身体数据可以不填 —— 只影响营养建议，不影响计划生成。</div>
+    </div>
+  </div>
+
+  <!-- 五个标签页 -->
+  <div class="sec">
+    <div class="sec-t">🧭 底部五个按钮</div>
+    <div class="card">
+      <div class="row"><span class="ico">📋</span><div><b>计划</b><span>　生成计划、今天练什么、打卡、记成绩、周期进度。</span></div></div>
+      <div class="row"><span class="ico">📚</span><div><b>动作库</b><span>　搜动作看示范 GIF；1RM / 热身组 / 杠铃片 / 饮食四个计算器。</span></div></div>
+      <div class="row"><span class="ico">📊</span><div><b>进度</b><span>　打卡热力图、部位分布、动作趋势、个人纪录、减载建议。</span></div></div>
+      <div class="row"><span class="ico">💊</span><div><b>补给</b><span>　常见运动补剂怎么吃、注意什么。</span></div></div>
+      <div class="row"><span class="ico">💝</span><div><b>发电</b><span>　赞赏开发者 + 数据管理（导出 / 导入 / 恢复码 / 重置）。</span></div></div>
+    </div>
+  </div>
+
+  <!-- 计划页怎么读 -->
+  <div class="sec">
+    <div class="sec-t">📋 计划页：每个东西都是什么意思</div>
+    <div class="card">
+      <div class="row"><span class="ico">🎯</span><div><b>今日训练卡</b><span>　页首那块：今天该练哪天的内容、还剩几个动作没做、连续打卡几天。点它直接跳到今天。</span></div></div>
+      <div class="row"><span class="ico">📈</span><div><b>周信息条</b><span>　当前第几周、这周是什么周（基础 / 爬坡 / 挑战 / 减载），以及<b>本周处方</b>：是「本周加 1 档重量」还是「本周重量不变，每组加到 N 次」。<b>照这句练就行。</b></span></div></div>
+      <div class="row"><span class="ico">🔢</span><div><b>动作行</b><span>　格式是「4 组 × 9-12 次」，下面一行是强度和 RPE 建议，右边 ⏱ 按钮点一下开始组间休息倒计时。</span></div></div>
+      <div class="row"><span class="ico">⚖️</span><div><b>重量 / 次数 / RPE 三个框</b><span>　力量动作下面自带。已经预填上次的数字，一样的就不用动；不一样就改一下，改完自动存。</span></div></div>
+      <div class="row"><span class="ico">🔄</span><div><b>替换</b><span>　动作名右边的小箭头，换个同肌群、同器械的替代动作。</span></div></div>
+      <div class="row"><span class="ico">💬</span><div><b>训练笔记</b><span>　每天最下面一个输入框，写感觉、身体反应，自动保存。</span></div></div>
+      <div class="row"><span class="ico">📅</span><div><b>周切换</b><span>　顶部一排周数，可以回看已练过的周。<b>未来的周是锁着的</b>，防止剧透也防止乱跳。</span></div></div>
+    </div>
+    <div class="card">
+      <div style="font-size:14.5px;font-weight:700;">RPE 怎么打分？</div>
+      <div style="font-size:13.5px;color:var(--text2);margin-top:4px;">
+        1–10 分，主观费力程度。<b>做完还剩 4 次力气 ≈ 6 分；还剩 2 次 ≈ 8 分；一次都做不动了 = 10 分。</b>
+        这是整个 App 调节重量的唯一依据 —— <b>打高分（吃力）它就给你减，打低分（轻松）它就给你加。</b>
+      </div>
+      <div class="warn-box">⚠️ 别客气，也别硬撑。RPE 打低了，它下一周给你的重量会超出你真实能力，几周后就会练不动。</div>
+    </div>
+  </div>
+
+  <!-- 进阶 -->
+  <div class="sec">
+    <div class="sec-t">🔬 它在替你做的两件专业的事</div>
+    <div class="card">
+      <div class="row"><span class="ico">📈</span><div><b>周期化</b><span>　计划不是每周一样：几周爬坡 → 一周<b>减载</b>（重量和组数一起降）→ 再进入下一轮。这是防止练到瓶颈和受伤的标准做法，你不用自己算。</span></div></div>
+      <div class="row"><span class="ico">😴</span><div><b>减载周不用慌</b><span>　看到重量掉了、组数少了是<b>故意的</b>。减载周的成绩不记入进步基准，下周会直接回到减载前的重量。</span></div></div>
+      <div class="row"><span class="ico">🎯</span><div><b>下次练多重是算出来的</b><span>　在进度页和动作行附近会告诉你目标重量和原因（上次 RPE + 本周周期 + 上次完成次数）。第一次练某个动作时不显示 —— 没有历史就不瞎猜。</span></div></div>
+      <div class="row"><span class="ico">⚖️</span><div><b>部位平衡</b><span>　练满两周后，进度页会提示某个部位练太多或太少（比如只练胸不练背）。</span></div></div>
+    </div>
+  </div>
+
+  <!-- 动作库 -->
+  <div class="sec">
+    <div class="sec-t">📚 动作库</div>
+    <div class="card">
+      <div class="row"><span class="ico">🔍</span><div><b>搜索 + 筛选</b><span>　按部位（腿/胸/背/肩/臂/核心/有氧/康复）、难度、器械三排筛选。点动作名看示范 GIF 和要点。</span></div></div>
+      <div class="row"><span class="ico">🧮</span><div><b>四个计算器</b><span>　<b>1RM</b>（用你举起的重量和次数估算极限，还能跟个人纪录对比）、<b>热身组</b>、<b>杠铃片</b>（该挂几片）、<b>饮食</b>（蛋白/碳水吃多少克）。</span></div></div>
+      <div class="row"><span class="ico">➕</span><div><b>添加自定义动作</b><span>　列表最下面，自己加动作进计划。</span></div></div>
+    </div>
+  </div>
+
+  <!-- 进度 -->
+  <div class="sec">
+    <div class="sec-t">📊 进度页：练了几周后看这里</div>
+    <div class="card">
+      <div class="row"><span class="ico">🔥</span><div><b>训练热力图</b><span>　最近 90 天哪天练了，一眼看到自己有没有断。</span></div></div>
+      <div class="row"><span class="ico">📊</span><div><b>本周进度 / 频次趋势 / 热量趋势</b><span>　这周练了几天、跟之前比是多了还是少了。</span></div></div>
+      <div class="row"><span class="ico">📈</span><div><b>动作趋势</b><span>　你常练的动作，重量/次数是不是在往上走。</span></div></div>
+      <div class="row"><span class="ico">🏆</span><div><b>个人纪录（PR）+ 成就徽章</b><span>　破纪录会弹提示；连续打卡、累计次数解锁徽章。</span></div></div>
+      <div class="row"><span class="ico">🩺</span><div><b>减载决策 / 疲劳预警</b><span>　它会根据你最近的记录判断「该不该减载」「某个部位是不是练过头了」。可以手动开启减载周。</span></div></div>
+      <div class="row"><span class="ico">📅</span><div><b>月度复盘</b><span>　一个月下来练了多少、哪儿进步了、哪儿卡住。</span></div></div>
+      <div class="row"><span class="ico">🗓</span><div><b>周期卡</b><span>　整轮周期的强度和组数安排，可以手动微调。</span></div></div>
+    </div>
+  </div>
+
+  <!-- 数据 -->
+  <div class="sec">
+    <div class="sec-t">💾 数据在你自己手里（也只在你手里）</div>
+    <div class="card">
+      <div class="row"><span class="ico">📱</span><div><b>存在本机</b><span>　所有记录都保存在这台手机的浏览器里，不上传服务器、不需要注册。</span></div></div>
+      <div class="row"><span class="ico">⚠️</span><div><b>所以：清缓存 / 换手机 / 换浏览器 = 数据没了</b><span>　建议定期备份。</span></div></div>
+      <div class="row"><span class="ico">📤</span><div><b>导出数据</b><span>　「💝 发电」页 → 导出，得到一个 JSON 文件。</span></div></div>
+      <div class="row"><span class="ico">📥</span><div><b>导入数据</b><span>　新设备上打开 FitBuddy → 导入 → 选那个 JSON。</span></div></div>
+      <div class="row"><span class="ico">🧩</span><div><b>恢复码</b><span>　导出一串字符，换设备时粘贴回去。适合不方便传文件的场景。</span></div></div>
+      <div class="row"><span class="ico">🔄</span><div><b>重置</b><span>　清空所有数据重新来（不可撤销，先导出）。</span></div></div>
+    </div>
+  </div>
+
+  <!-- 小技巧 -->
+  <div class="sec">
+    <div class="sec-t">💡 几个容易忽略的</div>
+    <div class="card">
+      <div class="row"><span class="ico">📲</span><div><b>装到桌面当 App 用</b><span>　浏览器菜单里「添加到主屏幕」，之后全屏运行、离线也能打开。</span></div></div>
+      <div class="row"><span class="ico">🔔</span><div><b>每日训练提醒</b><span>　「🎯 手动调参数」里面最下面，开关 + 设定时间，需要允许通知权限。</span></div></div>
+      <div class="row"><span class="ico">⏱</span><div><b>右下角悬浮的 ⏱</b><span>　随时手动开一个组间休息倒计时，可以开语音播报。</span></div></div>
+      <div class="row"><span class="ico">🏥</span><div><b>伤病限制</b><span>　膝盖/腰/肩/手腕/脚踝不适可以勾选，计划会自动避开相关动作（动作上标 ⚠️ 表示已跳过）。</span></div></div>
+      <div class="row"><span class="ico">🌙</span><div><b>深色 / 浅色</b><span>　右上角按钮切换。</span></div></div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="sec">
+    <div class="sec-t">❓ 常见问题</div>
+    <div class="card">
+      <div class="q">为什么第一次练某个动作不给我建议重量？</div>
+      <p class="a">因为它只根据你的<b>上次实际成绩</b>推算，没有历史就不瞎编。练一次、填上重量次数，下次就有目标了。</p>
+
+      <div class="q">为什么这周的重量比上周轻了？</div>
+      <p class="a">大概率是<b>减载周</b>（周信息条会写明）。这是计划的一部分，下周自动回到减载前的重量。</p>
+
+      <div class="q">动作行说「每组加到 N 次」，但我上次做了更多，怎么办？</div>
+      <p class="a">那是本周的<b>下限</b>。你做得到更多就照你自己的做，把真实次数填进框里就行。</p>
+
+      <div class="q">打卡是按「组」还是按「动作」？</div>
+      <p class="a">点一次圆圈 = 这个动作整项完成，系统按计划给你的组数记账（比如 4 组的深蹲记 4 组），不用一组一组点。</p>
+
+      <div class="q">可以两个人用一台手机吗？</div>
+      <p class="a">不建议 —— 数据是本机的，两人会混在一起。一人一台设备，用导出/导入各存各的文件。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <a class="btn" href="index.html">🚀 打开 FitBuddy 开始练</a>
+    <div class="tip">本教程页面不收集任何信息，和 App 一样纯本地</div>
+  </div>
+
+</div>
+</body>
+</html>
