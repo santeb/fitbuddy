@@ -4913,7 +4913,7 @@ function fbShowRpeGuide() {
   document.getElementById('modal').classList.add('show');
 }
 
-function saveTrainingLog(exName, weight, reps, rpeVal, src) {
+function saveTrainingLog(exName, weight, reps, rpeVal, src, isTest) {
   if (!exName) return;
   if (!trainingLog[exName]) trainingLog[exName] = [];
   // src: 'manual' = 用户确认/改过的真实成绩(唯一能进 PR 与卡点诊断的数据)
@@ -4927,7 +4927,10 @@ function saveTrainingLog(exName, weight, reps, rpeVal, src) {
       dl = !!isDeloadWeekActive(currentWeek, (typeof currentCycle !== 'undefined' ? currentCycle : 3));
     }
   } catch (e) { dl = false; }
+  // test:1 = 这条是 1RM 测试成绩，不是一次正常训练。它是"测量"不是"训练量"，
+  //   必然做到力竭（RPE 10），混进 RPE 均值会误触发「下次减重」，所以单独打标。
   var entry = { date: new Date().toISOString().slice(0,10), weight: parseFloat(weight)||0, reps: parseInt(reps)||0, rpe: parseInt(rpeVal)||0, src: mode, deload: dl };
+  if (isTest) entry.test = 1;
   trainingLog[exName].push(entry);
   if (trainingLog[exName].length > 50) trainingLog[exName] = trainingLog[exName].slice(-50);
   localStorage.setItem("fitbuddy_trainlog", JSON.stringify(trainingLog));
@@ -6125,6 +6128,59 @@ function fbGetTodayDayIdx() {
   for (var i = 0; i <= wd; i++) if (sched[i] && sched[i].isTraining) rank++;
   return rank - 1; // 今天是本周第 rank 个训练日 → trainingDays 索引
 }
+
+// ============ 🔗 今日能量收支（进度页「摄入 vs 消耗」的数据源） ============
+// 进度页以前只有"练了多少"，没有"吃了多少"——减脂用户每天真正要回答的问题是
+// 「我今天还差多少 / 超了多少」，两个数字分处在两个页面，只能靠自己心算。
+// ⚠️ 口径一律复用计划页那一套（calcNutrition + estimateDayCalBurn），不在这里另起公式，
+//    否则会出现"计划页说 2100、进度页说 1900"的自相矛盾。
+// 身体数据填不齐就返回 null：宁可不显示，也不拿默认值编一个消耗出来。
+function fbTodayEnergy() {
+  var ctx = (typeof _lastNutriCtx !== 'undefined' && _lastNutriCtx) ? _lastNutriCtx : null;
+  var prof = {};
+  try { prof = JSON.parse(localStorage.getItem('fitbuddy_profile') || '{}'); } catch (e) {}
+  var goal = (ctx && ctx.goal) || (lastPlan && lastPlan.goal) || '';
+  var weight = (ctx && ctx.weight) || parseFloat(prof.weight) || 0;
+  var height = (ctx && ctx.height) || parseFloat(prof.height) || 0;
+  var age = (ctx && ctx.age) || parseInt(prof.age, 10) || 0;
+  var gender = (ctx && ctx.gender) || prof.gender || 'male';
+  if (!goal || !weight || !height || !age) return null;
+
+  // 今天是不是训练日 → 是的话按当天的训练内容估消耗（与计划页 dayCalBurns 同一个 estimateDayCalBurn）
+  var idx = -1;
+  try { idx = fbGetTodayDayIdx(); } catch (e) { idx = -1; }
+  var burn = 0;
+  if (idx >= 0 && lastPlan && lastPlan.trainingDays && lastPlan.trainingDays[idx]) {
+    try {
+      burn = estimateDayCalBurn(lastPlan.trainingDays[idx], goal, weight, lastPlan.level || 'beginner') || 0;
+    } catch (e) { burn = 0; }
+  }
+  // 今天真的打卡了 → 用打卡时记下的实际消耗，比预估准
+  try {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+    var today = new Date().toISOString().slice(0, 10);
+    for (var i = 0; i < hist.length; i++) {
+      var h = hist[i];
+      if (h && String(h.date || '').slice(0, 10) === today && parseFloat(h.cal) > 0) {
+        burn = parseFloat(h.cal);
+        break;
+      }
+    }
+  } catch (e) {}
+
+  var n = calcNutrition(weight, height, age, gender, goal, burn);
+  if (!n) return null;
+  return {
+    goal: goal,
+    isTraining: idx >= 0,
+    tdee: n.tdee,
+    burn: Math.round(burn),
+    total: Math.round(n.tdee + burn),        // 今日总消耗 = 基础代谢+日常 + 运动
+    target: n.targetCal,                     // 今日该吃多少（计划页口径，已含盈余/缺口）
+    protein: n.protein
+  };
+}
+window.fbTodayEnergy = fbTodayEnergy;
 
 // 计划渲染后默认折叠:只展开今天(或下一个)训练日卡片,其余收起
 function fbCollapseToToday() {
@@ -10086,6 +10142,29 @@ function fbRmToWarmup(w, level) {
   if (typeof showToast === 'function') showToast('已按 ' + w + ' kg 排好热身组');
 }
 
+// 🔗 热身组 → 杠铃片：1RM → 处方 → 热身组这条链上最后一环。
+// 热身组给出「第一组 30kg、第二组 50kg…」，但杠铃片是按片的，30kg 得自己拆成
+// 「杆 20 + 两侧各 5」。这一步以前只能靠心算，或者抄到隔壁 tab 重输一遍。
+function fbPlateFromWarmup(w) {
+  w = parseFloat(w);
+  // 低于标准杆重量的组不用配片（空杆/徒手活动）
+  if (!w || w < 20) { if (typeof showToast === 'function') showToast('这组空杆就行，不用配片'); return; }
+  if (typeof window.renderProCalculators === 'function') {
+    try { window.renderProCalculators(); } catch (e) {}
+  }
+  if (typeof switchCalcTab === 'function') switchCalcTab('plate');
+  var t = document.getElementById('plateTarget');
+  if (!t) { if (typeof showToast === 'function') showToast('杠铃片面板还没加载，点一下「杠铃片」标签再试'); return; }
+  t.value = w;
+  if (window.PlateCalc && typeof window.PlateCalc.update === 'function') {
+    try { window.PlateCalc.update(); } catch (e) {}
+  }
+  var res = document.getElementById('plateResult');
+  if (res && res.scrollIntoView) { try { res.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
+  if (typeof showToast === 'function') showToast(w + ' kg 的配片已算好');
+}
+window.fbPlateFromWarmup = fbPlateFromWarmup;
+
 // ============ 1RM 计算器 ↔ PR 卡联动（2026-10-21） ============
 // 问题：1RM 算出来是个孤零零的数字。它不知道你上个月卧推推了多少，算完也没地方落。
 // 补两头：① 选动作 → 跟你的纪录对照；② 超了 → 一键存进 PR 卡。
@@ -10220,6 +10299,12 @@ function fbSaveRmAsPr() {
     return;
   }
   checkPR(name, w, r);
+  // 🔗 这次成绩同时写进训练日志。以前只写 PR 卡，等于存档存进了"陈列柜"却没记进"训练史"：
+  //   进度页的趋势线、RPE 自调节都看不到这一笔，用户在 1RM 页存完档，进度页看着像他没练过。
+  //   ⚠️ 打 test 标记：1RM 测试必然力竭，不该拉高 RPE 均值去建议下次减重。
+  try {
+    if (typeof saveTrainingLog === 'function') saveTrainingLog(name, w, r, 10, 'manual', true);
+  } catch (e) {}
   populateRmExSelect(name);
   calc1RM();
   // 进度页如果已经渲染过就顺手刷新 PR 卡，否则用户翻过去看到的还是旧数字

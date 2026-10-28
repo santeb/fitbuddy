@@ -366,6 +366,20 @@
       html += '      <button class="diet-seg-btn ' + (state.train === 1 ? 'active' : '') + '" onclick="dietSetTrain(1)">训练日</button>';
       html += '    </div>';
       html += '  </div>';
+      // ⚠️ 两套口径的分叉提示：本页手动是「体重 × 系数」法，计划页是「BMR×1.55 的 TDEE」法。
+      //    70kg 增肌：本页蛋白 112~140g（随活动量），计划页恒定 140g —— 数字对不上是算法不同，
+      //    不是哪边算错了。以前点了「改用手动」就永久分叉且一声不吭，用户只能自己猜。
+      if (state.plan && state.plan.p > 0) {
+        var isTr = state.train === 1 && state.plan.tp > 0;
+        var pp = isTr ? state.plan.tp : state.plan.p;
+        var pc = isTr ? state.plan.tc : state.plan.c;
+        var pk = isTr ? state.plan.tkcal : state.plan.kcal;
+        html += '  <div class="diet-row" style="display:block;">';
+        html += '    <div style="font-size:11px;color:var(--text3);line-height:1.65;padding:8px 10px;background:var(--bg);border-radius:8px;">' +
+          '计划页口径：蛋白 <b style="color:var(--text2);">' + pp + '</b>g · 碳水 <b style="color:var(--text2);">' + pc + '</b>g · <b style="color:var(--text2);">' + pk + '</b> kcal' +
+          '<br>两套算法不同（本页按体重×系数，计划页按代谢算），对不上是正常的。</div>';
+        html += '  </div>';
+      }
       // 手动模式下：有计划页上下文（本次会话或草稿）就给一键切回联动
       if (window._lastNutriCtx || state.plan) {
         html += '  <div class="diet-row">';
@@ -578,8 +592,14 @@
         }
       }
     } else {
+      var wasPlan = (state.source === 'plan');
       state.source = 'manual';
       state.link = false; // 用户主动选手动：之后 goDietCalc 不再强制拉回
+      // ⚠️ 只在"从联动切走"时说一句：两个页面的数字从此各算各的，
+      //    不说明的话用户翻回计划页看到另一个蛋白数，会以为哪边坏了。
+      if (wasPlan && typeof showToast === 'function') {
+        showToast('已切回手动口径（体重×系数），和计划页数字会有出入');
+      }
     }
     window.renderDietCalculator();
   };
@@ -590,6 +610,29 @@
     var ok = applyPlanCtx(ctx, { autoTrain: false });
     if (ok) saveDraft(); // 计划变了就落盘，避免面板未重渲染时丢失新数字
     return ok;
+  };
+
+  // 🔗 断点 C：把「今日已吃」暴露给进度页。
+  // 以前这些克数只躺在本页草稿里，进度页只有消耗、没有摄入，
+  // 减脂用户最想看的那张「吃进去 vs 练出去」对照表一直没人做。
+  // ⚠️ 直接读草稿而不是 state.grams：state 只反映"页面已渲染过"的情况，
+  //    而进度页可能在用户还没打开过饮食 tab 时就要读；按 date 校验避免拿昨天的量当今天的。
+  window.dietTodayIntake = function () {
+    try {
+      var d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (!d || d.date !== todayStr()) return null;
+      var g = d.grams || {}, p = 0, c = 0, f = 0, kcal = 0, n = 0;
+      FOODS.forEach(function (food) {
+        var x = parseInt(g[food.name], 10) || 0;
+        if (x > 0) {
+          p += food.p * x / 100; c += food.c * x / 100;
+          f += food.f * x / 100; kcal += food.kcal * x / 100;
+          n++;
+        }
+      });
+      if (!n) return null;
+      return { p: Math.round(p), c: Math.round(c), f: Math.round(f), kcal: Math.round(kcal), items: n };
+    } catch (e) { return null; }
   };
 
   // 计划页营养面板的跳转入口：切到动作库 → 展开饮食 tab → 滚到面板

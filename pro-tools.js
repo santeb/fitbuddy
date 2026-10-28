@@ -89,11 +89,17 @@ var WarmupCalc = {
     var html = '<div class="rm-result" style="display:block;">' +
       '<div style="font-size:13px;font-weight:700;margin-bottom:10px;">🎯 目标 ' + target + 'kg → ' + sets.length + '组热身</div>';
     sets.forEach(function(s, i) {
+      // 🔗 每组挂一个「配片」：热身组排出 5 个重量后，真正卡住用户的是"那我该拿哪几片"。
+      //   杠铃片计算器就摆在隔壁 tab 却没有任何入口，等于让人把这串数字手抄过去再输一遍。
+      //   ⚠️ 空杆级别不挂 —— 20kg 以下就是空杆活动，配片算出来是空的。
+      var plateBtn = (s.weight >= 20)
+        ? '<button class="warmup-plate-btn" onclick="fbPlateFromWarmup(' + s.weight + ')" title="算出这组该挂哪几片">配片</button>'
+        : '';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border-radius:8px;margin-bottom:6px;">' +
         '<div><span style="font-weight:700;font-size:14px;color:var(--primary);">' + s.weight + 'kg</span>' +
         '<span style="font-size:11px;color:var(--text3);margin-left:8px;">× ' + s.reps + '次</span></div>' +
-        '<div style="text-align:right;"><span style="font-size:12px;font-weight:600;color:var(--blue);">' + s.pct + '%</span>' +
-        '<span style="font-size:11px;color:var(--text3);margin-left:6px;">' + s.label + '</span></div>' +
+        '<div style="text-align:right;display:flex;align-items:center;gap:7px;"><span style="font-size:12px;font-weight:600;color:var(--blue);">' + s.pct + '%</span>' +
+        '<span style="font-size:11px;color:var(--text3);">' + s.label + '</span>' + plateBtn + '</div>' +
       '</div>';
     });
     html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center;">→ 正式组开始!</div></div>';
@@ -212,7 +218,10 @@ var PlateCalc = {
 function getAvgRPE(exName) {
   if (!trainingLog || !trainingLog[exName] || !trainingLog[exName].length) return null;
   var entries = trainingLog[exName].slice(-3); // 最近3次
-  var rpes = entries.filter(function(e){ return e && e.rpe > 0; });
+  // ⚠️ 排除 1RM 测试成绩(e.test)：测极限必然力竭，RPE 恒为 10。
+  //   它是一次测量而不是一次训练量，算进平均会把均值拉高，
+  //   于是下次训练被建议"太吃力，减重" —— 明明状态没问题。
+  var rpes = entries.filter(function(e){ return e && e.rpe > 0 && !e.test; });
   if (!rpes.length) return null;
   var sum = rpes.reduce(function(a, e) { return a + e.rpe; }, 0);
   return Math.round(sum / rpes.length * 10) / 10;
@@ -223,7 +232,10 @@ function getRPEAdjustment(exName) {
   var avgRPE = getAvgRPE(exName);
   if (!avgRPE) return null;
 
-  var last = trainingLog[exName][trainingLog[exName].length - 1];
+  // ⚠️ 基准重量也要跳过测试成绩：1RM 测试用的是"能做几次就用多重"的极限重量，
+  //   拿它当"上次练了多少"去加减，等于把测量的极限当成常规训练量。
+  var arr = (trainingLog[exName] || []).filter(function(e){ return e && !e.test; });
+  var last = arr[arr.length - 1];
   if (!last) return null;
 
   // 自重/计时动作:重量恒为 0,上面那句 !last.weight 会让它们永远拿不到建议。
@@ -1269,6 +1281,55 @@ window.renderProCalculators = function() {
   if (window.renderDietCalculator) window.renderDietCalculator();
 };
 
+// 🔗 进度页「今日能量收支」:摄入(饮食页草稿) vs 消耗(计划页口径)。
+// 这两头以前各住在一个页面里, 减脂用户每天要回答的「我今天还差多少」只能自己心算。
+// ⚠️ 数据源全部走别人家的唯一真源: 消耗用 fbTodayEnergy(内部复用 calcNutrition),
+//    摄入用 dietTodayIntake(内部复用 FOODS 表)。这里一行公式都不写。
+function renderTodayEnergyCard() {
+  var e = null, eaten = null;
+  try { if (typeof window.fbTodayEnergy === 'function') e = window.fbTodayEnergy(); } catch (err) {}
+  try { if (typeof window.dietTodayIntake === 'function') eaten = window.dietTodayIntake(); } catch (err) {}
+  if (!e && !eaten) return ''; // 两头都没数据 → 不占版面
+
+  function cell(val, label, color) {
+    return '<div style="flex:1;padding:10px 8px;border-radius:10px;background:var(--bg);text-align:center;">' +
+      '<div style="font-size:19px;font-weight:800;color:' + (color || 'var(--primary)') + ';letter-spacing:-.3px;">' + val + '</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:2px;">' + label + '</div></div>';
+  }
+
+  var html = '<div class="progress-card"><div class="card-title">⚖️ 今日能量收支</div>';
+  html += '<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px;">' +
+    (e ? (e.isTraining ? '今天训练日 · 消耗含运动' : '今天休息日') : '还没填身高体重年龄，算不出消耗') + '</div>';
+
+  html += '<div style="display:flex;gap:8px;">' +
+    cell(eaten ? eaten.kcal : '—', eaten ? 'kcal 已吃' : '今天还没记', eaten ? 'var(--primary)' : 'var(--text3)') +
+    cell(e ? e.target : '—', 'kcal 今日目标', 'var(--text2)') +
+    '</div>';
+
+  if (eaten && e) {
+    var diff = eaten.kcal - e.target;
+    var dc = diff < 0 ? '#22C55E' : '#EF4444';
+    html += '<div style="margin-top:9px;font-size:13px;font-weight:700;color:' + dc + ';text-align:center;">' +
+      (diff < 0 ? '还能吃 ' + (-diff) + ' kcal' : '已超出 ' + diff + ' kcal') + '</div>';
+    // 蛋白是最容易缺的一项, 单列一条进度
+    var pp = Math.min(100, Math.round(eaten.p / Math.max(1, e.protein) * 100));
+    html += '<div style="margin-top:10px;">' +
+      '<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);margin-bottom:4px;">' +
+      '<span>蛋白</span><span>' + eaten.p + ' / ' + e.protein + ' g</span></div>' +
+      '<div style="height:6px;border-radius:3px;background:var(--bg);overflow:hidden;">' +
+      '<div style="height:100%;width:' + pp + '%;border-radius:3px;background:' + (pp >= 100 ? '#22C55E' : 'var(--primary)') + ';"></div></div></div>';
+  }
+
+  if (e) {
+    html += '<div style="margin-top:9px;font-size:11.5px;color:var(--text3);text-align:center;">今日消耗 ≈ ' +
+      e.total + ' kcal（日常 ' + e.tdee + ' + 运动 ' + e.burn + '）</div>';
+  }
+  html += '<button onclick="goDietCalc()" style="margin-top:10px;width:100%;padding:9px;border:none;border-radius:9px;background:var(--primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;">' +
+    (eaten ? '改一下今天吃了什么' : '记一下今天吃了什么') + '</button>';
+  html += '</div>';
+  return html;
+}
+
 // 进度页增强:在原有内容后追加Pro模块
 var _originalRenderProgress = null;
 window.initProToolsProgress = function() {
@@ -1313,6 +1374,10 @@ window.initProToolsProgress = function() {
 
         // 🎯 行动指令优先:先看"下次练多重",再看成就和趋势
         proHtml += rpeSummaryHtml;
+
+        // ⚖️ 今日能量收支:跟上一条同级——它也是"今天就能执行"的指令
+        //    (还能吃 680 / 已超 120),而下面那些是本周/本月的规划与回顾。
+        proHtml += renderTodayEnergyCard();
 
         // 🔄 减载决策(P3): 紧跟 RPE。这两张是"本周就能执行"的,
         //    下面那些是"这几个月才能见效"的。先解决这周, 再看长期。

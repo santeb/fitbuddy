@@ -28,6 +28,16 @@
     'fitbuddy_history',
     'fitbuddy_prefs'
   ];
+  // 第二批：同样是"丢了很心疼"的数据，但重要性低于上面那批。
+  // 以前这 4 个 key 根本没进快照 —— 换域名/清缓存后 PR 纪录、饮食草稿、马拉松配速、
+  // 减载设置全没了，而训练日志还在，看起来就像"练了半年纪录被清零"。
+  // 单独放一批是为了容量兜底：window.name 有上限，超了先丢这批，保住上面那批。
+  var SNAPSHOT_KEYS_EXTRA = [
+    'fitbuddy_prs',
+    'fitbuddy_diet',
+    'fitbuddy_marathon_paces',
+    'fitbuddy_deload'
+  ];
 
   // ---------- IndexedDB 封装 ----------
   var _dbPromise = null;
@@ -115,25 +125,37 @@
     if (now - _lastWinNameUpdate < WINDOW_NAME_THROTTLE) return;
     _lastWinNameUpdate = now;
     try {
-      var snap = {};
       var serialized = '';
-      for (var i = 0; i < SNAPSHOT_KEYS.length; i++) {
-        var k = SNAPSHOT_KEYS[i];
-        var v = localStorage.getItem(k);
-        if (v) snap[k] = v;
-      }
+      var snap = buildSnapshot(SNAPSHOT_KEYS.concat(SNAPSHOT_KEYS_EXTRA));
       if (!Object.keys(snap).length) return;
-      var json = JSON.stringify(snap);
-      // base64 安全编码（处理中文）
-      serialized = btoa(unescape(encodeURIComponent(json)));
-      // 容量兜底：超过 1.5 MB 直接放弃（实测各浏览器普遍 2-3 MB）
-      if (serialized.length > 1500000) return;
+      serialized = encodeSnapshot(snap);
+      // 容量兜底：超过 1.5 MB 就退回到只存核心那批（实测各浏览器普遍 2-3 MB）
+      // —— 不能因为加了 4 个新 key 反而把最要紧的训练日志一起挤掉。
+      if (serialized.length > 1500000) {
+        snap = buildSnapshot(SNAPSHOT_KEYS);
+        serialized = encodeSnapshot(snap);
+        if (serialized.length > 1500000) return;
+      }
       window.name = WINDOW_NAME_PREFIX + serialized;
     } catch (e) {
       // window.name 容量超限 / 隐私模式 → 静默放弃
     }
   }
   var _lastWinNameUpdate = 0;
+
+  function buildSnapshot(keys) {
+    var snap = {};
+    for (var i = 0; i < keys.length; i++) {
+      var v = localStorage.getItem(keys[i]);
+      if (v) snap[keys[i]] = v;
+    }
+    return snap;
+  }
+
+  function encodeSnapshot(snap) {
+    // base64 安全编码（处理中文）
+    return btoa(unescape(encodeURIComponent(JSON.stringify(snap))));
+  }
 
   function readWindowName() {
     try {
