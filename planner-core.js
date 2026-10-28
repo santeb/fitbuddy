@@ -403,7 +403,47 @@ function clearInjury() {
   document.getElementById('injuryToggleIcon').textContent = '▼';
   if (lastPlan) doGenerate();
 }
-// 检查动作是否被伤病标记跳过(改进版:部位映射 + 康复动作不过滤)
+// 检查动作是否被伤病标记跳过(只按动作名关键词过滤,不做整肌群一刀切)
+// ⚠️ 旧实现是按「伤病部位 → 整块肌群」过滤(膝→腿 35 个全砍、腰→背 27 个全砍、肩→肩 26 个全砍),
+//    后果:受伤部位正好是当天练的部位时,那一整天 0 个可练动作,而且界面一句话都不说,
+//    手动点 🔄 换动作也只会弹「没有可用替代动作」。
+//    现在只拦真正压到伤处的动作(深蹲、跳跃、俯卧撑这类),同肌群的低冲击动作照常保留:
+//    膝伤仍可练臀桥 / 腿屈伸 / 腿弯举 / 罗马尼亚硬拉,腕伤仍可练器械推胸和夹胸。
+// 判断口径:不是「完全不用到伤处」(膝盖本来就是腿的关节,臀桥/硬拉它都在做静态支撑),
+// 而是「不给伤处上压力」—— 不负重屈伸、不冲击、不扭转、不跪地、不让伤处当支点。
+var INJURY_KEYWORDS = {
+  // 跪姿=膝盖直接跪地承压;青蛙趴=膝屈曲+髋外旋,膝盖被扭转 —— 这两个看着是髋动作,实际压的是膝
+  '膝': ['深蹲','箭步','弓步','保加利亚','分腿蹲','腿举','蹲','跳','冲刺','高抬腿','慢跑','跳绳','登山跑','跪姿','青蛙'],
+  // 腰伤下脊髓屈曲类(卷腹/转体/伐木)同样顶到腰,砍掉后核心只剩死虫式/平板支撑/Pallof 这类抗旋转,正是腰痛该练的
+  '腰': ['硬拉','俯身','T杠','超人','健腹轮','深蹲','腿举','举腿','龙旗','站姿绳索卷腹','前水平','卷腹','俄罗斯转体','伐木'],
+  '肩': ['肩推','阿诺德','侧平举','前平举','飞鸟','面拉','倒立','派克','折刀','引体','上拉'],
+  '腕': ['俯卧撑','倒立','平板支撑','健腹轮','登山跑','波比','壶铃','战绳','抓举','龙旗','悬挂'],
+  '踝': ['跳绳','慢跑','跑','跳','冲刺','高抬腿','登山','箱子','深蹲','箭步','保加利亚']
+};
+// 「伤处会参与」的动作:不跳过,但必须标出来让用户自己判断。
+// 保留它们的理由:砍光就练不到那块肌肉了(膝伤砍掉腿屈伸 = 股四头肌彻底没得练),
+// 所以给选择权而不是替用户决定 —— 标 ⚠️ + 一句「轻重量试,刺痛就停」。
+var INJURY_CAUTION = {
+  '膝': ['腿屈伸'],                  // 伸膝是主动关节,负重下髌股关节受压:康复常用,但要轻
+  '肩': ['俯卧撑','摸肩'],           // 剩下的 3 个肩动作本质都是俯卧撑变式,肩全程参与
+  '腰': ['仰卧上拉','肩推','阿诺德']  // 站姿推举腰会代偿后仰,仰卧上拉腰容易塌
+};
+
+// 🏃 跑步类动作的伤病风险 —— 不砍动作,只挂醒目红条提醒(san 拍板:方案 A「保留跑步 + 醒目提醒」)
+// 为什么要单列这一套:跑步动作是**动态拼出来的**("轻松跑 8-10km"/"LSD 长距离 20km"/"间歇 6×800m"),
+//   EXES 库里根本没有这几条 → isInjured() 查表查不到 → 一律判"安全"。
+//   实测结果:膝伤 + 马拉松中级,5 个训练日(含 20km LSD)全部照排,**一句提醒都没有** —— 这是安全问题。
+// 为什么不跟着 isInjured 一起砍:砍光跑步 = 马拉松整天变康复日,用户更懵,也解决不了"我就是想跑"的需求。
+//   方案 A 的做法:动作照排,把「风险 + 替代方案 + 什么时候该停」讲清楚,选择权交给用户。
+var RUN_RISK = {
+  '膝': { label:'膝盖', alt:'骑行 / 椭圆机 / 泳池跑' },
+  '踝': { label:'脚踝', alt:'骑行 / 椭圆机 / 划船机' },
+  '腰': { label:'腰',   alt:'椭圆机 / 骑行(躯干保持直立)' }
+};
+// 动态跑步动作识别:名字里有 跑 / km / 公里 / 间歇 / 冲刺 / LSD / 配速 / 阈值 之一
+function isRunLikeEx(name) { return /(跑|km|公里|间歇|冲刺|LSD|配速|阈值|节奏)/i.test(name || ''); }
+// 重灾课表:长距离(小伤拖成慢性伤)和大强度间歇(落地冲击是慢跑的好几倍)
+function isHeavyRunEx(name) { return /LSD|长距离|间歇|冲刺|阈值|节奏/i.test(name || ''); }
 function isInjured(exName) {
   if (!injuryFlag || !injuryFlag.muscles || !injuryFlag.muscles.length) return false;
   // 找动作对象
@@ -411,41 +451,118 @@ function isInjured(exName) {
   for (var ei = 0; ei < EXES.length; ei++) {
     if (EXES[ei].n === exName) { exObj = EXES[ei]; break; }
   }
+  // ⚠️ 查不到 = 动态拼出来的动作(马拉松的「轻松跑 8-10km」「LSD 长距离 20km」「间歇 6×800m」全都不在库里)
+  //    → 一律判"安全"。这是有意为之:跑步动作用 isInjured 砍不得(砍光 = 整天变康复日),
+  //      改成在训练日顶部挂红条提醒,见 RUN_RISK / applyInjuryFilter 里的 _runWarn。
   if (!exObj) return false;
   // 康复动作永远不过滤
   if (exObj.m === '康复') return false;
 
-  // 部位映射:伤病部位 → 需要跳过的动作部位
-  var muscleMap = {
-    '膝': ['腿'],
-    '腰': ['背'],
-    '肩': ['肩'],
-    '腕': ['臂'],
-    '踝': ['有氧']
-  };
-  // 关键词补充(某些动作名称含特定词,即使部位不对也要跳过)
-  var keywordMap = {
-    '膝': ['深蹲','箭步','腿举','跳跃','箱子跳','高抬腿','保加利亚','分腿蹲'],
-    '腰': ['硬拉','健腹轮','超人'],
-    '踝': ['跑步','跳绳','LSD','轻松跑','间歇跑','节奏跑','恢复跑','配速跑']
-  };
-
   var skip = false;
   injuryFlag.muscles.forEach(function(m) {
-    // 部位匹配
-    if (muscleMap[m]) {
-      muscleMap[m].forEach(function(mm) {
-        if (exObj.m === mm) skip = true;
-      });
-    }
-    // 关键词补充匹配
-    if (keywordMap[m]) {
-      keywordMap[m].forEach(function(kw) {
-        if (exName.indexOf(kw) >= 0) skip = true;
-      });
-    }
+    var kws = INJURY_KEYWORDS[m];
+    if (!kws) return;
+    kws.forEach(function(kw){ if (exName.indexOf(kw) >= 0) skip = true; });
   });
   return skip;
+}
+
+// 伤病兜底:某天可练动作被清空时,换成康复动作(而不是甩给用户一个空白训练日)
+// 按伤病部位优先挑对口的康复动作,不够再用其余康复动作补齐 5 个。
+var REHAB_PREF = {
+  '膝': ['直腿抬高','靠墙静蹲（温和）','髋外展（侧卧）','泡沫轴放松（大腿）','站姿小腿拉伸'],
+  '腰': ['猫牛式','鸟狗式','骨盆倾斜','泡沫轴放松（背部）','坐姿体前屈拉伸','深呼吸放松'],
+  '肩': ['肩部环绕（温和）','墙面滑行（Wall Slide）','肩部外旋拉伸','门框拉伸（胸肌）','深呼吸放松'],
+  '腕': ['手腕屈伸（温和）','手指展开+握拳','前臂旋转','深呼吸放松'],
+  '踝': ['踝关节泵','脚踝字母练习','脚踝环绕','提踵（温和）','站姿小腿拉伸']
+};
+function fbRehabFallbackExes(parts) {
+  var pool = EXES.filter(function(e){ return e.m === '康复'; });
+  var wanted = [];
+  (parts || []).forEach(function(p) {
+    (REHAB_PREF[p] || []).forEach(function(n){ if (wanted.indexOf(n) < 0) wanted.push(n); });
+  });
+  var out = [];
+  wanted.forEach(function(n) {
+    if (out.length >= 5) return;
+    for (var i = 0; i < pool.length; i++) { if (pool[i].n === n) { out.push(pool[i]); break; } }
+  });
+  pool.forEach(function(e) { if (out.length < 5 && out.indexOf(e) < 0) out.push(e); });
+  // 康复动作不参与渐进超负荷记重量/次数,避免把「直腿抬高」记进力量容量统计
+  return out.map(function(e){ return Object.assign({}, e, {_noProg: true}); });
+}
+
+// 统一的伤病过滤入口:清标记 → 打标记 → 整天被清空时兜底换成康复日
+// 两个调用点(doGenerate 生成后 / refreshPlan 复用旧计划时)都走这里,保证行为一致。
+function applyInjuryFilter(trainingDays) {
+  if (!trainingDays) return;
+  // 先把上一次兜底替换掉的原动作还回去(伤病改了或取消了,不能让康复动作永久占位)
+  trainingDays.forEach(function(day){
+    if (!day) return;
+    if (day._origExes) { day.exes = day._origExes; delete day._origExes; }
+    delete day._injuryFallback;
+    delete day._injuryFallbackText;
+    delete day._runWarn;
+    delete day._runWarnParts;
+    delete day._runWarnHeavy;
+    delete day._runWarnText;
+    if (day.exes) day.exes.forEach(function(ex){ delete ex._injured; delete ex._caution; delete ex._runCaution; });
+  });
+  if (!(injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length)) return;
+  var parts = injuryFlag.muscles;
+  trainingDays.forEach(function(day){
+    if (!day || !day.exes || !day.exes.length) return;
+    day.exes.forEach(function(ex){
+      if (isInjured(ex.n)) { ex._injured = true; return; }
+      // 没被跳过,但伤处会参与 → 打标记,渲染时给一句提醒
+      parts.forEach(function(p){
+        var kws = INJURY_CAUTION[p];
+        if (!kws) return;
+        kws.forEach(function(kw){ if (ex.n.indexOf(kw) >= 0) ex._caution = true; });
+      });
+    });
+    var avail = day.exes.filter(function(ex){ return !ex._injured; });
+    if (!avail.length) {                            // 整天被砍光 → 康复日兜底
+      day._origExes = day.exes;
+      day.exes = fbRehabFallbackExes(parts);
+      day._injuryFallback = true;
+      day._injuryFallbackText = '你标记的「' + parts.join('、') + '」让今天这 ' + day._origExes.length + ' 个动作都练不了';
+      return;
+    }
+    // 🏃 跑步日伤病提醒:动作保留,但要挂红条(膝/踝/腰伤去跑 20km LSD 是安全问题,不能一声不吭)。
+    //    只对"还练得了"的动作提醒 —— 已经被判 ⚠️ 跳过的(比如库里的「慢跑」)不重复啰嗦。
+    var risky = [], runNames = [], heavyNames = [];
+    avail.forEach(function(ex){
+      if (!isRunLikeEx(ex.n)) return;
+      var hit = parts.filter(function(p){ return RUN_RISK[p]; });
+      if (!hit.length) return;
+      ex._runCaution = true;
+      runNames.push(ex.n);
+      if (isHeavyRunEx(ex.n) || /LSD|长距离|间歇|冲刺|阈值|节奏/i.test(day.name || '')) heavyNames.push(ex.n);
+      hit.forEach(function(p){ if (risky.indexOf(p) < 0) risky.push(p); });
+    });
+    if (risky.length) {
+      day._runWarn = true;
+      day._runWarnParts = risky.map(function(p){ return (RUN_RISK[p] || {}).label || p; });
+      day._runWarnHeavy = heavyNames;
+      day._runWarnText = fbRunWarnText(risky, runNames, heavyNames, day.name);
+    }
+  });
+}
+
+// 跑步日红条的正文:风险说透 + 给替代方案 + 说清什么时候该停(不替用户做决定,但要让他知道代价)
+function fbRunWarnText(parts, runNames, heavyNames, dayName) {
+  var labels = parts.map(function(p){ return (RUN_RISK[p] || {}).label || p; });
+  var alt = '';
+  for (var i = 0; i < parts.length; i++) { if (RUN_RISK[parts[i]]) { alt = RUN_RISK[parts[i]].alt; break; } }
+  var heavy = (heavyNames && heavyNames.length)
+    ? '尤其「' + heavyNames.join('」「') + '」—— ' + (/LSD|长距离/i.test(heavyNames.join('')) ? '距离越长，冲击次数越多，最容易把小伤拖成慢性伤。' : '强度越高，落地冲击越大，伤处承受的是慢跑的好几倍。')
+    : '';
+  return '你标记了「' + labels.join('、') + '」，今天安排的仍是跑步。' + heavy +
+    '跑步每一步都在给伤处上冲击，硬扛通常不是变强，是变严重。' +
+    '<br>想保住训练量：换成 <b>' + alt + '</b>，心肺刺激差不多但几乎没冲击。' +
+    '<br>实在要跑：把距离砍下来、配速放慢、挑塑胶跑道或土路这类软地面。' +
+    '<br><span style="opacity:.9;">跑中疼痛加重、或者跑完 24 小时内还疼 —— 立刻停，别硬顶，必要时先看医生。</span>';
 }
 
 // ============ 周期管理 ============
@@ -1024,6 +1141,15 @@ function getExes(muscle, equip, level) {
 
 function pickExes(arr, count, weekOffset) {
   if (!arr || !arr.length) return [];
+  // 🩹 伤病动作在「选」这一步就排除,而不是等排完再砍。
+  //    旧顺序(先选后排)的代价实测:腰伤用户 8 周里有 6 周的「腿·核心」日,4 个腿动作被砍到只剩 1 个 ——
+  //    可腿池里明明还有 12 个能练的动作,只是排出来的那 4 个恰好都是深蹲/硬拉类。
+  //    先过滤再选之后:8 周 × 5 种伤病 × 5 天 = 200 个训练日全部满配,没有一天被砍光。
+  //    ⚠️ 池子被砍空时退回原池:宁可排到带 ⚠️ 的动作,也不能让这一天凑不出动作(多伤病叠加时可能触发)。
+  if (injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length) {
+    var _safe = arr.filter(function(e){ return !isInjured(e.n); });
+    if (_safe.length) arr = _safe;
+  }
   var off = weekOffset || 0;
   var diffRank = {"初级":1,"中级":2,"高级":3};
   // 按难度分层:arr 已按"与档位目标难度的距离"排序,层出现的顺序就是优先级。
@@ -1067,6 +1193,17 @@ function pickExes(arr, count, weekOffset) {
   var out = [];
   for (var i = 0; i < layers.length && out.length < count; i++) out = out.concat(pickLayer(layers[i]));
   return out.slice(0, Math.min(count, out.length));
+}
+
+// 从"子池"(深蹲池/硬拉池/推举池这类按动作名筛出来的小组)里挑动作。
+// 子池被伤病整组砍空时退回父池(整个腿池/肩池),而不是让这一天少一半动作。
+// ⚠️ 为什么不能沿用 `dl.length ? dl : 腿池` 的写法:那个 length 是**过滤前**的长度,永远 >0,
+//    兜底永远不触发。实测膝伤「深蹲日+辅助」8 周每周都只剩 2/4 个动作 —— 深蹲日里一个深蹲都没有。
+//    必须按"过滤后还剩几个"来判断。
+function pickSub(pool, parentPool, count, off) {
+  if (!(injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length)) return pickExes(pool, count, off);
+  var safe = pool.filter(function(e){ return !isInjured(e.n); });
+  return pickExes(safe.length ? safe : (parentPool || pool), count, off);
 }
 
 // withArm: ≤3 天的全身计划是否补第 6 槽「臂」。
@@ -1824,6 +1961,11 @@ function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName) {
   if (!arr || !arr.length) return [];
   var topic = parseDayTopic(dayName);
   var accept = function(c) { return dayExOk(c, topic); };
+  // 🩹 补位也要躲开伤病动作:旧版补位只看"贴不贴主题",不看伤病 →
+  //    实测膝伤「深蹲日」被补进一个「杠铃深蹲」(带 ⚠️ 占位、不能打卡、没有替换按钮),
+  //    用户看到的就是"深蹲日里排了个深蹲,但它是灰的"。全场景扫出 180 个这样的训练日。
+  //    第一轮只补能练的;补不出才退回放宽版(宁可带 ⚠️,也不能让训练日缺一块)。
+  var acceptSafe = function(c) { return dayExOk(c, topic) && !isInjured(c.n); };
   var seenName = {}, seenFam = {}, slots = [];
   arr.forEach(function(e) {
     if (!e) return;
@@ -1842,7 +1984,7 @@ function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName) {
     // 放宽:同肌群里找同族但不同名的(池子太小,例如自重背池几乎全是引体族)
     //      宁可是"引体向上 + 前水平拉背",也不要让拉日只剩 2 个动作
     var c = pickRefillExFrom([slot.drop].concat(PARTNER_MUSCLES[slot.drop] || []),
-              seenName, seenFam, equip, level, bwShift, bwLevel, false, accept)
+              seenName, seenFam, equip, level, bwShift, bwLevel, false, acceptSafe)
          || pickRefillExFrom([slot.drop], seenName, seenFam, equip, level, bwShift, bwLevel, true, accept);
     if (c) slots[i] = { keep: c };
   });
@@ -1869,6 +2011,9 @@ function ensureMinExes(day, equip, level, bwShift, bwLevel) {
 
   var topic = parseDayTopic(name);
   var accept = function(c) { return dayExOk(c, topic); };
+  // 🩹 同 dedupFamilyAndRefill:保底补进来的动作也要躲开伤病动作。
+  //    前几轮只补能练的,最后一轮才放宽 —— 补不满比补进一堆灰动作要好,但也不能让训练日只剩 2 个。
+  var acceptSafe = function(c) { return dayExOk(c, topic) && !isInjured(c.n); };
   var seenName = {}, seenFam = {}, coreCnt = 0;
   exes.forEach(function(e) {
     if (!e) return;
@@ -1892,11 +2037,11 @@ function ensureMinExes(day, equip, level, bwShift, bwLevel) {
               : ((level === 'beginner') ? 1 : 2);
 
   var out = exes.slice();
-  function fill(order, allowCore) {
+  function fill(order, allowCore, acc) {
     for (var i = 0; i < order.length && out.length < min; i++) {
       var m = order[i];
       if (m === '核心' && (!allowCore || coreCnt >= coreCap)) continue;
-      var c = pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false, accept);
+      var c = pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false, acc || accept);
       if (!c) continue;
       out.push(c);
       if (c.m === '核心') coreCnt++;
@@ -1905,12 +2050,13 @@ function ensureMinExes(day, equip, level, bwShift, bwLevel) {
   // 分档补:主题内 → 核心(限额) → 同侧 → 全身兜底。多轮直到达标或补不动
   for (var round = 0; round < 4 && out.length < min; round++) {
     var before = out.length;
-    if (noTopic) { fill(fallback, true); }
+    var acc = (round === 3) ? accept : acceptSafe;   // 最后一轮才允许补进带 ⚠️ 的动作
+    if (noTopic) { fill(fallback, true, acc); }
     else {
-      fill(own, false);
-      if (out.length < min) fill(['核心','核心'], true);
-      if (out.length < min) fill(sameSide, false);
-      if (out.length < min) fill(fallback, true);
+      fill(own, false, acc);
+      if (out.length < min) fill(['核心','核心'], true, acc);
+      if (out.length < min) fill(sameSide, false, acc);
+      if (out.length < min) fill(fallback, true, acc);
     }
     if (out.length === before) break;
   }
@@ -2235,11 +2381,8 @@ function renderRestoredPlan() {
   var schedule = lastPlan.schedule || getSchedule(days);
   var cfg = CONFIGS[level] || CONFIGS.beginner;
   var goalCfg = cfg[goal] || cfg.muscle;
-  // 伤病过滤
-  trainingDays.forEach(function(day){ if (day.exes) day.exes.forEach(function(ex){ delete ex._injured; }); });
-  if (injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length) {
-    trainingDays.forEach(function(day){ if (day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
-  }
+  // 伤病过滤(清标记 → 打标记 → 整天被清空时兜底换成康复日)
+  applyInjuryFilter(trainingDays);
   // 直接用 _skipRebuild 机制复用 trainingDays,不重新生成
   _skipRebuild = true;
   doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cfg, goalCfg);
@@ -2855,11 +2998,8 @@ function doGenerate() {
       } else {
         trainingDays = fbApplyExSwaps(buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset));
       }
-      // 伤病过滤
-      trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ delete ex._injured; }); });
-      if (injuryFlag && injuryFlag.muscles && injuryFlag.muscles.length) {
-        trainingDays.forEach(function(day){ if (day && day.exes) day.exes.forEach(function(ex){ if (isInjured(ex.n)) ex._injured = true; }); });
-      }
+      // 伤病过滤(清标记 → 打标记 → 整天被清空时兜底换成康复日)
+      applyInjuryFilter(trainingDays);
       // 保存到 lastPlan
       // v103b:顺手记下「这次升档了」。放在这里而不是校准分支里,是为了把两条升档
       //   路径一起覆盖 —— 自动校准(只在升的那次渲染出现)和用户自己在表单里改档。
@@ -3099,11 +3239,13 @@ function buildMusclePlan(level, days, equip, wOff) {
 }
 
 function buildStrengthPlan(level, days, equip, wOff) {
-  var sq = getExes("腿",equip,level).filter(function(e){return e.n.indexOf("深蹲")>=0||e.n.indexOf("腿举")>=0;});
+  var legPool = getExes("腿",equip,level);
+  var shPool  = getExes("肩",equip,level);
+  var sq = legPool.filter(function(e){return e.n.indexOf("深蹲")>=0||e.n.indexOf("腿举")>=0;});
   var bp = getExes("胸",equip,level).filter(function(e){return e.n.indexOf("卧推")>=0||e.n.indexOf("俯卧撑")>=0||e.n.indexOf("推胸")>=0;});
   var rw = getExes("背",equip,level).filter(function(e){return e.n.indexOf("划船")>=0||e.n.indexOf("引体")>=0||e.n.indexOf("下拉")>=0;});
-  var pr = getExes("肩",equip,level).filter(function(e){return e.n.indexOf("肩推")>=0||e.n.indexOf("推举")>=0;});
-  var dl = getExes("腿",equip,level).filter(function(e){return e.n.indexOf("硬拉")>=0;});
+  var pr = shPool.filter(function(e){return e.n.indexOf("肩推")>=0||e.n.indexOf("推举")>=0;});
+  var dl = legPool.filter(function(e){return e.n.indexOf("硬拉")>=0;});
   var core = getExes("核心",equip,level);
   var tri = getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("下压")>=0;});
   var bic = getExes("臂",equip,level).filter(function(e){return e.n.indexOf("弯举")>=0;});
@@ -3115,7 +3257,7 @@ function buildStrengthPlan(level, days, equip, wOff) {
       // 按天轮换三头/二头,保证两类都练到(力量计划靠卧推/划船覆盖肩,不必再加孤立肩推)。
       var arm = (i % 2 === 0) ? tri : bic;
       return {name:names[i]||"全身力量 "+(i+1), exes:dedup(
-        pickExes(sq,1,wOff+i).concat(
+        pickSub(sq,legPool,1,wOff+i).concat(
         pickExes(bp,1,wOff+i)).concat(
         pickExes(rw,1,wOff+i)).concat(
         pickExes(arm,1,wOff+i)).concat(
@@ -3124,14 +3266,29 @@ function buildStrengthPlan(level, days, equip, wOff) {
     });
   }
   var plan = [
-    {name:"深蹲日 + 辅助", exes: dedup(pickExes(sq,2,wOff).concat(pickExes(bp,1,wOff)).concat(pickExes(core,1,wOff)))},
-    {name:"推(卧推)+ 辅助", exes: dedup(pickExes(bp,2,wOff).concat(pickExes(pr,1,wOff)).concat(pickExes(tri,1,wOff)))},
-    {name:"硬拉日 + 辅助", exes: dedup(pickExes(dl.length?dl:getExes("腿",equip,level),2,wOff).concat(pickExes(rw,1,wOff)).concat(pickExes(core,1,wOff)))}
+    // 深蹲池/硬拉池/推举池被伤病砍空时自动退回整个腿池/肩池(膝伤的"深蹲日"改排臀桥、腿弯举,而不是空着)
+    {name:"深蹲日 + 辅助", exes: dedup(pickSub(sq,legPool,2,wOff).concat(pickExes(bp,1,wOff)).concat(pickExes(core,1,wOff)))},
+    {name:"推(卧推)+ 辅助", exes: dedup(pickExes(bp,2,wOff).concat(pickSub(pr,shPool,1,wOff)).concat(pickExes(tri,1,wOff)))},
+    {name:"硬拉日 + 辅助", exes: dedup(pickSub(dl,legPool,2,wOff).concat(pickExes(rw,1,wOff)).concat(pickExes(core,1,wOff)))}
   ];
   if (days >= 4) plan.push({name:"拉(划船/引体)+ 辅助", exes: dedup(pickExes(rw,2,wOff).concat(pickExes(bic,1,wOff)).concat(pickExes(core,1,wOff)))});
-  if (days >= 5) plan.push({name:"上肢力量综合", exes: dedup(pickExes(bp,1,wOff+1).concat(pickExes(pr,2,wOff+1)).concat(pickExes(rw,1,wOff+1)))});
-  if (days >= 6) plan.push({name:"下肢 + 核心专项", exes: dedup(pickExes(sq,2,wOff+1).concat(pickExes(core,2,wOff+1)))});
+  if (days >= 5) plan.push({name:"上肢力量综合", exes: dedup(pickExes(bp,1,wOff+1).concat(pickSub(pr,shPool,2,wOff+1)).concat(pickExes(rw,1,wOff+1)))});
+  if (days >= 6) plan.push({name:"下肢 + 核心专项", exes: dedup(pickSub(sq,legPool,2,wOff+1).concat(pickExes(core,2,wOff+1)))});
   return plan;
+}
+
+// 有氧池被伤病砍空时的兜底动作:取一个"伤处不受压"的低冲击有氧。
+// ⚠️ 为什么不能写死「跳绳」/「慢跑/快走」:这两个名字本身就在伤病关键词里(膝/踝 → 跳、慢跑),
+//    排进去之后又被 applyInjuryFilter 砍一遍 → 减脂日凭空少一个动作(实测 6/7、5/7)。
+function fbCardioFallback(equip, level, wOff) {
+  var pool = getExes("有氧", equip, level) || [];
+  var safe = pool.filter(function(e){ return !isInjured(e.n); });
+  if (safe.length) return (pickExes(safe, 1, wOff || 0)[0] || safe[0]);
+  var gentle = ["骑行","快走","椭圆机","划船","游泳","爬坡"];
+  for (var i = 0; i < gentle.length; i++) {
+    for (var j = 0; j < pool.length; j++) if (pool[j].n.indexOf(gentle[i]) >= 0) return pool[j];
+  }
+  return pool.length ? pool[0] : {n:"快走", m:"有氧", eq:"bodyweight", diff:"初级", desc:"低冲击有氧", tips:"保持能正常说话的配速", vid:""};
 }
 
 function buildCutPlan(level, days, equip, wOff) {
@@ -3141,12 +3298,13 @@ function buildCutPlan(level, days, equip, wOff) {
       // wOff + i 错开:旧版所有力量日都用同一个 wOff → "力量+有氧 1/2/3" 内容一模一样
       var exes = getFullBody(equip, level, "muscle", wOff + i, true);
       var cardio = getExes("有氧",equip,level);
-      exes.push(pickExes(cardio,1,wOff + i)[0] || {n:"跳绳",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""});
+      var cd1 = pickExes(cardio,1,wOff + i);
+      exes.push(cd1[0] || fbCardioFallback(equip, level, wOff + i));
       plan.push({name:"力量+有氧 " + (Math.floor(i/2)+1), exes: dedup(exes)});
     } else {
       var cardExes = getExes("有氧",equip,level);
       var picked2 = pickExes(cardExes,2,wOff + i);
-      plan.push({name:"有氧专项 " + (Math.floor(i/2)+1), exes: picked2.length ? picked2 : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
+      plan.push({name:"有氧专项 " + (Math.floor(i/2)+1), exes: picked2.length ? picked2 : [fbCardioFallback(equip, level, wOff + i)]});
     }
   }
   return plan;
@@ -3216,7 +3374,7 @@ function buildShapePlan(level, days, equip, wOff) {
       cardioIdx++;
       // 取 2 个:只给 1 个有氧动作的话,这一天的训练量明显撑不起来
       var picked = pickExes(cardioPool, 2, wOff + i);
-      plan.push({name:"有氧线条 " + cardioIdx, exes: picked.length ? picked : [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}]});
+      plan.push({name:"有氧线条 " + cardioIdx, exes: picked.length ? picked : [fbCardioFallback(equip, level, wOff + i)]});
     }
   }
   return plan;
@@ -3238,7 +3396,7 @@ function buildCardioPlan(level, days, equip, wOff) {
       // LISS 日:2-3个低强度动作组合
       var lissCnt = Math.min(3, liss.length);
       var lissExes = pickExes(liss, lissCnt, wOff + i);
-      if (!lissExes.length) lissExes = [{n:"慢跑/快走",m:"有氧",eq:"bodyweight",diff:"初级",desc:"",tips:"",vid:""}];
+      if (!lissExes.length) lissExes = [fbCardioFallback(equip, level, wOff + i)];
       plan.push({name:"LISS 有氧", exes: lissExes});
     } else if (mod === 1) {
       // HIIT 日:3-4个高强度动作循环
@@ -4117,11 +4275,32 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
   var metaText = isMarathon ? "1次训练" : (exCount + '个动作');
   if (dayCalBurn) metaText += ' · 🔥~'+dayCalBurn+'kcal';
 
+  // 🏥 伤病兜底日:标题上标注,让用户一眼知道这天被改过
+  // 🏃 跑步+伤病:标题也挂个 ⚠️,折叠起来时同样看得见(红条在 body 里,折叠就看不见了)
+  var displayName = day._injuryFallback ? day.name + '（已改为康复日）'
+                  : (day._runWarn ? day.name + ' <span style="color:#DC2626;">⚠️</span>' : day.name);
+
   var html = '<div class="plan-day" id="'+dayId+'">'+
     '<div class="plan-day-header" onclick="toggleDay(\''+dayId+'\')">'+
-      '<span class="plan-day-name">'+dayLabel+' · '+day.name+'</span>'+
+      '<span class="plan-day-name">'+dayLabel+' · '+displayName+'</span>'+
       '<div class="plan-day-right"><span class="plan-day-meta">'+metaText+'</span><span class="plan-day-toggle">▼</span></div>'+
     '</div><div class="plan-day-body">';
+
+  // 🏥 伤病兜底提示:整天的动作都被伤病拦掉时,必须给个说法(旧版是空白一天、一句话没有)
+  if (day._injuryFallback) {
+    html += '<div style="margin:0 0 8px;padding:8px 10px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:8px;font-size:12px;color:#C2410C;line-height:1.55;">'+
+      '⚠️ '+(day._injuryFallbackText || '今天原定的动作都跟伤病标记冲突')+'，已自动换成下面 '+exCount+' 个康复/放松动作。<br>'+
+      '<span style="opacity:.85;">做的时候有刺痛就停。伤病好了取消标记、重新生成计划，原安排会回来。</span></div>';
+  }
+
+  // 🏃 跑步日 + 膝/踝/腰伤:红条警告。动作保留(照 san 的方案 A),但风险必须写在脸上 ——
+  //    实测膝伤 + 马拉松中级会排出 20km LSD 且零提醒,这是安全问题,不能让 App 假装没事。
+  if (day._runWarn) {
+    html += '<div style="margin:0 0 8px;padding:10px 12px;background:#FEF2F2;border:1.5px solid #EF4444;border-radius:8px;font-size:12px;color:#991B1B;line-height:1.6;">'+
+      '<div style="font-weight:800;font-size:13px;color:#B91C1C;margin-bottom:4px;">🚨 今天排了跑步，但你标记了「'+(day._runWarnParts||[]).join('、')+'」</div>'+
+      (day._runWarnText || '跑步会反复冲击伤处，疼痛加重就停。')+
+      '</div>';
+  }
 
   // 🧤 动态热身动作推荐(可点击看GIF)- 放在热身组前面
   if (!isMarathon && day.exes && day.exes.length) {
@@ -4257,8 +4436,9 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       // 渐进超负荷输入(力量动作)
       // 🎯 预填上次的重量/次数:默认操作是「什么都不用做」,只有实际不一样才改一个数字。
       //    预填值带 prog-prefill(灰虚线)= 未确认;用户动过 → fbProgTouch 摘掉标记 → 记为 manual。
+      // 🏥 _noProg:伤病兜底塞进来的康复动作不记重量,免得把「直腿抬高」算进力量容量
       var progInputsHtml = '';
-      if (isLiftEx) {
+      if (isLiftEx && !ex._noProg) {
         var progId = checkId + '_prog';
         var _touch = ' oninput="fbProgTouch(this)"';
         var preW = (lastLog && parseFloat(lastLog.weight) > 0) ? parseFloat(lastLog.weight) : '';
@@ -4313,7 +4493,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
         '<div class="ex-left" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
-          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
+          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
         '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+'</div>'+
       '</div>';
