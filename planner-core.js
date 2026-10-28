@@ -944,7 +944,22 @@ function openSubModal(dayIdx, exIdx, exName) {
   var muscle = ex.m;
   var level = lastPlan ? lastPlan.level : 'beginner';
   var equip = lastPlan ? lastPlan.equip : 'gym';
-  var allowed = getExes(muscle, equip, level).filter(function(e){ return e.n !== exName && !isInjured(e.n); });
+  // ⚠️ 心肺目标的候选池要按「生成时的口径」取(advanced 全档):
+  //    buildCardioPlan 自己就是拿 advanced 池拆 LISS/HIIT 的, 所以初级用户排到的 HIIT 也是中级动作。
+  //    这里若按 lastPlan.level 取池, 初级用户只剩下 5 个初级动作可选 —— 想换个 HIIT 根本换不出来,
+  //    看起来就像"这个按钮没用"。
+  var poolLevel = (lastPlan && lastPlan.goal === 'cardio' && muscle === '有氧') ? 'advanced' : level;
+  // 排除当天已经在练的动作:换过去撞名就会变成一天练两次同一个动作
+  var sameDayNames = [];
+  try {
+    if (lastPlan && lastPlan.trainingDays && lastPlan.trainingDays[dayIdx]) {
+      sameDayNames = (lastPlan.trainingDays[dayIdx].exes || []).map(function(e){ return e && e.n; })
+        .filter(function(n){ return n && n !== exName; });
+    }
+  } catch (err) {}
+  var allowed = getExes(muscle, equip, poolLevel).filter(function(e){
+    return e.n !== exName && !isInjured(e.n) && sameDayNames.indexOf(e.n) < 0;
+  });
   if (!allowed.length) {
     alert('没有可用替代动作(相同肌群+设备+不触发伤病限制)');
     return;
@@ -953,12 +968,27 @@ function openSubModal(dayIdx, exIdx, exName) {
   var bt = BADGE_TEXT[muscle] || (muscle ? muscle[0] : '?');
   var html = '<div class="sub-modal-title">🔄 替换「'+exName+'」</div>'+
     '<div class="sub-modal-sub">选择替代动作(同肌群 '+MUSCLE_LABELS[muscle]+')</div>';
+  // 有氧的"剂量"是时长和心率区间, 跟具体选哪个动作无关 —— 先说清楚, 免得用户
+  // 以为换个动作就能让这练轻松一点(不能, 心率区间照旧)。
+  if (muscle === '有氧') {
+    html += '<div style="margin:8px 0 2px;padding:8px 10px;border-radius:10px;background:var(--bg);'+
+      'font-size:11.5px;line-height:1.6;color:var(--text3);">换动作只换项目，时长和心率区间不变 —— 一样累，换个练法。</div>';
+  }
   // v103b:这个动作加过量的话,换完那笔加量就静默没了 —— 换之前先说清楚
   html += (typeof fbSwapAdjNoticeHtml === 'function') ? fbSwapAdjNoticeHtml(exName) : '';
   allowed.slice(0, 10).forEach(function(e, i){
+    // 有氧动作标一下 LISS / HIIT(与 buildCardioPlan 的分组口径一致:初级=LISS, 中级/高级=HIIT),
+    // 否则用户在一堆名字里看不出哪个是慢速有氧、哪个是冲刺间歇。
+    var tagHtml = '';
+    if (muscle === '有氧') {
+      var isLiss = (e.diff === '初级');
+      tagHtml = '<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:5px;margin-left:5px;'+
+        'background:'+(isLiss ? '#E0F2FE' : '#FFEDD5')+';color:'+(isLiss ? '#0369A1' : '#C2410C')+';">'+
+        (isLiss ? 'LISS' : 'HIIT')+'</span>';
+    }
     html += '<div class="sub-item" data-idx="'+i+'" data-name="'+e.n.replace(/'/g,"\\'")+'" onclick="selectSubItem(this,\''+e.n.replace(/'/g,"\\'")+'\')">'+
       '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:28px;height:28px;border-radius:8px;font-size:11px;">'+bt+'</div>'+
-      '<div><div class="sub-item-name">'+e.n+'</div><div class="sub-item-meta">'+e.diff+' · '+e.desc+'</div></div>'+
+      '<div><div class="sub-item-name">'+e.n+tagHtml+'</div><div class="sub-item-meta">'+e.diff+' · '+e.desc+'</div></div>'+
     '</div>';
   });
   html += '<div class="sub-actions"><button class="sub-cancel" onclick="closeSubModal()">取消</button>'+
@@ -983,6 +1013,9 @@ function confirmSub() {
       // 动作冲回默认 —— 换动作只在当周有效。存档后每次 buildPlan 都会 replay。
       if (oldEx && oldEx.n && oldEx.n !== selectedSubName) fbSetExSwap(oldEx.n, selectedSubName);
       lastPlan.trainingDays[subTarget.dayIdx].exes[subTarget.exIdx] = newEx;
+      // 兜底去重:候选里已经排除了当天在练的动作,但换周/跳周重放 swap 表时仍可能撞名
+      // (fbApplyExSwaps 那边同样 dedup),一天出现两次同一个动作看着就像 bug。
+      try { lastPlan.trainingDays[subTarget.dayIdx].exes = dedup(lastPlan.trainingDays[subTarget.dayIdx].exes); } catch (err) {}
       localStorage.setItem("fitbuddy_lastplan", JSON.stringify(lastPlan));
     }
   }
@@ -4464,23 +4497,12 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         }
       }
 
-      // 替换按钮(非马拉松的力量动作)
+      // 替换按钮:力量动作 + 有氧动作(马拉松的跑步课表是按分期算出来的,不参与替换)
+      // 🔗 有氧以前没有这个按钮:心肺计划一天排 3~4 个有氧动作,全是算法按 offset 轮换出来的,
+      //    不想跳绳 / 波比跳伤膝盖时,只能整周硬着头皮练,或者改计划参数碰运气换一批。
       var subBtnHtml = '';
-      if (isLiftEx && !isInjuredEx) {
-        // 找到该动作在 trainingDays 中的索引
-        var di = -1;
-        if (lastPlan && lastPlan.trainingDays) {
-          lastPlan.trainingDays.forEach(function(d, didx){
-            if (d.exes) {
-              d.exes.forEach(function(e, eidx){
-                if (e.n === ex.n && didx === (lastPlan.schedule ? lastPlan.schedule.filter(function(s){return s.isTraining;}).indexOf(lastPlan.schedule.filter(function(s){return s.isTraining;})[didx]) : -1)) {
-                  // simplified: use checkId
-                }
-              });
-            }
-          });
-        }
-        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\')" title="替换动作">🔄</button>';
+      if ((isLiftEx || ex.m === '有氧') && !isMarathon && !isInjuredEx) {
+        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\')" title="'+(ex.m === '有氧' ? '换个有氧动作' : '替换动作')+'">🔄</button>';
       }
 
       var injuryClass = isInjuredEx ? ' injury-skipped' : '';
