@@ -9964,7 +9964,126 @@ function calc1RM() {
   document.getElementById("rm85").textContent = Math.round(rm * 0.85 * 10) / 10 + " kg";
   document.getElementById("rm90").textContent = Math.round(rm * 0.9 * 10) / 10 + " kg";
   document.getElementById("rm95").textContent = Math.round(rm * 0.95 * 10) / 10 + " kg";
+  fbRenderRmGuide(rm);
   res.style.display = "block";
+}
+
+// ============ 1RM → 训练处方（2026-10-28）============
+// 问题：算出来 70% = 56kg，然后呢？以前到这就断了，用户拿走一堆百分比自己心算该用哪一档。
+// 解法：App 里本来就有「目标 × 水平 → 强度%/次数/组间/RPE」这张表（data-constants.js 的 CONFIGS），
+//       训练计划就是按它排的。这里只是把同一张表接到 1RM 上，**不新增任何口径**（口径必须同源，
+//       否则会出现「计划页说 8-12 次、计算器说 6-10 次」这种自相矛盾）。
+// 不做的：不在这里给周期/减载建议（那是周信息条的活），不猜动作（自重动作算 1RM 本就没意义）。
+
+// 当前生效的目标/水平：优先读计划（lastPlan 才是这份计划真正按哪档排的），
+// 没有计划再读表单；两处都没有才退回新手。
+function fbRmCurGoalLevel() {
+  var g = '', l = '';
+  try {
+    if (typeof lastPlan !== 'undefined' && lastPlan && lastPlan.goal) { g = lastPlan.goal; l = lastPlan.level || ''; }
+  } catch (e) {}
+  if (!g) { var ge = document.querySelector('input[name="goal"]:checked'); if (ge) g = ge.value; }
+  if (!l) { var le = document.querySelector('input[name="level"]:checked'); if (le) l = le.value; }
+  return { goal: g || '', level: l || 'beginner' };
+}
+
+// 重量向下靠到 2.5kg：健身房最小可加的片就是 2.5kg，且宁轻勿重（重了可能完不成组）。
+function fbRmRound25(v) { return Math.floor(v / 2.5) * 2.5; }
+function fbRmKg(v) { return (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, ''); }
+
+function fbRenderRmGuide(rm) {
+  var box = document.getElementById('rmGuide');
+  var rows = document.querySelectorAll('#calcPanelRm .rm-table tr[data-pct]');
+  var i;
+  for (i = 0; i < rows.length; i++) rows[i].classList.remove('hit');
+  if (!box) return;
+
+  var gl = fbRmCurGoalLevel();
+  var goal = gl.goal, level = gl.level;
+
+  // 心肺/马拉松的强度口径是心率与配速，不是 %1RM —— 硬套会给出荒谬的数字，直接说明。
+  if (goal === 'cardio' || goal === 'marathon') {
+    box.innerHTML = '<div class="g-title">🎯 这个数字对你用不上</div>' +
+      '<div class="g-meta">你的目标是心肺/马拉松，强度按<b>心率</b>和<b>配速</b>走，不用 1RM 百分比。' +
+      '想看配速区间就去计划页顶部的周处方。</div>';
+    box.style.display = '';
+    return;
+  }
+
+  var cfg = (typeof CONFIGS !== 'undefined' && CONFIGS[level]) || null;
+  var gc = cfg && (cfg[goal] || cfg.muscle);
+  if (!gc || !gc.intensity) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  // 解析强度区间：支持 "65-75% 1RM"（区间）与 "85%+ 1RM"（下限，往上走）
+  // ⚠️ 不能直接 /\d+%/g 全抓：对 "60-70% 1RM" 它只会抓到 "70%"（"60" 后面是 '-' 不是 '%'），
+  //    结果 lo 被算成 70，给出的重量凭空重一档。必须先试区间式。
+  var m2 = gc.intensity.match(/(\d+(?:\.\d+)?)\s*[-–~]\s*(\d+(?:\.\d+)?)\s*%/);
+  var lo, hi, plus = /%\s*\+/.test(gc.intensity);
+  if (m2) {
+    lo = parseFloat(m2[1]); hi = parseFloat(m2[2]);
+  } else {
+    var m1 = gc.intensity.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (!m1) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    lo = parseFloat(m1[1]);
+    hi = plus ? 95 : lo;   // "85%+" 给到 95 收口，避免暗示可以顶到极限
+  }
+  if (!(lo > 0) || !(hi >= lo)) { box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  var wLo = fbRmRound25(rm * lo / 100);
+  var wHi = fbRmRound25(rm * hi / 100);
+  // 正式组取区间中间值：热身组计算器需要一个确定的目标重量
+  var wMid = fbRmRound25(rm * ((lo + hi) / 2) / 100);
+
+  // 高亮落在区间内的百分比行（+ 型只高亮下限及以上）
+  for (i = 0; i < rows.length; i++) {
+    var p = parseFloat(rows[i].getAttribute('data-pct'));
+    if (p >= lo && p <= hi) rows[i].classList.add('hit');
+  }
+
+  var goalNames = {muscle:'增肌', strength:'力量', cut:'减脂', shape:'塑形'};
+  var lvNames = {beginner:'新手', intermediate:'中级', advanced:'进阶'};
+  var gName = goalNames[goal] || '训练', lName = lvNames[level] || level;
+  var sets = cfg.sets || 3;
+  // note 里混着术语 badge（<span class='term-badge' data-term='pump'>?</span>），
+  // 计算器里没绑 badge 的点击，留下一个孤零零的「?」很怪 —— 先整段删 badge，再剥其余标签。
+  var note = String(gc.note || '')
+    .replace(/<span[^>]*term-badge[^>]*>[\s\S]*?<\/span>/g, '')
+    .replace(/<[^>]*>/g, '');
+
+  var wTxt = (wHi > wLo) ? (fbRmKg(wLo) + '–' + fbRmKg(wHi) + ' kg') : (fbRmKg(wLo) + ' kg');
+
+  box.innerHTML =
+    '<div class="g-title">🎯 按你的目标（' + gName + ' · ' + lName + '）该怎么练</div>' +
+    '<div class="g-w">' + wTxt + '</div>' +
+    '<div class="g-meta">' + String(gc.reps || '') + ' × ' + sets + ' 组 · 组间 ' + String(gc.rest || '') +
+      ' · ' + String(gc.rpe || '') + '</div>' +
+    (note ? '<div class="g-note">' + note + '</div>' : '') +
+    '<button class="g-btn" onclick="fbRmToWarmup(' + wMid + ',\'' + level + '\')">🏋️ 用 ' + fbRmKg(wMid) + ' kg 排热身组</button>';
+  box.style.display = '';
+}
+
+// 把正式组重量带进热身组计算器：热身组是 1RM 百分比最没争议的用法，
+// 而且那边还要算挂片，正好接得住。
+function fbRmToWarmup(w, level) {
+  // 热身组面板由 pro-tools 动态注入（renderProCalculators，幂等），从别处点过来时可能还没渲染。
+  // ⚠️ 生效的是 pro-tools 那一版（输入框 id=warmupTarget、入口 WarmupCalc.update），
+  //    planner-core 里那个 calcWarmupSets 是早期版本的遗留，它要读的 DOM 已经不在页面上了。
+  if (typeof window.renderProCalculators === 'function') {
+    try { window.renderProCalculators(); } catch (e) {}
+  }
+  if (typeof switchCalcTab === 'function') switchCalcTab('warmup');
+  var el = document.getElementById('warmupTarget');
+
+  // 热身组要求目标 ≥20kg：比这更轻的空杆活动两下就够了，硬排一组「50% 热身」是噪音
+  if (!el || w < 20) {
+    if (typeof showToast === 'function') showToast('这个重量徒手/空杆活动两下就够，不用排热身组');
+    return;
+  }
+  el.value = w;
+  var lv = document.getElementById('warmupLevel');
+  if (lv && level) lv.value = level;   // 顺手同步档位：热身组数本来就按水平变
+  if (window.WarmupCalc && typeof window.WarmupCalc.update === 'function') window.WarmupCalc.update();
+  if (typeof showToast === 'function') showToast('已按 ' + w + ' kg 排好热身组');
 }
 
 // ============ 1RM 计算器 ↔ PR 卡联动（2026-10-21） ============

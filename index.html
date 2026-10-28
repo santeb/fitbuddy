@@ -430,6 +430,16 @@ input,select{font-family:inherit;}
 .rm-table td{padding:6px 10px;border-bottom:1px solid var(--border);}
 .rm-table td:first-child{color:var(--text2);}
 .rm-table td:last-child{text-align:right;font-weight:700;}
+/* 命中当前目标/水平的那一档：整行高亮，让「该拿哪个数」一眼可见 */
+.rm-table tr.hit td{background:var(--primary-light);color:var(--primary);}
+.rm-table tr.hit td:first-child{font-weight:700;}
+/* 1RM → 训练处方（「算完之后怎么练」） */
+.rm-guide{margin-top:10px;padding:11px 12px;border-radius:10px;background:var(--primary-light);font-size:12.5px;line-height:1.75;color:var(--text);}
+.rm-guide .g-title{font-weight:800;color:var(--primary);margin-bottom:5px;font-size:12.5px;}
+.rm-guide .g-w{font-size:19px;font-weight:800;color:var(--primary);letter-spacing:-.2px;}
+.rm-guide .g-meta{margin-top:4px;color:var(--text2);font-size:11.5px;}
+.rm-guide .g-note{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(0,0,0,.08);color:var(--text2);font-size:11.5px;}
+.rm-guide .g-btn{margin-top:9px;width:100%;padding:9px;border:none;border-radius:9px;background:var(--primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;}
 .rm-actions{display:flex;gap:8px;margin-top:10px;}
 .rm-actions button{flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--bg);color:var(--text2);transition:all .2s;}
 .rm-actions button.active{background:var(--primary);color:#fff;}
@@ -1106,14 +1116,16 @@ input,select{font-family:inherit;}
           <div class="rm-result-num" id="rmValue">--</div>
           <div class="rm-result-label" id="rmFormulaLabel">Epley 公式估算</div>
           <table class="rm-table" style="margin-top:10px;">
-            <tr><td>50% 1RM</td><td id="rm50">-- kg</td></tr>
-            <tr><td>60% 1RM</td><td id="rm60">-- kg</td></tr>
-            <tr><td>70% 1RM</td><td id="rm70">-- kg</td></tr>
-            <tr><td>80% 1RM</td><td id="rm80">-- kg</td></tr>
-            <tr><td>85% 1RM</td><td id="rm85">-- kg</td></tr>
-            <tr><td>90% 1RM</td><td id="rm90">-- kg</td></tr>
-            <tr><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
+            <tr data-pct="50"><td>50% 1RM</td><td id="rm50">-- kg</td></tr>
+            <tr data-pct="60"><td>60% 1RM</td><td id="rm60">-- kg</td></tr>
+            <tr data-pct="70"><td>70% 1RM</td><td id="rm70">-- kg</td></tr>
+            <tr data-pct="80"><td>80% 1RM</td><td id="rm80">-- kg</td></tr>
+            <tr data-pct="85"><td>85% 1RM</td><td id="rm85">-- kg</td></tr>
+            <tr data-pct="90"><td>90% 1RM</td><td id="rm90">-- kg</td></tr>
+            <tr data-pct="95"><td>95% 1RM</td><td id="rm95">-- kg</td></tr>
           </table>
+          <!-- 🎯 算完 1RM 的「然后呢」：按当前目标/水平给出该拿哪档重量，由 fbRenderRmGuide() 写入 -->
+          <div class="rm-guide" id="rmGuide"></div>
         </div>
         <!-- 🏆 与个人纪录的对照结果，由 fbRenderRmPrCmp() 写入；没算过或没选动作时不占版面 -->
         <div class="rm-pr-cmp" id="rmPrCmp"></div>
