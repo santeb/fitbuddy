@@ -10582,7 +10582,14 @@ function deleteCustomEx(name) {
 function getRPESuggestions(exName) {
   var log = trainingLog[exName];
   if (!log || log.length < 1) return null;
-  var last = log[log.length - 1];
+  // ⚠️ 减载周的 RPE 是"轻重量造出来的轻松", 不是状态变好 —— 直接读最后一条会得出
+  //    "RPE 5, 状态轻松, 可加 2.5% 重量", 而同一页的今日目标卡写的是「已回到减载前基准」,
+  //    两块 UI 同屏自相矛盾。和 fbCalcNextLoad(6508) 一样跳过尾部连续的减载记录。
+  var i = log.length - 1;
+  while (i > 0 && fbLooksLikeDeload(log, i, exName)) i--;
+  if (fbLooksLikeDeload(log, i, exName)) return null;   // 整份日志只有减载记录 → 不给建议
+  var last = log[i];
+  if (!last) return null;
   var rpe = last.rpe || 0;
   if (rpe <= 0) return null;
 
@@ -12500,6 +12507,7 @@ function fbStallPrescription(it) {
 // 扫描全部动作，返回卡住的那些(按严重度排序)。
 // 判定卡住: 最近 3 个训练日的最好成绩 ≤ 之前的最好成绩 ×1.01，且跨度 ≥14 天。
 // 只加 1% 容差，是因为杠铃片最小 2.5kg、次数波动 1 次，卡住和平移之间要有缓冲。
+// ⚠️ 参与判定的记录不含减载周 —— 那一周成绩低是设计如此，不是能力退步(详见函数内注释)。
 function fbDiagnoseStalls() {
   var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : {};
   var names = Object.keys(log);
@@ -12520,7 +12528,14 @@ function fbDiagnoseStalls() {
   names.forEach(function (name) {
     // ⚠️ src='auto' 是打卡时按上次成绩自动带入的占位,不是真实成绩:
     //    拿它诊断会得出「你 8 周没涨」的假结论(其实只是他没填数字)—— 宁漏勿误。
-    var raw = (log[name] || []).filter(function (e) { return !!e && e.src !== 'auto'; });
+    // ⚠️ 减载周的成绩也要排除: 那一周是刻意降下来让人恢复的, 成绩本来就该低。
+    //    算进趋势 → 被判「成绩在往下掉」, 再喂给减载决策卡的信号 3 → 刚减完载又提示"该减载",
+    //    用户照做就是连续两周减载。排除掉减载周后样本不足 4 条就不诊断, 同样是宁漏勿误。
+    var all = log[name] || [];
+    var raw = all.filter(function (e, ei) {
+      if (!e || e.src === 'auto') return false;
+      return !fbLooksLikeDeload(all, ei, name);
+    });
     if (raw.length < 4) return;                       // 少于 4 条谈不上趋势
     var u = (typeof getLogUnit === 'function') ? getLogUnit(name) : { mode: 'weight', unit: 'kg' };
     var mode = (u && u.mode === 'reps') ? 'reps' : 'weight';

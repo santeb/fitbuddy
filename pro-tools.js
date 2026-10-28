@@ -215,13 +215,35 @@ var PlateCalc = {
 
 // ============ 3. RPE自调节系统 ============
 
+// 这条记录该不该排除掉(供下面两个函数用)。planner-core.js 先于本文件加载(index.html
+// 里两个 <script> 同为 defer, 按书写顺序执行), 直接复用它的判定 —— 存下来的 deload 标记
+// 和"骤降兜底"两层都要: 只认标记会漏(减载周常是周期末周, 勾完打卡跳到第 1 周后才补填,
+// 此刻存进去的 deload 是 false)。加 typeof 保护: 万一本文件被单独引入而没有 planner-core,
+// 退化成只看标记, 不至于报错。
+function fbEntryIsDeloadSafe(log, i, exName) {
+  if (!log || !log[i]) return false;
+  if (typeof fbLooksLikeDeload === 'function') {
+    try { return !!fbLooksLikeDeload(log, i, exName); } catch (err) {}
+  }
+  return log[i].deload === true;
+}
+
 function getAvgRPE(exName) {
   if (!trainingLog || !trainingLog[exName] || !trainingLog[exName].length) return null;
-  var entries = trainingLog[exName].slice(-3); // 最近3次
-  // ⚠️ 排除 1RM 测试成绩(e.test)：测极限必然力竭，RPE 恒为 10。
-  //   它是一次测量而不是一次训练量，算进平均会把均值拉高，
-  //   于是下次训练被建议"太吃力，减重" —— 明明状态没问题。
-  var rpes = entries.filter(function(e){ return e && e.rpe > 0 && !e.test; });
+  var log = trainingLog[exName];
+  var start = Math.max(0, log.length - 3);            // 最近3次
+  var rpes = [];
+  for (var ai = start; ai < log.length; ai++) {
+    var ae = log[ai];
+    // ⚠️ 排除 1RM 测试成绩(e.test)：测极限必然力竭，RPE 恒为 10。
+    //   它是一次测量而不是一次训练量，算进平均会把均值拉高，
+    //   于是下次训练被建议"太吃力，减重" —— 明明状态没问题。
+    if (!ae || !(ae.rpe > 0) || ae.test) continue;
+    // ⚠️ 排除减载周：减载周"很轻松"是因为重量被刻意降下来了，不是状态变好。
+    //   算进均值 → 平均 RPE 被拉低 → 建议加重量，基准就实打实掉到减载重量。
+    if (fbEntryIsDeloadSafe(log, ai, exName)) continue;
+    rpes.push(ae);
+  }
   if (!rpes.length) return null;
   var sum = rpes.reduce(function(a, e) { return a + e.rpe; }, 0);
   return Math.round(sum / rpes.length * 10) / 10;
@@ -234,8 +256,13 @@ function getRPEAdjustment(exName) {
 
   // ⚠️ 基准重量也要跳过测试成绩：1RM 测试用的是"能做几次就用多重"的极限重量，
   //   拿它当"上次练了多少"去加减，等于把测量的极限当成常规训练量。
-  var arr = (trainingLog[exName] || []).filter(function(e){ return e && !e.test; });
-  var last = arr[arr.length - 1];
+  // ⚠️ 同样要跳过减载周：减载周的重量是刻意降下来的，拿它当基准去算 ±5%，
+  //   等于把减载重量固化成新的正常重量(60kg 减载到 48kg → 建议 45.6kg)。
+  //   这里和 fbCalcNextLoad 的"回退到减载前那一次"是同一条口径。
+  var full = trainingLog[exName] || [];
+  var li = full.length - 1;
+  while (li >= 0 && (!full[li] || full[li].test || fbEntryIsDeloadSafe(full, li, exName))) li--;
+  var last = full[li];
   if (!last) return null;
 
   // 自重/计时动作:重量恒为 0,上面那句 !last.weight 会让它们永远拿不到建议。
