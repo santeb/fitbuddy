@@ -178,43 +178,18 @@
   function mailShort(type) {
     return type === 'idea' ? '建议' : (type === 'other' ? '其他' : 'Bug');
   }
-  // 标签一律用短词：中文一个字编码后是 9 个字符，能省就省
-  // "环境:"/"页面:"这类标签纯属浪费，全砍掉，一行说清，链接越短越不容易撞上限。
-  function buildMailPack(type, text, cut) {
-    var lines = [];
-    var t = String(text || '').trim();
-    lines.push('[' + mailShort(type) + '] ' + (t ? t.slice(0, cut) : '(发生了什么,写在这里)'));
-    lines.push(envLine() + ' / ' + pageName() + ' / ' + screenLine());
-    var err = errLines();
-    if (err) lines.push('报错 ' + err.split('\n')[0].slice(0, 40));
-    return lines.join('\n');
-  }
-  // 逐级压缩直到达标：先带完整环境信息，描述字数 40 → 20 → 12 → 6 一路砍。
-  // 达标才返回链接，砍到底还不达标就返回 null，由调用方改走复制。
+
+  // 实测：iPhone 微信里 mailto 是能唤起邮件 App 的，但只要正文一长（尤其带换行 %0A），
+  // iOS Mail 就不再解析 ? 后面的参数，把整串塞进「收件人」—— 跟内置浏览器没关系。
+  // 所以 mailto 只干三件事：填满收件人、带个标题、留一行占位正文，实测 154 字符。
+  // 环境 / 页面 / 报错那些有价值的信息全部改走剪贴板（点按钮时就复制好），用户粘一下即可。
   function buildMailto(type, text) {
-    var t = String(text || '').trim();
-    function mk(subj, body) {
-      return 'mailto:' + DEV.mail
-        + '?subject=' + encodeURIComponent(subj)
-        + '&body=' + encodeURIComponent(body);
-    }
-    var cuts = [40, 20, 12, 6];
-    for (var i = 0; i < cuts.length; i++) {
-      var n = cuts[i];
-      var u = mk(('[' + mailShort(type) + '] ' + t.slice(0, Math.min(n, 12))).trim(),
-                 buildMailPack(type, t, n));
-      if (u.length <= MAIL_URL_MAX) return u;
-    }
-    var last = mk(mailShort(type), '[' + mailShort(type) + '] ' + t.slice(0, 6));
-    return last.length <= MAIL_URL_MAX ? last : null;
-  }
-  // iOS 的所有内置浏览器（微信 / 小红书 / QQ …）对 mailto 基本不处理：不是毫无反应，
-  // 就是把整条 mailto（含 %xx 编码）当地址显示出来 —— 用户看到的就是一长串乱码，
-  // 而且这一串跟长度无关，30 字符也照样。iOS 上只有 Safari 能正常唤起邮件。
-  // Android 内置浏览器（微信 X5 等）多数能唤起邮件 App，所以只对 iOS 内置降级。
-  function mailBlocked() {
-    if (!inApp()) return false;
-    return /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+    var subj = '[' + mailShort(type) + ']';
+    var body = '(发生了什么,写在这里)';
+    var u = 'mailto:' + DEV.mail
+      + '?subject=' + encodeURIComponent(subj)
+      + '&body=' + encodeURIComponent(body);
+    return u.length <= MAIL_URL_MAX ? u : null;
   }
   // 静默复制：不弹提示，失败也不吭声。邮件正文装不下完整包，但剪贴板装得下。
   function silentCopy(text) {
@@ -333,10 +308,9 @@
     ov.id = 'fbFbOv';
     var subBtns = '';
     if (DEV.mail) {
-      // 能跳的环境一律给真实 mailto href，让浏览器走原生 scheme 跳转（比 JS 改 location 容易被接住）。
-      // iOS 内置浏览器不挂 href —— 挂了点下去就是一整串编码，见 mailBlocked()。
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail" rel="noopener">📧 '
-        + (mailBlocked() ? '复制邮箱' : '发邮件') + '</a>';
+      // 一律给真实 mailto href，让浏览器走原生 scheme 跳转（比 JS 改 location 容易被接住）。
+      // iPhone 微信实测能唤起邮件 App，不存在"内置浏览器不能跳"这回事。
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail" rel="noopener">📧 发邮件</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
@@ -352,13 +326,14 @@
       + '<button class="fb-fb-x" id="fbFbClose" aria-label="关闭">✕</button>'
       + '</div>'
       + '<div class="fb-fb-note">'
-      + '挑一个顺手的渠道就行。<br>发邮件会自动带上设备、页面和最近的报错，<br>你只需要补一句「发生了什么」。'
+      + '挑一个顺手的渠道就行。<br>发邮件会自动填好收件人和标题，'
+      + '设备和报错信息也帮你复制好了，<br>粘到正文里，再补一句「发生了什么」就行。'
       + '</div>'
       + '<div class="fb-fb-subs" style="margin-top:14px">' + subBtns + '</div>'
-      + (DEV.mail && mailBlocked()
-          ? '<div class="fb-fb-note">这个环境打不开邮件 App（点了会显示一乱码地址）。<br>'
-            + '点右上角 <b>···</b> → 在浏览器打开，就能一键发；<br>或者直接发到 '
-            + '<b style="user-select:all;font-size:12.5px">' + DEV.mail + '</b>（长按可复制）</div>'
+      + (DEV.mail && inApp()
+          ? '<div class="fb-fb-note">邮件打不开的话，点右上角 <b>···</b> → 在浏览器打开；<br>'
+            + '或者直接发到 <b style="user-select:all;font-size:12.5px">'
+            + DEV.mail + '</b>（长按可复制）</div>'
           : '')
       + '</div>';
 
@@ -395,28 +370,24 @@
       // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
       // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
       var url = buildMailto(type, '');
-      if (url && !mailBlocked()) mailBtn.href = url;
+      if (url) mailBtn.href = url;
       mailBtn.addEventListener('click', function (e) {
-        if (!url || mailBlocked()) {
-          // iOS 内置浏览器：跳了只会显示一整串编码，不如直接给邮箱
+        if (!url) {
           e.preventDefault();
           silentCopy(DEV.mail);
-          toast(mailBlocked()
-            ? '这里跳不到邮件 App，邮箱已复制：' + DEV.mail
-              + '，点右上角 ··· → 在浏览器打开就能一键发'
-            : '邮箱已复制：' + DEV.mail);
-          event(mailBlocked() ? 'feedback_mail_copyaddr' : 'feedback_mail_blocked', { type: type });
+          toast('邮箱已复制：' + DEV.mail);
+          event('feedback_mail_blocked', { type: type });
           return;
         }
-        // 先跳（a 标签原生处理，不 preventDefault）；同时把邮箱复制好。
-        // 微信 iOS 等环境 mailto 可能被系统拦掉，复制这条后路不管成没成都用得上。
-        silentCopy(DEV.mail);
+        // 先跳（a 标签原生处理，不 preventDefault）；同时把完整包复制好。
+        // mailto 只带收件人和标题，环境/页面/报错全靠剪贴板，用户粘一下就补全。
+        silentCopy(buildPack(type, '', ''));
         event('feedback_mail', { type: type, env: inApp() || 'browser' });
         afterSubmit();
         // 兜底：1.4 秒后还停在本页，说明邮件 App 没被唤起，把后路明说
         setTimeout(function () {
           if (document.visibilityState === 'visible') {
-            toast('邮件没自动打开的话，邮箱已经复制好了：' + DEV.mail
+            toast('邮件没自动打开的话，设备和报错信息已经复制好了，发到 ' + DEV.mail
               + (inApp() ? '（微信里可点右上角 ··· → 在浏览器打开）' : ''));
           }
         }, 1400);
