@@ -166,6 +166,45 @@
     return lines.join('\n');
   }
 
+  // ---------- 邮件专用（短包） ----------
+  // iOS / 微信内置浏览器对 mailto 的 URL 长度有硬限制（约 2KB），超了就把整串 query
+  // 当成收件人原样显示，用户看到一堆 %E4%B8... 乱码，邮件也发不出去。
+  // 中文经 encodeURIComponent 一个字变 9 个字节，完整反馈包几百字必然爆。
+  // 所以正文用精简版，完整包先塞剪贴板，用户想贴可以自己贴。
+  var MAIL_URL_MAX = 900;
+  function mailShort(type) {
+    return type === 'idea' ? '建议' : (type === 'other' ? '其他' : 'Bug');
+  }
+  // 标签一律用短词：中文一个字编码后是 9 个字符，能省就省
+  function buildMailPack(type, text) {
+    var lines = [];
+    lines.push('[' + mailShort(type) + ']');
+    lines.push(String(text || '').trim().slice(0, 80));
+    lines.push('环境: ' + envLine());
+    lines.push('页面: ' + pageName() + ' ' + screenLine());
+    var err = errLines();
+    if (err) lines.push('报错: ' + err.split('\n')[0].slice(0, 60));
+    return lines.join('\n');
+  }
+  // 邮件正文只放精简包（完整包走剪贴板）；万一还超长就退到只剩一句话，绝不让 URL 撑爆。
+  function buildMailto(type, text) {
+    var head = '[FitBuddy ' + mailShort(type) + '] ' + String(text || '').trim().slice(0, 20);
+    function mk(body) {
+      return 'mailto:' + DEV.mail
+        + '?subject=' + encodeURIComponent(head)
+        + '&body=' + encodeURIComponent(body);
+    }
+    var list = [
+      buildMailPack(type, text),
+      '[' + mailShort(type) + '] ' + String(text || '').trim().slice(0, 40)
+    ];
+    for (var i = 0; i < list.length; i++) {
+      var u = mk(list[i]);
+      if (u.length <= MAIL_URL_MAX) return u;
+    }
+    return mk(list[list.length - 1]);
+  }
+
   // ---------- UI ----------
   function toast(msg) {
     try { if (typeof window.showToast === 'function') { window.showToast(msg); return; } } catch (e) {}
@@ -378,9 +417,14 @@
         if (!txt) { e.preventDefault(); toast('先写一句发生了什么 🙂'); ta.focus(); return; }
         var pack = currentPack();
         e.preventDefault();
-        location.href = 'mailto:' + DEV.mail
-          + '?subject=' + encodeURIComponent('[FitBuddy ' + type + '] ' + txt.slice(0, 30))
-          + '&body=' + encodeURIComponent(pack);
+        // 完整包先静默塞进剪贴板：邮件正文放不下它，但用户想贴就能贴
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(pack).then(null, function () {});
+          }
+        } catch (err0) {}
+        toast('完整反馈包已复制，可在邮件正文长按粘贴');
+        location.href = buildMailto(type, txt);
         event('feedback_mail', { type: type });
         afterSubmit();
       });
@@ -416,6 +460,7 @@
 
   // 调试用：控制台执行 fbBuildPack('bug','描述','昵称') 可直接看打包结果
   window.fbBuildPack = buildPack;
+  window.fbMailto = buildMailto;
   window.fbOpenFeedback = open;
 
   // 页脚「🐞 找 Bug · 荣誉墙」入口：切到发电页并滚到活动卡
