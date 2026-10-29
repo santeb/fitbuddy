@@ -326,9 +326,10 @@
     ov.className = 'fb-fb-ov';
     ov.id = 'fbFbOv';
     var subBtns = '';
-    if (DEV.mail) {
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail">'
-        + (mailDisabled() ? '📋 复制反馈包' : '📧 发邮件') + '</a>';
+    // 内置浏览器里邮件按钮会和主按钮（复制反馈包）撞成两个一模一样的，
+    // 所以这种环境干脆不放按钮，邮箱地址改到下方提示里让用户长按复制
+    if (DEV.mail && !mailDisabled()) {
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail">📧 发邮件</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
@@ -352,7 +353,12 @@
       + '<input class="fb-fb-nick" id="fbFbNick" maxlength="16" placeholder="昵称（可留空，被采纳后刻上荣誉墙）">'
       + '<button class="fb-fb-main" id="fbFbCopy">📋 复制反馈包</button>'
       + '<div class="fb-fb-subs">' + subBtns + '</div>'
-      + '<div class="fb-fb-note">复制时会自动带上设备、页面和最近的报错，<br>这些不用你自己写。</div>'
+      + '<div class="fb-fb-note">'
+      + (DEV.mail && mailDisabled()
+          ? '这里打不开邮件 App，复制后发到<br><b style="user-select:all;font-size:12.5px">'
+            + DEV.mail + '</b>（长按可复制）'
+          : '复制时会自动带上设备、页面和最近的报错，<br>这些不用你自己写。')
+      + '</div>'
       + '</div>';
 
     document.body.appendChild(ov);
@@ -415,7 +421,9 @@
         btn.textContent = '✅ 已复制，去粘给开发者';
         event('feedback_copy', { type: type });
         afterSubmit();
-        toast('✅ 已复制，粘到微信/邮件发我就行');
+        toast(mailDisabled() && DEV.mail
+          ? '✅ 已复制，发到 ' + DEV.mail
+          : '✅ 已复制，粘到微信/邮件发我就行');
         setTimeout(function () { btn.textContent = '📋 复制反馈包'; }, 2500);
       }
       function fallback() {
