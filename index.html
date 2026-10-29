@@ -1179,8 +1179,13 @@ input,select{font-family:inherit;}
     <div class="donate-hero">
       <div class="dh-icon">⚡</div>
       <div class="dh-title">为爱发电</div>
-      <div class="dh-sub">FitBuddy 永久免费 · 无广告 · 无需注册<br>如果你觉得好用，欢迎请开发者喝杯咖啡 ☕️</div>
+      <div class="dh-sub">核心功能免费 · 无广告 · 不用注册<br>这里可以参与共建，也可以请开发者喝杯咖啡 ☕️</div>
     </div>
+    <!-- 🐞 找 Bug 活动入口 (feedback.js 渲染) -->
+    <div id="fbHuntCard"></div>
+    <!-- 🏆 荣誉墙 (contributors.js 渲染) -->
+    <div id="fbWallCard"></div>
+    <!-- 打赏码放在活动与荣誉墙之后: 先讲"你能得到什么/你能参与什么", 再谈钱 -->
     <div class="donate-qr-row">
       <div class="donate-qr-card" onclick="this.querySelector('.qr-img').requestFullscreen?this.querySelector('.qr-img').requestFullscreen():null">
         <div class="qr-label">💚 微信赞赏</div>
@@ -1199,10 +1204,6 @@ input,select{font-family:inherit;}
       <div class="emoji-row">🙏 💪 🔥</div>
       <p>每一份支持都是持续更新的动力<br>感谢你让 FitBuddy 变得更好 ❤️</p>
     </div>
-    <!-- 🐞 找 Bug 活动入口 (feedback.js 渲染) -->
-    <div id="fbHuntCard"></div>
-    <!-- 🏆 荣誉墙 (contributors.js 渲染) -->
-    <div id="fbWallCard"></div>
 
     <div class="data-mgmt">
       <div class="data-mgmt-title">💾 数据管理</div>
