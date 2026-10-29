@@ -1313,7 +1313,9 @@ input,select{font-family:inherit;}
 <script src="install-banner.js?v=1" defer></script>
 <script src="backup-code.js?v=1" defer></script>
 
-<footer style="text-align:center;padding:24px 16px 40px;color:var(--text3);font-size:12px;line-height:1.8;">
+<!-- footer 在 .app 之外, 拿不到 .app 的 padding-bottom:72px;
+     底部必须自己留出 tab bar 的高度(56px)+呼吸空间(safe-area-inset-bottom 只在真机有值) -->
+<footer style="text-align:center;padding:24px 16px calc(80px + env(safe-area-inset-bottom, 0px));color:var(--text3);font-size:12px;line-height:1.8;">
   <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
