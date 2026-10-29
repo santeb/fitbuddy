@@ -1199,6 +1199,11 @@ input,select{font-family:inherit;}
       <div class="emoji-row">🙏 💪 🔥</div>
       <p>每一份支持都是持续更新的动力<br>感谢你让 FitBuddy 变得更好 ❤️</p>
     </div>
+    <!-- 🐞 找 Bug 活动入口 (feedback.js 渲染) -->
+    <div id="fbHuntCard"></div>
+    <!-- 🏆 荣誉墙 (contributors.js 渲染) -->
+    <div id="fbWallCard"></div>
+
     <div class="data-mgmt">
       <div class="data-mgmt-title">💾 数据管理</div>
       <div class="data-mgmt-row">
@@ -1291,6 +1296,9 @@ input,select{font-family:inherit;}
 
 
 <script src="analytics.js?v=5" defer></script>
+<!-- 反馈通道 + 全局错误采集: 必须排在业务脚本之前, 才能抓到初始化阶段的报错 -->
+<script src="feedback.js?v=1" defer></script>
+<script src="contributors.js?v=1" defer></script>
 <script src="onboarding.js?v=3" defer></script>
 <script src="data-constants.js?v=41" defer></script>
 <script src="persistence.js?v=1" defer></script>
@@ -1308,8 +1316,9 @@ input,select{font-family:inherit;}
   <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
-  <div style="margin-top:12px;">
+  <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
     <button onclick="showGroupQR()" style="background:none;border:1.5px solid var(--border);color:var(--text3);font-size:12px;padding:6px 16px;border-radius:16px;cursor:pointer;">🤝 加入 FitBuddy 训练群</button>
+    <button onclick="goBugHunt()" style="background:none;border:1.5px solid var(--primary);color:var(--primary);font-size:12px;padding:6px 16px;border-radius:16px;cursor:pointer;">🐞 找 Bug · 荣誉墙</button>
   </div>
 </footer>
 

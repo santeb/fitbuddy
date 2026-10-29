@@ -9,6 +9,7 @@ promo/
 premium-test/
 
 # 本地临时文件
+.playwright-cli/
 FitBuddy演示视频.html
 index-tmp.html
 sw-tmp.js
