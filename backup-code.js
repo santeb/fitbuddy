@@ -303,7 +303,7 @@
       'color:var(--primary,#FF6B35);background:transparent;">🔗 复制恢复链接(存微信收藏)</button>' +
       '<div style="font-size:11px;opacity:.55;margin-top:7px;line-height:1.5;color:var(--text,#333);">' +
       '链接 = 网址 + 恢复码。存到微信收藏后,<b>换手机 / 清了缓存</b>点开它就能自动恢复,' +
-      '不用手抄上面那一大段码。</div>');
+      '不用手抄上面那一大段码。<br>⚠️ 链接里含你的训练数据,自己存就好,别转发给别人。</div>');
     var copyBtn = document.getElementById('fbCopyBtn');
     copyBtn.addEventListener('click', function () {
       var ta = document.getElementById('fbCodeTa');
