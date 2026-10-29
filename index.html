@@ -1240,7 +1240,16 @@ input,select{font-family:inherit;}
       <button class="data-mgmt-btn rescue" onclick="location.href='?fbrescue=1'">🧯 数据救援（扫描残留副本）</button>
       <div id="fbBackupHint" style="font-size:11px;color:var(--text,#999);opacity:.55;margin-top:8px;text-align:center;"></div>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
-      <button class="data-mgmt-btn reset" onclick="resetAllData()">🔄 重置所有数据</button>
+      <!-- ⚠️ 危险区必须和恢复类按钮隔开。上一版把「🧯 数据救援」直接放在重置按钮正上方,
+           用户着急找恢复入口时很容易手滑点到下面这个 —— 而它是真的三层全清,救不回来。
+           现在用分隔线 + 红色警告单独圈出来,并且 resetAllData() 会先自动下载一份备份。 -->
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#eee);">
+        <div style="font-size:11px;color:#DC2626;opacity:.85;margin-bottom:8px;line-height:1.65;">
+          ⚠️ 危险操作：重置会删除全部训练数据，<b>连 IndexedDB 和窗口快照一起清掉</b>，
+          「🧯 数据救援」也救不回来。
+        </div>
+        <button class="data-mgmt-btn reset" onclick="resetAllData()">🔄 重置所有数据</button>
+      </div>
     </div>
   </div>
 
@@ -1334,8 +1343,8 @@ input,select{font-family:inherit;}
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=125" defer></script>
-  <script src="pro-tools.js?v=36" defer></script>
+<script src="planner-core.js?v=126" defer></script>
+  <script src="pro-tools.js?v=37" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>

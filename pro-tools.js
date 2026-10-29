@@ -1667,6 +1667,17 @@ window.fbProDiag = function () {
     var wn = String(window.name || '');
     data.push('window.name 快照: ' + (wn.indexOf('FB_SNAP:') === 0 ? '有, ' + wn.length + ' 字符 ← 这份可能能救回来' : '无'));
   } catch (e) {}
+  // 「🔄 重置所有数据」会留一个非 fitbuddy_ 前缀的标记(不会被删除循环清掉)。
+  // 有它 = 数据是自己手动删的,不是被清缓存/被系统清的 —— 这两种情况后续补救完全不同,
+  // 以前完全没法区分,只能猜。
+  try {
+    var ra = localStorage.getItem('fb_lastreset_at');
+    if (ra) {
+      var rd = new Date(parseInt(ra, 10));
+      data.push('⚠️ fb_lastreset_at: ' + (isNaN(rd.getTime()) ? ra : rd.toLocaleString())
+        + ' ← 这里被手动「重置所有数据」过');
+    }
+  } catch (e) {}
   var errs = [];
   try {
     var el = JSON.parse(localStorage.getItem('fitbuddy_errlog') || '[]');

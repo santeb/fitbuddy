@@ -10219,8 +10219,18 @@ function importData(input) {
 }
 
 function resetAllData() {
-  if (!confirm("⚠️ 确定要清除所有训练数据吗?\n\n这将删除:训练记录、宠物进度、成就徽章、设置等\n\n此操作不可撤销!")) return;
-  if (!confirm("再次确认:真的要删除所有数据吗?")) return;
+  if (!confirm("⚠️ 确定要清除所有训练数据吗?\n\n这将删除:训练记录、宠物进度、成就徽章、设置等")) return;
+  // ⚠️ 第二次确认必须说清"救援也救不回来"。persistence.js 拦截了 removeItem,
+  //    删 localStorage 会同步删 IndexedDB 并刷新 window.name 快照 —— 三层一起没,
+  //    ?fbrescue=1 扫出来也是空的。这一点以前只写在代码注释里,用户完全不知道。
+  if (!confirm("再次确认:真的要删除吗?\n\n⚠️ 注意:这会连 IndexedDB 和窗口快照一起清掉,\n「🧯 数据救援」也救不回来。\n\n点确定后会自动先下载一份备份文件到手机。")) return;
+
+  // 删之前先落一份 JSON 到手机「文件」—— 误触也有退路,用「📥 导入数据」就能读回。
+  // 这条是 san 数据全丢之后补的:当时他正在数据管理区找恢复入口,很容易手滑点到重置。
+  var backedUp = false;
+  try {
+    if (typeof exportData === "function") { exportData(); backedUp = true; }
+  } catch (e) {}
 
   var keys = [];
   for (var i = localStorage.length - 1; i >= 0; i--) {
@@ -10230,7 +10240,13 @@ function resetAllData() {
       localStorage.removeItem(k);
     }
   }
-  showToast("🔄 已清除 " + keys.length + " 条数据,即将刷新...");
+  // 用非 fitbuddy_ 前缀记一笔:它不会被上面的循环删掉,下次开 ?prodiag=1 能看到
+  // "这里曾经有数据,某天被手动重置了" —— 否则数据没了完全查不出是自己删的还是被清的。
+  try { localStorage.setItem("fb_lastreset_at", String(Date.now())); } catch (e) {}
+
+  showToast(backedUp
+    ? "🔄 已清除 " + keys.length + " 条数据(备份文件已下载),即将刷新..."
+    : "🔄 已清除 " + keys.length + " 条数据,即将刷新...");
   setTimeout(function(){ location.reload(); }, 1500);
 }
 
