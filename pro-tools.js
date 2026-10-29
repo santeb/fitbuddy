@@ -1360,7 +1360,24 @@ function renderTodayEnergyCard() {
 // 进度页增强:在原有内容后追加Pro模块
 var _originalRenderProgress = null;
 window.initProToolsProgress = function() {
-  if (typeof window.renderProgress === 'function' && !_originalRenderProgress) {
+  if (_originalRenderProgress) return true;
+  // ⚠️ 这里原来是「renderProgress 不在就什么都不做」。planner-core.js 有 703KB,
+  //    在微信 webview 里偶尔加载不完整 —— 那时 renderProgress 不存在,挂钩直接放弃,
+  //    于是 #proToolsSection 永远不会出现,页面上一个坑都不留(整段还裹在 try-catch 里)。
+  //    san 的诊断就是这副样子: 9 张卡单独渲染都有内容, 整块却没插进 DOM。
+  //    现在改成等一会儿再试 —— planner-core 只是慢的话,稍后就能挂上。
+  if (typeof window.renderProgress !== 'function') {
+    window.__fbProHookTries = (window.__fbProHookTries || 0) + 1;
+    var _delays = [150, 400, 900, 2000, 4000, 7000, 11000, 16000];
+    if (window.__fbProHookTries <= _delays.length) {
+      setTimeout(function () { window.initProToolsProgress(); }, _delays[window.__fbProHookTries - 1]);
+      return false;
+    }
+    window.__fbProHookFailed = true;   // 试了 8 次还没有 = planner-core.js 真没加载成功
+    return false;
+  }
+  if (!_originalRenderProgress) {
+    window.__fbProHookFailed = false;
     _originalRenderProgress = window.renderProgress;
     window.renderProgress = function() {
       _originalRenderProgress();
@@ -1622,9 +1639,25 @@ window.fbProDiag = function () {
   var sec = document.getElementById('proToolsSection');
   env.push('progContent: ' + (pc ? '在, 子卡片 ' + pc.children.length + ' 个' : '不在 DOM(还没切到进度页?)'));
   env.push('#proToolsSection: ' + (sec ? '已插入, ' + sec.children.length + ' 张卡' : '未插入 —— Pro 整块没渲染出来'));
+  // ⚠️ 这两个是判断"Pro 整块消失"的关键证据, 以前只能靠猜:
+  //    卡单独渲染都有内容、整块却不出现 = 挂钩那一步就没成立, 而不是卡片本身有问题。
+  var missCore = window.__fbMissingCore || [];
+  env.push('planner-core 关键函数: ' + (missCore.length
+    ? '❌ 缺失 ' + missCore.join(', ') + ' —— 这个 js 没执行成功(703KB, 可能没传完)'
+    : '✅ 都在'));
+  env.push('Pro 挂钩(renderProgress): ' + (window.__fbProHookFailed
+    ? '❌ 重试 8 次都没挂上'
+    : (_originalRenderProgress ? '✅ 已挂上' : '⏳ 还没试到')));
   if (pc && !sec) {
-    env.push('⚠️ 关键: 容器在但 Pro 区块不在 —— 说明渲染中途抛错了(整段 try-catch 静默吞掉),');
-    env.push('   或者还没点开进度页。先切到「进度」页再回来复制一次结果。');
+    env.push('⚠️ 关键: 容器在但 Pro 区块不在。按上面两行对号入座 ——');
+    if (missCore.length) {
+      env.push('   → planner-core.js 没执行, renderProgress 不存在, 挂钩根本没成立。');
+      env.push('   → 这不是卡片的问题: 上面 9 张卡单独渲染都有内容, 只是没机会被塞进页面。');
+      env.push('   → 处理: 换个网络重开一次, 或访问 ?clear=1 清缓存再开。');
+    } else {
+      env.push('   → 脚本都在, 那就是渲染中途抛错了(整段 try-catch 静默吞掉),');
+      env.push('     或者还没点开进度页。先切到「进度」页再回来复制一次结果。');
+    }
   }
 
   var data = [];
@@ -1665,7 +1698,35 @@ window.fbProDiag = function () {
   } catch (e) { data.push('trainingLog 读不了: ' + ((e && e.message) || e)); }
   try {
     var wn = String(window.name || '');
-    data.push('window.name 快照: ' + (wn.indexOf('FB_SNAP:') === 0 ? '有, ' + wn.length + ' 字符 ← 这份可能能救回来' : '无'));
+    if (wn.indexOf('FB_SNAP:') !== 0) {
+      data.push('window.name 快照: 无');
+    } else {
+      var line = 'window.name 快照: 有, ' + wn.length + ' 字符';
+      // ⚠️ 关键比对: 快照里同一 key 比 localStorage 更长 = 缓存被清过之后又练了一次,
+      //    现在这份只剩新练的几条, 快照里才是完整的。
+      //    这种情况「只补缺失 key」的救援救不了(key 还在, 只是变短了),
+      //    必须走「用更全的那份覆盖」——所以这里直接把结论和去处写出来,别让人自己推。
+      try {
+        var snap = JSON.parse(decodeURIComponent(escape(atob(wn.slice('FB_SNAP:'.length)))));
+        var biggerKeys = [];
+        Object.keys(snap || {}).forEach(function (k) {
+          try {
+            var cur = localStorage.getItem(k);
+            if (cur === null || String(snap[k] || '').length > String(cur).length) {
+              biggerKeys.push(k.replace('fitbuddy_', '') + '(' + String(cur || '').length
+                + '→' + String(snap[k] || '').length + ')');
+            }
+          } catch (e3) {}
+        });
+        if (biggerKeys.length) {
+          line += ' ⚠️ 更全的: ' + biggerKeys.join('、')
+            + ' → 去 ?fbrescue=1 点「用更全的那份覆盖」';
+        } else {
+          line += ' ← 不比现在这份全,救不回更多';
+        }
+      } catch (e2) { line += ' ← 这份可能能救回来'; }
+      data.push(line);
+    }
   } catch (e) {}
   // 「🔄 重置所有数据」会留一个非 fitbuddy_ 前缀的标记(不会被删除循环清掉)。
   // 有它 = 数据是自己手动删的,不是被清缓存/被系统清的 —— 这两种情况后续补救完全不同,
@@ -1752,65 +1813,119 @@ window.fbScanRescue = function () {
   });
 };
 
+// 找出「同一个 key 在别处比 localStorage 更全」的那些。
+//
+// ⚠️ 这个分支是被真实事故逼出来的: san 的 localStorage 里 fitbuddy_trainlog 只剩 259 字符,
+//    而 window.name 快照有 9360 字符。旧逻辑「只补缺失 key、绝不覆盖」看到 trainlog 不是 null
+//    就跳过 —— **残缺的那份反而把完整的挡在门外**,一键恢复写进去 0 条,面板还报告
+//    「没有能救回来的数据」。数据明明就在快照里躺着。
+//    所以现在单独把这类列出来,由用户确认后才覆盖(默认仍然不覆盖)。
+window.fbRescueBigger = function () {
+  return window.fbScanRescue().then(function (r) {
+    var lsSize = {};
+    (r.localStorage || []).forEach(function (x) { lsSize[x.key] = x.size; });
+    var best = {};
+    function consider(src, from) {
+      (src || []).forEach(function (item) {
+        var cur = lsSize[item.key];
+        if (cur === undefined) return;               // 完全缺失的归 fbRescueApply 管
+        if (!(item.size > cur)) return;              // 不比现在这份全, 没意义
+        if (!best[item.key] || item.size > best[item.key].size) {
+          best[item.key] = { key: item.key, size: item.size, cur: cur, from: from };
+        }
+      });
+    }
+    consider(r.indexedDB, 'IndexedDB');
+    consider(r.windowName, 'window.name');
+    return Object.keys(best).map(function (k) { return best[k]; });
+  });
+};
+
 // 把扫到的 IndexedDB / window.name 数据灌回 localStorage。
-// 只补 localStorage 里缺失的 key, 绝不覆盖现有的 —— 宁可少恢复也不能把现有数据冲掉。
-window.fbRescueApply = function () {
+// 默认只补 localStorage 里缺失的 key, 绝不覆盖现有的 —— 宁可少恢复也不能把现有数据冲掉。
+// 传 {bigger:true} 才允许用别处「更全」的那份覆盖现有的(由用户明确点按钮触发)。
+window.fbRescueApply = function (opts) {
+  var includeBigger = !!(opts && opts.bigger);
   return window.fbScanRescue().then(function (r) {
     var restored = [], skipped = [];
     function put(src) {
       (src || []).forEach(function (item) {
         var cur = null;
         try { cur = localStorage.getItem(item.key); } catch (e) {}
-        if (cur) { skipped.push(item.key); return; }
+        if (cur) {
+          // 已经有一份了:默认跳过。只有用户明确要求「用更全的那份」且别处确实更长才收下。
+          if (includeBigger && item.size > String(cur).length) { restored.push(item.key); return; }
+          skipped.push(item.key); return;
+        }
         restored.push(item.key);
       });
     }
     put(r.windowName);
     put(r.indexedDB);
     if (!restored.length) return { restored: [], skipped: skipped, n: 0 };
-    // 真正写回:再次打开 IndexedDB 取值
-    return new Promise(function (resolve) {
+
+    var done = [];
+
+    // window.name 快照这一路**不依赖 IndexedDB**,必须独立执行。
+    // ⚠️ 以前它被塞在 tx.oncomplete 里 —— IDB 一旦打不开(部分微信 webview / 隐私模式 /
+    //    存储被系统回收),整个回灌分支就永远轮不到,快照里明明躺着 9360 字符也救不回来。
+    //    san 那次「一键恢复写进去 0 条」就是这个。现在先灌快照,再去 IDB 取。
+    function applyWindowName() {
       try {
+        var raw = String(window.name || '');
+        if (raw.indexOf('FB_SNAP:') !== 0) return;
+        var snap = JSON.parse(decodeURIComponent(escape(atob(raw.slice('FB_SNAP:'.length)))));
+        Object.keys(snap || {}).forEach(function (k) {
+          try {
+            var cur = localStorage.getItem(k);
+            var val = String(snap[k]);
+            // 缺失 → 直接补;已存在但快照这份更长 → 只在用户同意覆盖时才写
+            if (cur === null || (includeBigger && val.length > String(cur).length)) {
+              localStorage.setItem(k, val);
+              if (done.indexOf(k) < 0) done.push(k);
+            }
+          } catch (er) {}
+        });
+      } catch (er) {}
+    }
+
+    return new Promise(function (resolve) {
+      var settled = false;
+      function finish(err) {
+        if (settled) return;
+        settled = true;
+        resolve({ restored: done, skipped: skipped, n: done.length, err: err });
+      }
+      // IDB 既可能一直不回调(权限/被回收),也可能压根不存在 —— 先灌快照,再给它 3 秒。
+      applyWindowName();
+      var guard = setTimeout(function () { finish('IDB 超时,已用快照恢复'); }, 3000);
+      try {
+        if (typeof indexedDB === 'undefined' || !indexedDB) { clearTimeout(guard); return finish('IDB 不可用'); }
         var req = indexedDB.open('fitbuddy_persist_db', 1);
-        req.onerror = function () { resolve({ restored: [], skipped: skipped, n: 0, err: 'IDB 打不开' }); };
+        req.onerror = function () { clearTimeout(guard); finish('IDB 打不开'); };
         req.onsuccess = function (e) {
-          var db = e.target.result;
-          var tx = db.transaction('kv', 'readonly');
-          var store = tx.objectStore('kv');
-          var done = [], todo = restored.slice();
-          todo.forEach(function (k) {
-            var g = store.get(k);
-            g.onsuccess = function () {
-              if (g.result !== undefined && g.result !== null) {
-                try {
-                  localStorage.setItem(k, typeof g.result === 'string' ? g.result : JSON.stringify(g.result));
-                  done.push(k);
-                } catch (er) {}
-              }
-            };
-          });
-          tx.oncomplete = function () {
-            // window.name 里的那份也一并回灌
-            try {
-              var raw = String(window.name || '');
-              if (raw.indexOf('FB_SNAP:') === 0) {
-                var snap = JSON.parse(decodeURIComponent(escape(atob(raw.slice('FB_SNAP:'.length)))));
-                Object.keys(snap || {}).forEach(function (k) {
+          try {
+            var db = e.target.result;
+            var tx = db.transaction('kv', 'readonly');
+            var store = tx.objectStore('kv');
+            restored.slice().forEach(function (k) {
+              var g = store.get(k);
+              g.onsuccess = function () {
+                if (g.result !== undefined && g.result !== null) {
                   try {
-                    if (localStorage.getItem(k) === null) {
-                      localStorage.setItem(k, String(snap[k]));
-                      if (done.indexOf(k) < 0) done.push(k);
-                    }
+                    localStorage.setItem(k, typeof g.result === 'string' ? g.result : JSON.stringify(g.result));
+                    if (done.indexOf(k) < 0) done.push(k);
                   } catch (er) {}
-                });
-              }
-            } catch (er) {}
-            resolve({ restored: done, skipped: skipped, n: done.length });
-          };
-          tx.onerror = function () { resolve({ restored: done, skipped: skipped, n: done.length }); };
+                }
+              };
+            });
+            tx.oncomplete = function () { clearTimeout(guard); finish(); };
+            tx.onerror = function () { clearTimeout(guard); finish(); };
+          } catch (er) { clearTimeout(guard); finish(String(er && er.message || er)); }
         };
       } catch (er) {
-        resolve({ restored: [], skipped: skipped, n: 0, err: String(er && er.message || er) });
+        clearTimeout(guard);
+        finish(String(er && er.message || er));
       }
     });
   });
@@ -1931,6 +2046,27 @@ window.fbRescueApply = function () {
         seen[x.key] = 1; uniq.push(x);
       });
 
+      // 「别处更全」的那批:localStorage 里确实有一份(所以不算缺失),但明显比快照/IDB 里的短。
+      // 典型场景:缓存被清过,之后又练了一次 → trainlog 只剩新练的 3 条(259 字符),
+      // 而 window.name 快照里还留着清之前的完整记录(9360 字符)。
+      // 这种如果不单独列出来,面板会报告「没有能救回来的数据」,而数据其实就在那儿。
+      var lsSize = {};
+      (r.localStorage || []).forEach(function (x) { lsSize[x.key] = x.size; });
+      var best = {};
+      function consider(src, from) {
+        (src || []).forEach(function (item) {
+          var cur = lsSize[item.key];
+          if (cur === undefined) return;                  // 完全缺失的已经算进 uniq 了
+          if (!(item.size > cur)) return;                 // 不比现在这份全
+          if (!best[item.key] || item.size > best[item.key].size) {
+            best[item.key] = { key: item.key, size: item.size, cur: cur, from: from };
+          }
+        });
+      }
+      consider(r.indexedDB, 'IndexedDB');
+      consider(r.windowName, 'window.name');
+      var bigger = Object.keys(best).map(function (k) { return best[k]; });
+
       var html = '';
       html += listHtml('📱 localStorage（主源，App 平时读的就是它）', r.localStorage, '#2563EB');
       html += listHtml('🗄️ IndexedDB（写 localStorage 时自动镜像的副本）', r.indexedDB, '#16A34A');
@@ -1938,7 +2074,7 @@ window.fbRescueApply = function () {
 
       html += '<div style="margin:16px 0 10px;padding:12px;border-radius:12px;background:#F8FAFC;'
         + 'border:1.5px solid #E2E8F0;font-size:12.5px;line-height:1.75;">';
-      if (!uniq.length) {
+      if (!uniq.length && !bigger.length) {
         html += '<b style="font-size:13.5px;">结论：这个容器里没有能救回来的数据。</b><br>'
           + '三层都空，或 IndexedDB 里有的 localStorage 里也都有了。<br><br>'
           + '如果你的训练记录是在<b>微信里</b>攒的，那它还在微信的存储里 —— '
@@ -1955,14 +2091,37 @@ window.fbRescueApply = function () {
           + '等首页弹出 <b>🧩 备份提醒</b> 时，点 <b>💾 下载备份文件</b>，'
           + '一份存手机、一份发微信「文件传输助手」，下次就丢不了了。</div>';
       } else {
-        html += '<b style="font-size:13.5px;color:#16A34A;">✅ 找到 ' + uniq.length + ' 项可以救回来的数据</b><br>'
-          + esc(uniq.map(function (x) { return x.key; }).join('、'))
-          + '<br><br>'
-          + '<button id="rsApply" style="width:100%;padding:12px;border:none;border-radius:12px;font-size:14px;'
-          + 'font-weight:700;color:#fff;cursor:pointer;background:linear-gradient(135deg,#16A34A,#4ADE80);">'
-          + '🆘 恢复这 ' + uniq.length + ' 项并刷新</button>'
-          + '<div style="font-size:11px;opacity:.6;margin-top:7px;">只填补 localStorage 里缺失的 key，'
-          + '不会动已经存在的任何数据。</div>';
+        if (uniq.length) {
+          html += '<b style="font-size:13.5px;color:#16A34A;">✅ 找到 ' + uniq.length + ' 项可以救回来的数据</b><br>'
+            + esc(uniq.map(function (x) { return x.key; }).join('、'))
+            + '<br><br>'
+            + '<button id="rsApply" style="width:100%;padding:12px;border:none;border-radius:12px;font-size:14px;'
+            + 'font-weight:700;color:#fff;cursor:pointer;background:linear-gradient(135deg,#16A34A,#4ADE80);">'
+            + '🆘 恢复这 ' + uniq.length + ' 项并刷新</button>'
+            + '<div style="font-size:11px;opacity:.6;margin-top:7px;">只填补 localStorage 里缺失的 key，'
+            + '不会动已经存在的任何数据。</div>';
+        }
+        if (bigger.length) {
+          html += (uniq.length ? '<div style="margin-top:14px;padding-top:12px;border-top:1px dashed #CBD5E1;">' : '')
+            + '<b style="font-size:13.5px;color:#D97706;">⚠️ 还有 ' + bigger.length + ' 项，别处存得更全</b><br>'
+            + '<div style="font-size:12px;margin:6px 0 8px;">'
+            + bigger.map(function (x) {
+                return '· <code>' + esc(x.key.replace('fitbuddy_', '')) + '</code>：现在 '
+                  + x.cur + ' 字符 → ' + esc(x.from) + ' 里有 <b>' + x.size + '</b> 字符';
+              }).join('<br>')
+            + '</div>'
+            + '<div style="font-size:11.5px;opacity:.75;margin-bottom:9px;">'
+            + '这通常说明<b>缓存被清过、之后又练了一次</b>：现在这份只剩新练的几条，'
+            + '快照里的才是完整的。</div>'
+            + '<button id="rsApplyBigger" style="width:100%;padding:12px;border:none;border-radius:12px;'
+            + 'font-size:14px;font-weight:700;color:#fff;cursor:pointer;'
+            + 'background:linear-gradient(135deg,#D97706,#F59E0B);">'
+            + '🆘 用更全的那份覆盖这 ' + bigger.length + ' 项并刷新</button>'
+            + '<div style="font-size:11px;opacity:.6;margin-top:7px;">'
+            + '会<b>覆盖</b>现在这几项（它们更短，覆盖等于找回更多记录）。'
+            + '其余数据不受影响。</div>'
+            + (uniq.length ? '</div>' : '');
+        }
       }
       html += '</div>';
 
@@ -1974,20 +2133,25 @@ window.fbRescueApply = function () {
 
       done(html);
 
-      var btn = document.getElementById('rsApply');
-      if (btn) btn.onclick = function () {
-        btn.disabled = true; btn.textContent = '恢复中…';
-        if (typeof window.fbRescueApply !== 'function') return;
-        window.fbRescueApply().then(function (res) {
-          if (!res || !res.n) {
-            btn.textContent = '没写进去任何数据';
-            return;
-          }
-          btn.textContent = '✅ 已恢复 ' + res.n + ' 项，正在刷新…';
-          try { if (typeof window.showToast === 'function') window.showToast('✅ 已恢复 ' + res.n + ' 项数据'); } catch (e) {}
-          setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
-        });
+      var runApply = function (btn, opts, okText) {
+        if (!btn) return;
+        btn.onclick = function () {
+          btn.disabled = true; btn.textContent = '恢复中…';
+          if (typeof window.fbRescueApply !== 'function') return;
+          window.fbRescueApply(opts).then(function (res) {
+            if (!res || !res.n) {
+              btn.textContent = '没写进去任何数据';
+              btn.disabled = false;
+              return;
+            }
+            btn.textContent = '✅ ' + okText + ' ' + res.n + ' 项，正在刷新…';
+            try { if (typeof window.showToast === 'function') window.showToast('✅ 已恢复 ' + res.n + ' 项数据'); } catch (e) {}
+            setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
+          });
+        };
       };
+      runApply(document.getElementById('rsApply'), null, '已补回');
+      runApply(document.getElementById('rsApplyBigger'), { bigger: true }, '已覆盖');
     }, function (err) {
       done('<div style="color:#c00;">扫描失败：' + esc((err && err.message) || err) + '</div>');
     });
@@ -1996,5 +2160,57 @@ window.fbRescueApply = function () {
   if (document.readyState === 'complete') render();
   else document.addEventListener('DOMContentLoaded', render);
 })();
+
+  // ============ 核心脚本健康检查 ============
+  // ⚠️ 这是被 6 条「ReferenceError: Can't find variable: switchTab」逼出来的。
+  //    planner-core.js 有 703KB, 在微信 webview 里偶尔加载不完整 / 解析失败。
+  //    浏览器对 <script> 加载失败是**静默**的: 不触发 window.onerror, 页面无任何痕迹,
+  //    只表现为"点了没反应"。更隐蔽的连带后果是 ——
+  //    pro-tools 的 initProToolsProgress 靠 typeof renderProgress === 'function' 挂钩,
+  //    planner-core 一挂, Pro 区块整块消失, 而整段渲染还裹在 try-catch 里静默吞掉。
+  //    所以这里在 defer 脚本全部执行完后逐个验关键函数, 缺了就直接告诉用户。
+  (function () {
+    var CORE = [
+      ['switchTab', 'planner-core.js'],
+      ['renderProgress', 'planner-core.js'],
+      ['doGenerate', 'planner-core.js'],
+      ['exportData', 'planner-core.js']
+    ];
+    function run() {
+      var missing = [];
+      CORE.forEach(function (c) { if (typeof window[c[0]] !== 'function') missing.push(c[0]); });
+      window.__fbMissingCore = missing;
+      if (!missing.length) return;
+      try { console.warn('[FitBuddy] 核心脚本没加载完整: ' + missing.join(', ')); } catch (e) {}
+      if (document.getElementById('fbCoreAlert')) return;
+      var bar = document.createElement('div');
+      bar.id = 'fbCoreAlert';
+      bar.style.cssText = 'position:fixed;z-index:99997;left:10px;right:10px;bottom:78px;padding:12px 14px;'
+        + 'border-radius:14px;background:#FEF2F2;border:1.5px solid #FCA5A5;color:#111;'
+        + 'font:13px/1.6 -apple-system,system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.15);';
+      bar.innerHTML = '<div style="display:flex;gap:9px;align-items:flex-start;">'
+        + '<div style="font-size:18px;line-height:1.2;">⚠️</div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-weight:800;font-size:13px;margin-bottom:3px;">页面没加载完整</div>'
+        + '<div style="font-size:11.5px;opacity:.75;line-height:1.55;">核心脚本(planner-core.js)没传完，'
+        + '切换页面、生成计划这些可能点了没反应。<b>你已存的数据不受影响</b>，重新加载一次就好。</div>'
+        + '<button id="fbCoreReload" style="margin-top:9px;padding:8px 14px;border:none;border-radius:10px;'
+        + 'font-size:12.5px;font-weight:700;color:#fff;cursor:pointer;background:#DC2626;">'
+        + '🔄 重新加载</button>'
+        + '</div>'
+        + '<div id="fbCoreX" style="font-size:15px;opacity:.4;cursor:pointer;padding:2px 4px;line-height:1;">✕</div>'
+        + '</div>';
+      document.body.appendChild(bar);
+      document.getElementById('fbCoreX').onclick = function () { bar.remove(); };
+      document.getElementById('fbCoreReload').onclick = function () {
+        // 换个 query 参数绕开 HTTP 缓存重新拉一遍。注意: 不带 clear=1,
+        // 所以不会注销 Service Worker, 更不会动 localStorage 里的任何数据。
+        try { location.href = location.pathname + '?fbx=' + Date.now(); } catch (e) { location.reload(); }
+      };
+    }
+    // defer 脚本全部执行完才会触发 DOMContentLoaded, 那时才能判断谁没来
+    if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(run, 0);
+    else document.addEventListener('DOMContentLoaded', function () { setTimeout(run, 0); });
+  })();
 
 })();
