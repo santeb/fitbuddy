@@ -1547,86 +1547,60 @@ if (typeof _originalSwitchTab === 'function') {
 }
 
 // ============ Pro 卡自检 · ?prodiag=1 ============
-// 起因: 手机上报"某几个 Pro 功能没了", 光看代码猜是哪张卡几乎不可能 ——
-// 每张卡都有 `typeof xxx !== 'function'` 守卫 + `!hasData` 门槛, 静默返回空串,
-// 页面上不留一点痕迹(不报错、不占位)。要么依赖函数没加载(缓存里的旧 js),
-// 要么数据不够(手机上训练记录是空的, 卡自然不出现)。
-// 这里把每张卡的"依赖在不在 / 数据够不够 / 渲染报不报错"摊开, 手机打开
-// ?prodiag=1 直接截图就行, 不用连电脑调试。
-// ⚠️ 不能只查 window —— pro-tools.js 自己就裹在 IIFE 里, fbPeriodCardVisible 这类
-//    函数是闭包内的, window 上根本没有。只查 window 会把它误报成"依赖没加载"(实测过),
-//    把人往缓存方向带偏。eval 在闭包内取值才能看到局部函数; 被 CSP 拦时退回归 window 判断。
-var _diagDepsOk = function (spec) {
-  var alts = String(spec).split('|');
-  for (var i = 0; i < alts.length; i++) {
-    var n = alts[i];
-    if (typeof window[n] === 'function') return true;
-    try { if (eval('typeof ' + n) === 'function') return true; } catch (e) {}
-  }
-  return false;
-};
-
+// 起因: san 手机上「就只剩减载决策和周期化了」, 另外 7 张卡全不见。
+// v150 的做法是靠"依赖加载没 / 数据门槛过没过"两头猜 —— 猜不出来。
+// v151 改为**直接跑真实渲染函数**: 每张卡返回多少字符 HTML, 就是页面上会有多少内容;
+// 返回空串 = 被 `typeof xxx !== 'function'` 守卫或 hasData 门槛挡掉了。
+// 这是唯一不会骗人的证据, 猜不出来就不用猜了。
+//
+// ⚠️ 顺带说明为什么这些卡"消失而无痕": initProToolsProgress() 把它们拼成一整块
+//    #proToolsSection 再插进 #progContent, 整段裹在 try-catch 里 —— 任意一张卡
+//    抛异常, 后面所有的卡连带整个区块一起没了, 页面上一个坑都不留, 只 console.warn。
+//    所以下面既查每张卡单独能不能渲染, 也查整块到底插没插进 DOM。
 window.fbProDiag = function () {
   var rows = [];
-  function add(name, deps, run) {
-    var miss = (deps || []).filter(function (d) { return !_diagDepsOk(d); });
-    if (miss.length) {
-      rows.push({ name: name, state: '缺失', why: '依赖没加载: ' + miss.join(', ') + ' —— 八成是手机缓存里的旧 js' });
+
+  function card(name, fn) {
+    var html = null;
+    try { html = fn(); } catch (e) {
+      rows.push({ name: name, state: '报错', why: String((e && e.message) || e) });
       return;
     }
-    try {
-      var r = run();
-      if (r && r.ok) { rows.push({ name: name, state: '显示', why: '' }); return; }
-      rows.push({ name: name, state: '隐藏', why: (r && r.why) || '数据门槛没过' });
-    } catch (e) {
-      rows.push({ name: name, state: '报错', why: String((e && e.message) || e) });
+    if (typeof html !== 'string' || html.length < 10) {
+      rows.push({
+        name: name, state: '隐藏',
+        why: '渲染回来 ' + (typeof html === 'string' ? html.length + ' 字符(空串)' : String(html)) + ' —— 数据门槛没过'
+      });
+      return;
     }
+    rows.push({ name: name, state: '显示', why: html.length + ' 字符' });
   }
 
-  add('⚖️ 今日能量收支', ['fbTodayEnergy|dietTodayIntake'], function () {
-    var e = null, eaten = null;
-    try { e = window.fbTodayEnergy(); } catch (x) {}
-    try { eaten = window.dietTodayIntake(); } catch (x) {}
-    if (!e && !eaten) return { ok: false, why: '没填身高体重(算不出消耗) 且 今天没记饮食' };
-    return { ok: true, why: '消耗=' + (e ? '有' : '无') + ' 摄入=' + (eaten ? '有' : '无') };
+  card('🎯 RPE 自调节建议', function () {
+    if (typeof trainingLog === 'undefined' || !trainingLog) return '';
+    var h = '';
+    Object.keys(trainingLog).forEach(function (k) {
+      var a = null;
+      try { a = getRPEAdjustment(k); } catch (e) {}
+      if (a) h += '<div>' + k + ' — ' + (a.text || '') + '</div>';
+    });
+    return h;
   });
-  add('🎯 RPE 自调节建议', [], function () {
-    if (typeof trainingLog === 'undefined' || !trainingLog) return { ok: false, why: 'trainingLog 为空（手机上没有训练记录）' };
-    var keys = Object.keys(trainingLog).filter(function (k) { return getRPEAdjustment(k); });
-    if (!keys.length) return { ok: false, why: '有训练记录，但没有可算 RPE 建议的动作' };
-    return { ok: true, why: keys.length + ' 个动作' };
+  card('⚖️ 今日能量收支', function () { return renderTodayEnergyCard(); });
+  card('🔄 减载决策 P3', function () { return renderDeloadDecision(); });
+  card('⚖️ 部位平衡 P2', function () { return renderMuscleBalance(); });
+  card('📈 周期化 P1', function () { return renderPeriodEditor(); });
+  card('📅 月度复盘 P4', function () { return renderMonthlyReview(); });
+  card('🏆 个人纪录 PR', function () { return renderPRCards(); });
+  card('📤 力量档案导出', function () {
+    if (typeof fbStrengthCardEntryHtml !== 'function') return '';
+    try { return fbStrengthCardEntryHtml('card'); } catch (e) { return ''; }
   });
-  add('🔄 减载决策 P3', ['fbDeloadSignals'], function () {
-    var s = fbDeloadSignals();
-    if (!s || !s.hasData) return { ok: false, why: '近期训练记录不足，算不出信号' };
-    return { ok: true, why: (s.signals ? s.signals.length : 0) + ' 条信号' };
-  });
-  add('⚖️ 部位平衡 P2', ['fbBalanceReport'], function () {
-    var rep = fbBalanceReport();
-    if (!rep || !rep.hasData) return { ok: false, why: '训练日志为空，没有部位容量可统计' };
-    return { ok: true, why: '统计 ' + rep.spanDays + ' 天' };
-  });
-  add('📈 周期化编辑 P1', ['fbPeriodIntensity', 'fbPeriodCardVisible'], function () {
-    if (!fbPeriodCardVisible()) return { ok: false, why: '当前计划是跑步/有氧，或还没生成力量计划' };
-    return { ok: true, why: ((typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : '?') + ' 周' };
-  });
-  add('📅 月度复盘 P4', ['fbMonthlyReport'], function () {
-    var rep = fbMonthlyReport(0);
-    if (!rep || (!rep.hasData && rep.days <= 0)) return { ok: false, why: '本月没有训练记录' };
-    return { ok: true, why: rep.label + ' · ' + rep.days + ' 天' };
-  });
-  add('🏆 个人纪录', ['buildPRsFromLog'], function () {
-    var prs = buildPRsFromLog();
-    var keys = Object.keys(prs).filter(function (k) { return prs[k] && prs[k].e1rm > 0; });
-    if (!keys.length) return { ok: false, why: '训练日志里没有带重量/次数的记录' };
-    return { ok: true, why: keys.length + ' 个动作' };
-  });
-  add('📤 力量档案导出', ['fbStrengthCardEntryHtml'], function () { return { ok: true, why: '' }; });
-  add('🔥 热身组 / 🏋️ 杠铃片 计算器', [], function () {
-    var w = document.getElementById('calcPanelWarmup');
-    var p = document.getElementById('calcPanelPlate');
-    if (!w && !p) return { ok: false, why: 'index.html 里找不到 calcPanelWarmup / calcPanelPlate 容器' };
-    return { ok: true, why: '容器在，渲染=' + ((w && w.dataset.rendered) || (p && p.dataset.rendered) ? '已' : '未') };
+  card('🔥 热身组 / 🏋️ 杠铃片', function () {
+    var h = '';
+    try { h += renderWarmupCalculator(); } catch (e) {}
+    try { h += renderPlateCalculator(); } catch (e) {}
+    return h;
   });
 
   // 环境
@@ -1643,22 +1617,192 @@ window.fbProDiag = function () {
       .map(function (r) { return r.name.replace(/^.*\//, '') + ' @' + Math.round(r.startTime) + 'ms'; });
     env.push('已加载 js(' + js.length + '): ' + js.join(' , '));
   } catch (e) {}
+  // 整块 Pro 区块到底插没插进页面
+  var pc = document.getElementById('progContent');
+  var sec = document.getElementById('proToolsSection');
+  env.push('progContent: ' + (pc ? '在, 子卡片 ' + pc.children.length + ' 个' : '不在 DOM(还没切到进度页?)'));
+  env.push('#proToolsSection: ' + (sec ? '已插入, ' + sec.children.length + ' 张卡' : '未插入 —— Pro 整块没渲染出来'));
+  if (pc && !sec) {
+    env.push('⚠️ 关键: 容器在但 Pro 区块不在 —— 说明渲染中途抛错了(整段 try-catch 静默吞掉),');
+    env.push('   或者还没点开进度页。先切到「进度」页再回来复制一次结果。');
+  }
+
   var data = [];
   try {
-    data.push('trainingLog 动作数: ' + ((typeof trainingLog !== 'undefined' && trainingLog) ? Object.keys(trainingLog).length : 0));
-  } catch (e) { data.push('trainingLog: 读不到'); }
-  ['lastplan', 'history', 'prs', 'bodylog', 'trainlog'].forEach(function (k) {
-    var v = null;
-    try { v = localStorage.getItem(k); } catch (e) {}
-    data.push(k + ': ' + (v ? v.length + ' 字符' : '空'));
-  });
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('fitbuddy_') === 0) keys.push(k);
+    }
+    // ⚠️ v150 这里写的是裸 key('trainlog' 等), 但 persistence.js 的 NS_PREFIX 是 'fitbuddy_',
+    //    于是一律显示"空" —— 数据明明还在却被读成没有, 直接把排查带进死胡同。
+    if (!keys.length) data.push('❌ localStorage 里没有任何 fitbuddy_ 数据 —— 这个容器的数据是空的');
+    keys.forEach(function (kk) {
+      var v = localStorage.getItem(kk);
+      data.push(kk + ': ' + (v ? v.length + ' 字符' : '空'));
+    });
+  } catch (e) { data.push('localStorage 读不了: ' + ((e && e.message) || e)); }
+  // 训练日志的"形状" —— PR 卡要 weight×reps、部位平衡要跨度够 7 天、月度复盘要本月有记录。
+  // 光看"trainlog 有多少字符"看不出问题, 得看每个动作用什么形式记的:
+  // 打卡带入的占位记录(src:'auto')不带有效重量, PR 卡直接把它们跳过。
+  try {
+    var tl = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : null;
+    if (!tl) {
+      data.push('trainingLog(内存): 空 —— 7 张卡里有 5 张靠它');
+    } else {
+      var names = Object.keys(tl);
+      data.push('trainingLog(内存): ' + names.length + ' 个动作');
+      names.slice(0, 6).forEach(function (n) {
+        var arr = tl[n] || [];
+        var last = arr[arr.length - 1] || {};
+        data.push('  · ' + n + ': ' + arr.length + ' 条, 最新 '
+          + (last.weight ? last.weight + 'kg×' + last.reps + (last.rpe ? ' @RPE' + last.rpe : '') : '无重量/次数')
+          + (last.src === 'auto' ? ' [打卡占位,不算成绩]' : '')
+          + (last.date ? ' ' + last.date : ''));
+      });
+      if (names.length > 6) data.push('  …还有 ' + (names.length - 6) + ' 个动作');
+    }
+  } catch (e) { data.push('trainingLog 读不了: ' + ((e && e.message) || e)); }
+  try {
+    var wn = String(window.name || '');
+    data.push('window.name 快照: ' + (wn.indexOf('FB_SNAP:') === 0 ? '有, ' + wn.length + ' 字符 ← 这份可能能救回来' : '无'));
+  } catch (e) {}
   var errs = [];
   try {
     var el = JSON.parse(localStorage.getItem('fitbuddy_errlog') || '[]');
-    errs = el.slice(-5).map(function (x) { return (x.msg || x.message || JSON.stringify(x)).slice(0, 160); });
+    errs = el.slice(-8).map(function (x) { return (x.msg || x.message || JSON.stringify(x)).slice(0, 200); });
   } catch (e) {}
 
   return { rows: rows, env: env, data: data, errs: errs };
+};
+
+// ============ 残留数据扫描 · 没备份码时的最后一根稻草 ============
+// persistence.js 写 localStorage 时会同步镜像一份到 IndexedDB、再往 window.name 塞快照。
+// 这三层是**同一个 App 容器内**的冗余 —— 微信清缓存时三层可能被一起端掉,
+// 但 iOS Safari 常常只清 localStorage、留着 IndexedDB。这时候不用恢复码也能救。
+// window.fbScanRescue() 异步扫这三层, 返回各自还剩什么。
+window.fbScanRescue = function () {
+  function lsKeys() {
+    var out = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('fitbuddy_') === 0) {
+          out.push({ key: k, size: (localStorage.getItem(k) || '').length });
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  function idbKeys() {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open('fitbuddy_persist_db', 1);
+        req.onerror = function () { resolve([]); };
+        req.onsuccess = function (e) {
+          var db = e.target.result;
+          try {
+            if (!db.objectStoreNames.contains('kv')) { resolve([]); return; }
+            var tx = db.transaction('kv', 'readonly');
+            var all = tx.objectStore('kv').getAll();
+            var keysReq = tx.objectStore('kv').getAllKeys();
+            tx.oncomplete = function () {
+              var vals = (all && all.result) || [];
+              var ks = (keysReq && keysReq.result) || [];
+              resolve(ks.map(function (k, i) {
+                var v = vals[i];
+                return {
+                  key: k,
+                  size: typeof v === 'string' ? v.length : JSON.stringify(v || '').length
+                };
+              }).filter(function (r) { return String(r.key).indexOf('fitbuddy_') === 0; }));
+            };
+            tx.onerror = function () { resolve([]); };
+          } catch (er) { resolve([]); }
+        };
+      } catch (er) { resolve([]); }
+    });
+  }
+
+  return Promise.all([Promise.resolve(lsKeys()), idbKeys()]).then(function (pair) {
+    var ls = pair[0], idb = pair[1];
+    var wn = null;
+    try {
+      var raw = String(window.name || '');
+      if (raw.indexOf('FB_SNAP:') === 0) {
+        var snap = JSON.parse(decodeURIComponent(escape(atob(raw.slice('FB_SNAP:'.length)))));
+        wn = Object.keys(snap || {}).map(function (k) {
+          return { key: k, size: String(snap[k] || '').length };
+        });
+      }
+    } catch (e) {}
+    return { localStorage: ls, indexedDB: idb, windowName: wn || [] };
+  });
+};
+
+// 把扫到的 IndexedDB / window.name 数据灌回 localStorage。
+// 只补 localStorage 里缺失的 key, 绝不覆盖现有的 —— 宁可少恢复也不能把现有数据冲掉。
+window.fbRescueApply = function () {
+  return window.fbScanRescue().then(function (r) {
+    var restored = [], skipped = [];
+    function put(src) {
+      (src || []).forEach(function (item) {
+        var cur = null;
+        try { cur = localStorage.getItem(item.key); } catch (e) {}
+        if (cur) { skipped.push(item.key); return; }
+        restored.push(item.key);
+      });
+    }
+    put(r.windowName);
+    put(r.indexedDB);
+    if (!restored.length) return { restored: [], skipped: skipped, n: 0 };
+    // 真正写回:再次打开 IndexedDB 取值
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open('fitbuddy_persist_db', 1);
+        req.onerror = function () { resolve({ restored: [], skipped: skipped, n: 0, err: 'IDB 打不开' }); };
+        req.onsuccess = function (e) {
+          var db = e.target.result;
+          var tx = db.transaction('kv', 'readonly');
+          var store = tx.objectStore('kv');
+          var done = [], todo = restored.slice();
+          todo.forEach(function (k) {
+            var g = store.get(k);
+            g.onsuccess = function () {
+              if (g.result !== undefined && g.result !== null) {
+                try {
+                  localStorage.setItem(k, typeof g.result === 'string' ? g.result : JSON.stringify(g.result));
+                  done.push(k);
+                } catch (er) {}
+              }
+            };
+          });
+          tx.oncomplete = function () {
+            // window.name 里的那份也一并回灌
+            try {
+              var raw = String(window.name || '');
+              if (raw.indexOf('FB_SNAP:') === 0) {
+                var snap = JSON.parse(decodeURIComponent(escape(atob(raw.slice('FB_SNAP:'.length)))));
+                Object.keys(snap || {}).forEach(function (k) {
+                  try {
+                    if (localStorage.getItem(k) === null) {
+                      localStorage.setItem(k, String(snap[k]));
+                      if (done.indexOf(k) < 0) done.push(k);
+                    }
+                  } catch (er) {}
+                });
+              }
+            } catch (er) {}
+            resolve({ restored: done, skipped: skipped, n: done.length });
+          };
+          tx.onerror = function () { resolve({ restored: done, skipped: skipped, n: done.length }); };
+        };
+      } catch (er) {
+        resolve({ restored: [], skipped: skipped, n: 0, err: String(er && er.message || er) });
+      }
+    });
+  });
 };
 
 // ?prodiag=1 → 直接把自检结果糊在页面上, 方便手机截图
@@ -1686,7 +1830,12 @@ window.fbProDiag = function () {
       '<pre id="diagText" style="white-space:pre-wrap;font:12px/1.8 ui-monospace,Menlo,Consolas,monospace;">' +
       String(txt).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
     document.body.appendChild(box);
-    document.getElementById('diagClose').onclick = function () { box.remove(); };
+    // 关掉面板顺手把 ?prodiag=1 从地址里抹掉 —— 否则用户下次刷新又弹一遍,
+    // 还以为 App 出了什么问题。
+    document.getElementById('diagClose').onclick = function () {
+      box.remove();
+      try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) {}
+    };
     document.getElementById('diagCopy').onclick = function () {
       var ta = document.createElement('textarea');
       ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
@@ -1703,6 +1852,127 @@ window.fbProDiag = function () {
   //    pro-tools.js 后面那 5 个 js 还没请求, "已加载 js" 只能看到 9 个 ——
   //    而缺的那几个(calculator-diet / backup-code)恰恰最可能是手机上没刷新的。
   //    所以只有文档彻底加载完(complete)才立即渲染, 其余一律等 DOMContentLoaded。
+  if (document.readyState === 'complete') render();
+  else document.addEventListener('DOMContentLoaded', render);
+})();
+
+// ============ 数据救援面板 · ?fbrescue=1 ============
+// san 问「怎么恢复数据？我都没有恢复码」。恢复码是唯一能跨 App 容器搬运的方式,
+// 没生成过就真的没有 —— 但同一个容器里还有两层冗余拷贝(localStorage / IndexedDB /
+// window.name)。iOS 清缓存时常只清掉 localStorage, IndexedDB 反而留着, 这时不用恢复码也能救。
+// 这个面板把三层各剩什么列出来, 有一键回灌按钮(只补空缺 key, 绝不覆盖现有数据)。
+(function () {
+  if (!/[?&]fbrescue=1\b/.test(location.search)) return;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function listHtml(title, items, color) {
+    var head = '<div style="font-size:13px;font-weight:800;margin:14px 0 6px;color:' + color + ';">'
+      + title + ' <span style="font-weight:400;opacity:.6;">(' + (items ? items.length : 0) + ' 项)</span></div>';
+    if (!items || !items.length) {
+      return head + '<div style="font-size:12px;opacity:.5;padding-left:4px;">—— 空 ——</div>';
+    }
+    var body = items.map(function (it) {
+      return '<div style="display:flex;justify-content:space-between;gap:10px;font-size:11.5px;'
+        + 'padding:3px 0;border-bottom:1px dashed rgba(128,128,128,.25);">'
+        + '<span style="font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;">' + esc(it.key) + '</span>'
+        + '<span style="white-space:nowrap;opacity:.65;">' + it.size + ' 字符</span></div>';
+    }).join('');
+    return head + body;
+  }
+
+  var render = function () {
+    var box = document.createElement('div');
+    box.id = 'fbRescuePanel';
+    box.style.cssText = 'position:fixed;z-index:99998;left:0;right:0;top:0;bottom:0;overflow:auto;'
+      + 'background:#fff;color:#111;padding:14px;font:13px/1.7 -apple-system,system-ui,sans-serif;';
+    box.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;position:sticky;top:-14px;'
+      + 'background:#fff;padding:8px 0;border-bottom:1px solid #eee;">'
+      + '<b style="font-size:15px;">🧯 数据救援</b>'
+      + '<button id="rsClose" style="padding:7px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;">关闭</button>'
+      + '</div>'
+      + '<div id="rsBody" style="font-size:13px;opacity:.7;">正在扫描三层存储…</div>';
+    document.body.appendChild(box);
+    document.getElementById('rsClose').onclick = function () {
+      box.remove();
+      try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) {}
+    };
+
+    var done = function (html) { var b = document.getElementById('rsBody'); if (b) b.innerHTML = html; };
+
+    if (typeof window.fbScanRescue !== 'function') {
+      done('<div style="color:#c00;font-weight:700;">fbScanRescue 没加载 —— 手机还在跑旧版本。<br>'
+        + '先访问一次 <code>?clear=1</code> 清掉 Service Worker 缓存再回来。</div>');
+      return;
+    }
+
+    window.fbScanRescue().then(function (r) {
+      var lsNames = (r.localStorage || []).map(function (x) { return x.key; });
+      var savable = []
+        .concat(r.indexedDB || [], r.windowName || [])
+        .filter(function (x) { return lsNames.indexOf(x.key) < 0; });
+      // 同一 key 在 IDB 和 window.name 里都出现时只留一份
+      var seen = {}, uniq = [];
+      savable.forEach(function (x) {
+        if (seen[x.key]) return;
+        seen[x.key] = 1; uniq.push(x);
+      });
+
+      var html = '';
+      html += listHtml('📱 localStorage（主源，App 平时读的就是它）', r.localStorage, '#2563EB');
+      html += listHtml('🗄️ IndexedDB（写 localStorage 时自动镜像的副本）', r.indexedDB, '#16A34A');
+      html += listHtml('🧷 window.name（换域名/清缓存时留的快照）', r.windowName, '#D97706');
+
+      html += '<div style="margin:16px 0 10px;padding:12px;border-radius:12px;background:#F8FAFC;'
+        + 'border:1.5px solid #E2E8F0;font-size:12.5px;line-height:1.75;">';
+      if (!uniq.length) {
+        html += '<b style="font-size:13.5px;">结论：这个容器里没有能救回来的数据。</b><br>'
+          + '三层都空，或 IndexedDB 里有的 localStorage 里也都有了。<br><br>'
+          + '如果你的训练记录是在<b>微信里</b>攒的，那它还在微信的存储里 —— '
+          + '微信和 Safari 是两个互不相通的容器，网址长得一样也不共享。'
+          + '<b>请回到微信里打开 FitBuddy</b>，看看数据在不在；在的话立刻去「打赏 → 数据管理 → 🧩 生成恢复码」'
+          + '存一份，再回来粘贴恢复。';
+      } else {
+        html += '<b style="font-size:13.5px;color:#16A34A;">✅ 找到 ' + uniq.length + ' 项可以救回来的数据</b><br>'
+          + esc(uniq.map(function (x) { return x.key; }).join('、'))
+          + '<br><br>'
+          + '<button id="rsApply" style="width:100%;padding:12px;border:none;border-radius:12px;font-size:14px;'
+          + 'font-weight:700;color:#fff;cursor:pointer;background:linear-gradient(135deg,#16A34A,#4ADE80);">'
+          + '🆘 恢复这 ' + uniq.length + ' 项并刷新</button>'
+          + '<div style="font-size:11px;opacity:.6;margin-top:7px;">只填补 localStorage 里缺失的 key，'
+          + '不会动已经存在的任何数据。</div>';
+      }
+      html += '</div>';
+
+      html += '<div style="font-size:11.5px;opacity:.55;line-height:1.7;margin-top:14px;padding-top:12px;'
+        + 'border-top:1px solid #eee;">'
+        + '⚠️ 注意：这三层只在<b>同一个 App 容器内部</b>互为备份。微信和 Safari 各是一个容器，'
+        + '互相看不见对方的数据 —— 换地方打开会觉得「数据没了」，其实是存在于另一个容器里。'
+        + '要跨容器搬运，唯一办法是恢复码。</div>';
+
+      done(html);
+
+      var btn = document.getElementById('rsApply');
+      if (btn) btn.onclick = function () {
+        btn.disabled = true; btn.textContent = '恢复中…';
+        if (typeof window.fbRescueApply !== 'function') return;
+        window.fbRescueApply().then(function (res) {
+          if (!res || !res.n) {
+            btn.textContent = '没写进去任何数据';
+            return;
+          }
+          btn.textContent = '✅ 已恢复 ' + res.n + ' 项，正在刷新…';
+          try { if (typeof window.showToast === 'function') window.showToast('✅ 已恢复 ' + res.n + ' 项数据'); } catch (e) {}
+          setTimeout(function () { try { location.reload(); } catch (e) {} }, 900);
+        });
+      };
+    }, function (err) {
+      done('<div style="color:#c00;">扫描失败：' + esc((err && err.message) || err) + '</div>');
+    });
+  };
+
   if (document.readyState === 'complete') render();
   else document.addEventListener('DOMContentLoaded', render);
 })();

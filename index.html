@@ -293,6 +293,7 @@ input,select{font-family:inherit;}
 .data-mgmt-btn.import{background:#FEF3C7;color:#D97706;}
 .data-mgmt-btn.code{background:#ECFDF5;color:#059669;}
 .data-mgmt-btn.restore{background:#F5F3FF;color:#7C3AED;}
+.data-mgmt-btn.rescue{background:#F0FDFA;color:#0D9488;margin-top:8px;width:100%;}
 .data-mgmt-btn.reset{background:#FEE2E2;color:#DC2626;margin-top:8px;width:100%;}
 .data-mgmt-btn:active{transform:scale(0.96);}
 /* 每周总结弹窗 */
@@ -1234,6 +1235,9 @@ input,select{font-family:inherit;}
         <button class="data-mgmt-btn code" onclick="showBackupModal()">🧩 生成恢复码</button>
         <button class="data-mgmt-btn restore" onclick="showRestoreModal()">📮 恢复码恢复</button>
       </div>
+      <!-- 🧯 没备份码时的最后手段: 扫 localStorage / IndexedDB / window.name 三层残留。
+           微信和 Safari 是两个互不相通的容器,换地方打开会以为"数据没了",其实在另一边。 -->
+      <button class="data-mgmt-btn rescue" onclick="location.href='?fbrescue=1'">🧯 数据救援（扫描残留副本）</button>
       <div id="fbBackupHint" style="font-size:11px;color:var(--text,#999);opacity:.55;margin-top:8px;text-align:center;"></div>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
       <button class="data-mgmt-btn reset" onclick="resetAllData()">🔄 重置所有数据</button>
@@ -1331,7 +1335,7 @@ input,select{font-family:inherit;}
 
 <script src="qrcode-generator.js?v=1" defer></script>
 <script src="planner-core.js?v=125" defer></script>
-  <script src="pro-tools.js?v=34" defer></script>
+  <script src="pro-tools.js?v=35" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
 <script src="deeplink.js?v=1" defer></script>
