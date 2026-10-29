@@ -8,7 +8,10 @@
   var PREFIX_DEFLATE = 'FB2:';
   var LAST_BACKUP_KEY = 'fitbuddy_lastbackupcode';
   var NUDGE_KEY = 'fitbuddy_backup_nudge_at';   // 首页备份提醒被忽略的时间
-  var NUDGE_DAYS = 7;                           // 备份提醒周期
+  var NUDGE_CNT_KEY = 'fitbuddy_backup_nudge_cnt'; // 被忽略的次数(用于越躲越勤)
+  var NUDGE_DAYS = 7;                           // 备份过之后的提醒周期
+  var NUDGE_DAYS_NEVER = 2;                     // 一次都没备份过: 周期压到 2 天
+  var NUDGE_MAX_SNOOZE = 3;                     // 最多能躲几次, 之后每次进首页都提
   var URL_PARAM = 'restore';                    // 恢复链接: ?restore=FB2:xxx
   // 判断"有真数据"只看这几个 key —— fitbuddy_fab_hint 这类偏好设置不算，
   // 否则刚装 App 点了两下就催备份，很烦。
@@ -139,12 +142,21 @@
     if (!last) return 9999;                       // 从没备份过
     return Math.floor((Date.now() - last) / 86400000);
   }
+  // ⚠️ 这里的分级是被真实事故逼出来的: san 的训练数据丢了, 而且从没生成过恢复码。
+  // 旧逻辑是「点一次 ✕ 就静默 7 天」—— 躲两次就再也没见过这条提醒,
+  // 于是 App 用了一两个月、一条备份都没存过, 缓存一清全没了。
+  // 现在: 一次都没备份过的, 周期压到 2 天; 躲的次数越多来得越勤;
+  // 躲够 3 次之后每次进首页都提(只留"生成"和"下载"两个出口, 不再给"稍后")。
   function nudgeDays() {
     if (!hasRealData()) return 0;
     var days = daysSinceBackup();
-    if (days < NUDGE_DAYS) return 0;
+    var never = days >= 9999;
+    var period = never ? NUDGE_DAYS_NEVER : NUDGE_DAYS;
+    if (days < period) return 0;
+    var snoozed = parseInt(lsGet(NUDGE_CNT_KEY) || '0', 10) || 0;
+    if (snoozed >= NUDGE_MAX_SNOOZE) return days;     // 躲够次数了, 不再放行
     var dismissed = parseInt(lsGet(NUDGE_KEY) || '0', 10) || 0;
-    if (Date.now() - dismissed < NUDGE_DAYS * 86400000) return 0;
+    if (Date.now() - dismissed < period * 86400000) return 0;
     return days;
   }
 
@@ -155,6 +167,12 @@
     var host = document.getElementById('page-plan');
     if (!days || !host || document.getElementById('fbBackupNudge')) return;
 
+    var never = days >= 9999;
+    var snoozed = parseInt(lsGet(NUDGE_CNT_KEY) || '0', 10) || 0;
+    // 躲够次数后不再给"稍后"这个出口 —— 只留两个真正能保住数据的按钮
+    var allowLater = snoozed < NUDGE_MAX_SNOOZE;
+    var laterDays = never ? NUDGE_DAYS_NEVER : NUDGE_DAYS;
+
     var bar = document.createElement('div');
     bar.id = 'fbBackupNudge';
     bar.style.cssText = 'margin:12px 16px 0;padding:12px 14px;border-radius:14px;'
@@ -164,17 +182,28 @@
       + '<div style="font-size:19px;line-height:1.25;">🧩</div>'
       + '<div style="flex:1;min-width:0;">'
       + '<div style="font-size:13px;font-weight:800;color:var(--text,#333);margin-bottom:3px;">'
-      + (days > 999 ? '训练数据还没备份过' : '已经 ' + days + ' 天没备份了') + '</div>'
+      + (never ? '训练数据还没备份过' : '已经 ' + days + ' 天没备份了') + '</div>'
       + '<div style="font-size:11.5px;color:var(--text,#333);opacity:.7;line-height:1.55;">'
-      + '微信或浏览器一清缓存就没了,换手机也不跟着走。<br>'
-      + '生成一段恢复码存进微信收藏,换环境点开就能全部回来。</div>'
+      + (never
+        ? '数据只存在这台设备的浏览器里。<b>微信一清缓存就全没了</b>,换手机也不跟着走,'
+          + '而且<b>清了就找不回来</b> —— 没有服务器在帮你存。'
+        : '换手机或清缓存就没了,建议再存一份。')
+      + '</div>'
       + '<div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;">'
+      // 💾 下载文件是最省事也最稳的一条路: 点一下就落到手机「文件」里,
+      // 既不占微信收藏也不用手抄几百字符。清微信缓存 / 清浏览器缓存都影响不到它。
+      + '<button id="fbNudgeDl" style="padding:7px 13px;border:none;border-radius:10px;'
+      + 'font-size:12px;font-weight:700;color:#fff;cursor:pointer;'
+      + 'background:linear-gradient(135deg,#16A34A,#4ADE80);">💾 下载备份文件</button>'
       + '<button id="fbNudgeGen" style="padding:7px 13px;border:none;border-radius:10px;'
       + 'font-size:12px;font-weight:700;color:#fff;cursor:pointer;'
       + 'background:linear-gradient(135deg,#FF6B35,#FF8E53);">生成恢复码</button>'
-      + '<button id="fbNudgeLater" style="padding:7px 11px;border-radius:10px;font-size:12px;'
-      + 'font-weight:600;cursor:pointer;border:1.5px solid var(--border,#eee);'
-      + 'color:var(--text2,#888);background:transparent;">' + NUDGE_DAYS + ' 天后再说</button>'
+      + (allowLater
+        ? '<button id="fbNudgeLater" style="padding:7px 11px;border-radius:10px;font-size:12px;'
+          + 'font-weight:600;cursor:pointer;border:1.5px solid var(--border,#eee);'
+          + 'color:var(--text2,#888);background:transparent;">' + laterDays + ' 天后再说</button>'
+        : '<span style="font-size:11px;opacity:.55;color:var(--text2,#888);align-self:center;">'
+          + '存一次就不再提醒</span>')
       + '</div></div>'
       + '<div id="fbNudgeX" style="font-size:15px;opacity:.35;cursor:pointer;padding:2px 4px;'
       + 'color:var(--text,#333);line-height:1;">✕</div>'
@@ -182,18 +211,45 @@
 
     host.insertBefore(bar, host.firstChild);
 
+    // 标记"已经备份过":提醒周期立刻回到宽松档,下次提醒是 7 天后
+    function markBackedUp() {
+      lsSet(LAST_BACKUP_KEY, Date.now());
+      lsSet(NUDGE_CNT_KEY, 0);
+      updateBackupHint();
+    }
+
     function dismiss(remember) {
-      if (remember) lsSet(NUDGE_KEY, Date.now());
+      if (remember) {
+        lsSet(NUDGE_KEY, Date.now());
+        lsSet(NUDGE_CNT_KEY, snoozed + 1);   // 越躲越勤
+      }
       bar.remove();
     }
     document.getElementById('fbNudgeX').addEventListener('click', function () {
       dismiss(true); trackEvent('backup_nudge_dismiss');
     });
-    document.getElementById('fbNudgeLater').addEventListener('click', function () {
+    var laterBtn = document.getElementById('fbNudgeLater');
+    if (laterBtn) laterBtn.addEventListener('click', function () {
       dismiss(true); trackEvent('backup_nudge_later');
     });
     document.getElementById('fbNudgeGen').addEventListener('click', function () {
       dismiss(false); trackEvent('backup_nudge_gen'); showBackupModal();
+    });
+    document.getElementById('fbNudgeDl').addEventListener('click', function () {
+      trackEvent('backup_nudge_download');
+      // exportData() 在 planner-core.js 里,下载 FitBuddy_backup_YYYY-MM-DD.json。
+      // 文件落到手机「文件」App / 下载目录,是最耐操的一份冷备份 ——
+      // 清微信缓存、清浏览器缓存都动不了它,换手机传过去也能用「导入数据」读回。
+      if (typeof window.exportData === 'function') {
+        try {
+          window.exportData();
+          markBackedUp();
+          toast('✅ 备份文件已下载,建议再发一份到微信「文件传输助手」');
+          dismiss(false);
+          return;
+        } catch (e) {}
+      }
+      toast('下载没成功,试试「生成恢复码」存微信收藏');
     });
   }
 
@@ -290,13 +346,22 @@
   window.showBackupModal = async function () {
     var code = await generateCode();
     if (!code) { toast('😊 还没有数据,先生成一份训练计划吧'); return; }
-    try { localStorage.setItem(LAST_BACKUP_KEY, String(Date.now())); } catch (e) {}
+    try {
+      localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()));
+      // 备份过了就把"躲了几次"清零,提醒回到宽松档(7 天一次)
+      localStorage.setItem(NUDGE_CNT_KEY, '0');
+    } catch (e) {}
     trackEvent('backup_code_gen');
     updateBackupHint();
     shell('🧩 你的恢复码',
       '复制后存到手机备忘录或微信「文件传输助手」。<br>数据丢失 / 换手机 / 换网址时,粘贴回来即可恢复全部进度。',
       '<textarea id="fbCodeTa" readonly style="' + taStyle + '">' + code + '</textarea>' +
       '<div style="font-size:11px;opacity:.5;margin-top:6px;color:var(--text,#333);">码长 ' + code.length + ' 字符 · 生成于 ' + new Date().toLocaleDateString() + '</div>' +
+      // 💾 下载文件排第一: 点一下就完事, 不用复制粘贴, 也不用去微信收藏里翻。
+      // 手机下载目录 / 「文件」App 是独立于微信和浏览器缓存的地方, 最耐操。
+      '<button id="fbDlBtn" style="width:100%;margin-top:12px;padding:12px;border:none;' +
+      'border-radius:12px;font-size:14px;font-weight:700;color:#fff;cursor:pointer;' +
+      'background:linear-gradient(135deg,#16A34A,#4ADE80);">💾 下载备份文件(最省事)</button>' +
       '<button id="fbCopyBtn" style="' + btnStyle + '">📋 复制恢复码</button>' +
       '<button id="fbLinkBtn" style="width:100%;margin-top:8px;padding:11px;border-radius:12px;' +
       'font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid var(--primary,#FF6B35);' +
@@ -304,6 +369,20 @@
       '<div style="font-size:11px;opacity:.55;margin-top:7px;line-height:1.5;color:var(--text,#333);">' +
       '链接 = 网址 + 恢复码。存到微信收藏后,<b>换手机 / 清了缓存</b>点开它就能自动恢复,' +
       '不用手抄上面那一大段码。<br>⚠️ 链接里含你的训练数据,自己存就好,别转发给别人。</div>');
+    var dlBtn = document.getElementById('fbDlBtn');
+    if (!window.exportData) dlBtn.style.display = 'none';
+    dlBtn.addEventListener('click', function () {
+      trackEvent('backup_modal_download');
+      try {
+        window.exportData();
+        dlBtn.textContent = '✅ 已下载到手机「文件」里';
+        toast('✅ 备份文件已下载,建议再发一份到微信「文件传输助手」');
+        setTimeout(function () { dlBtn.textContent = '💾 下载备份文件(最省事)'; }, 2500);
+      } catch (e) {
+        toast('下载没成功,用下面的「复制恢复码」存备忘录');
+      }
+    });
+
     var copyBtn = document.getElementById('fbCopyBtn');
     copyBtn.addEventListener('click', function () {
       var ta = document.getElementById('fbCodeTa');
