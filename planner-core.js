@@ -10240,6 +10240,11 @@ function resetAllData() {
       localStorage.removeItem(k);
     }
   }
+  // ⚠️ 快照现在改成「只增不减」了(见 persistence.js 的 updateWindowName),
+  //    删 localStorage 触发的那次重建会把旧数据并回来 —— 所以这里必须显式清掉 window.name,
+  //    否则点完重置、一刷新又被自己"救"回来,用户会以为重置没生效。
+  try { window.name = ''; } catch (e) {}
+
   // 用非 fitbuddy_ 前缀记一笔:它不会被上面的循环删掉,下次开 ?prodiag=1 能看到
   // "这里曾经有数据,某天被手动重置了" —— 否则数据没了完全查不出是自己删的还是被清的。
   try { localStorage.setItem("fb_lastreset_at", String(Date.now())); } catch (e) {}

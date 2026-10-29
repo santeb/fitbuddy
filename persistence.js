@@ -128,6 +128,21 @@
       var serialized = '';
       var snap = buildSnapshot(SNAPSHOT_KEYS.concat(SNAPSHOT_KEYS_EXTRA));
       if (!Object.keys(snap).length) return;
+      // ⚠️ 快照只增不减。这是被真实事故逼出来的：
+      //    缓存被清过之后又练了一次，trainlog 只剩 259 字符；而 window.name 里躺着
+      //    清之前的完整记录（9360 字符）。旧逻辑每次写数据都**无脑重建整份快照**，
+      //    于是残缺的那份把完整的那份覆盖了 —— 最后一份完整数据就这么没了。
+      //    现在逐个 key 比较：旧快照里更长的那份一律保留，只把更长的新值并进来。
+      //    （真的要清空是 resetAllData 的职责，那里会显式 window.name = ''）
+      var prev = readWindowName();
+      if (prev) {
+        Object.keys(prev).forEach(function (k) {
+          var ov = prev[k];
+          if (ov === null || ov === undefined) return;
+          var nv = snap[k];
+          if (nv === undefined || String(ov).length > String(nv).length) snap[k] = ov;
+        });
+      }
       serialized = encodeSnapshot(snap);
       // 容量兜底：超过 1.5 MB 就退回到只存核心那批（实测各浏览器普遍 2-3 MB）
       // —— 不能因为加了 4 个新 key 反而把最要紧的训练日志一起挤掉。
@@ -292,6 +307,80 @@
     });
   }
 
+  // ---------- 快照比现有数据更全 → 主动提示救援 ----------
+  // 只算「localStorage 里确实有一份，但快照里那份明显更长」的。
+  // localStorage 完全为空的不算 —— 那种走上面 showRestoreToast 的整份恢复流程。
+  function snapLongerKeys(snap) {
+    if (!snap) return [];
+    var out = [];
+    Object.keys(snap).forEach(function (k) {
+      var cur = null;
+      try { cur = localStorage.getItem(k); } catch (e) {}
+      if (cur === null) return;   // 完全缺失 → 归整份恢复流程管
+      var sv = String(snap[k] === null || snap[k] === undefined ? '' : snap[k]);
+      if (!sv) return;
+      if (sv.length > String(cur).length) {
+        out.push({ key: k, cur: String(cur).length, snap: sv.length });
+      }
+    });
+    return out;
+  }
+
+  // 提示条：告诉用户「还有一份更全的，去救援」。
+  // 注意 **忽略 ≠ 删除** —— 关掉提示不会动 window.name，快照继续留着当底牌。
+  function showSnapLongerToast(list) {
+    if (!list || !list.length) return;
+    if (document.getElementById('fb-snap-longer')) return;
+    var run = function () {
+      if (!document.body || document.getElementById('fb-snap-longer')) return;
+      try {
+        if (sessionStorage.getItem('fb_snaplonger_dismiss')) return;
+      } catch (e) {}
+      var c = 0, s = 0;
+      list.forEach(function (x) { c += x.cur; s += x.snap; });
+      var names = list.slice(0, 3).map(function (x) {
+        return x.key.replace(NS_PREFIX, '');
+      }).join('、') + (list.length > 3 ? ' 等' + list.length + ' 项' : '');
+
+      var wrap = document.createElement('div');
+      wrap.id = 'fb-snap-longer';
+      wrap.setAttribute('role', 'dialog');
+      wrap.style.cssText = [
+        'position:fixed', 'left:50%', 'transform:translateX(-50%)',
+        'bottom:88px', 'z-index:999998',
+        'background:linear-gradient(135deg,#D97706 0%,#F59E0B 100%)',
+        'color:#fff', 'padding:13px 15px', 'border-radius:14px',
+        'box-shadow:0 8px 28px rgba(217,119,6,.45)',
+        'display:flex', 'align-items:center', 'gap:10px',
+        'font-size:14px', 'max-width:min(94vw,430px)',
+        'font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif'
+      ].join(';');
+      wrap.innerHTML = [
+        '<div style="flex:1;line-height:1.45;min-width:0">',
+        '  <div style="font-weight:700;margin-bottom:2px">⚠️ 检测到更完整的训练数据</div>',
+        '  <div style="opacity:.93;font-size:11.5px">' + escapeHtml(names) + '：现在 ' + c,
+        '  字符，本地快照里还有 <b>' + s + '</b> 字符</div>',
+        '</div>',
+        '<button id="fb-sl-go" style="background:#fff;color:#D97706;border:0;padding:7px 12px;',
+        'border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;white-space:nowrap">去恢复</button>',
+        '<button id="fb-sl-no" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.55);',
+        'padding:7px 10px;border-radius:8px;cursor:pointer;font-size:13px;white-space:nowrap">忽略</button>'
+      ].join('');
+      document.body.appendChild(wrap);
+
+      wrap.querySelector('#fb-sl-no').onclick = function () {
+        try { sessionStorage.setItem('fb_snaplonger_dismiss', '1'); } catch (e) {}
+        wrap.parentNode && wrap.parentNode.removeChild(wrap);
+      };
+      wrap.querySelector('#fb-sl-go').onclick = function () {
+        try { location.href = location.pathname + '?fbrescue=1'; } catch (e) {}
+      };
+    };
+    if (document.body) run();
+    else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+    else setTimeout(run, 300);
+  }
+
   // ---------- 初始化 ----------
   function init() {
     wrapStorage();
@@ -303,6 +392,22 @@
       .then(function () { return restoreFromIDB(); })
       .then(function (n) {
         restoredCount = n || 0;
+
+        // ⚠️⚠️ 这一行是 san 数据丢失的真正最后一刀，看清楚：
+        //    旧逻辑是「localStorage 里有**任何** fitbuddy_ 数据 → 把 window.name 快照清掉」。
+        //    门槛是「有任何」，不是「有完整的」。缓存被清过之后又练了一次的情况下：
+        //      · trainlog 只剩 259 字符的残留 → hasAnyFitBuddyData() 照样 true
+        //      · window.name 里躺着清之前的完整记录 9360 字符 → **直接被删**
+        //    也就是**每次打开 App，最后一份完整数据就被抹一次**。救援当然什么都扫不到。
+        //    现在改成先比大小：快照里只要有 key 比 localStorage 现在这份更长，
+        //    就**留住快照**，并提示用户去救援。只有快照确实不比现在全时才清。
+        var bigger = snapLongerKeys(winSnap);
+        window.__fbSnapLongerKeys = bigger;
+        if (bigger.length) {
+          try { showSnapLongerToast(bigger); } catch (e) {}
+          return null;
+        }
+
         // localStorage 已有数据 → window.name 是冗余的，清掉避免污染下次跨域
         if (hasAnyFitBuddyData()) {
           if (winSnap) {
