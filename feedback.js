@@ -167,42 +167,66 @@
   }
 
   // ---------- 邮件专用（短包） ----------
-  // iOS / 微信内置浏览器对 mailto 的 URL 长度有硬限制（约 2KB），超了就把整串 query
-  // 当成收件人原样显示，用户看到一堆 %E4%B8... 乱码，邮件也发不出去。
-  // 中文经 encodeURIComponent 一个字变 9 个字节，完整反馈包几百字必然爆。
-  // 所以正文用精简版，完整包先塞剪贴板，用户想贴可以自己贴。
-  var MAIL_URL_MAX = 900;
+  // 手机邮件客户端对 mailto 链接有硬长度上限，超了就不再解析 ? 后面的参数，
+  // 把整串编码原样塞进「收件人」框（收件人框不做 %xx 解码，所以显示成乱码）。
+  // 实测完整反馈包 1186 字符就会这样。中文经 encodeURIComponent 一个字变 9 个字符，
+  // 所以这里设 600 的安全线（不到出事长度的一半），并逐级压缩正文去够这条线。
+  // 万一连最精简版都超，返回 null —— 宁可让用户复制，也绝不再跳一条会出错的 mailto。
+  var MAIL_URL_MAX = 600;
   function mailShort(type) {
     return type === 'idea' ? '建议' : (type === 'other' ? '其他' : 'Bug');
   }
   // 标签一律用短词：中文一个字编码后是 9 个字符，能省就省
-  function buildMailPack(type, text) {
+  function buildMailPack(type, text, cut) {
     var lines = [];
     lines.push('[' + mailShort(type) + ']');
-    lines.push(String(text || '').trim().slice(0, 80));
+    lines.push(String(text || '').trim().slice(0, cut));
     lines.push('环境: ' + envLine());
     lines.push('页面: ' + pageName() + ' ' + screenLine());
     var err = errLines();
     if (err) lines.push('报错: ' + err.split('\n')[0].slice(0, 60));
+    lines.push('(完整包已复制,可粘贴)');
     return lines.join('\n');
   }
-  // 邮件正文只放精简包（完整包走剪贴板）；万一还超长就退到只剩一句话，绝不让 URL 撑爆。
+  // 逐级压缩直到达标：先带完整环境信息，描述字数 40 → 20 → 12 → 6 一路砍。
+  // 达标才返回链接，砍到底还不达标就返回 null，由调用方改走复制。
   function buildMailto(type, text) {
-    var head = '[FitBuddy ' + mailShort(type) + '] ' + String(text || '').trim().slice(0, 20);
-    function mk(body) {
+    var t = String(text || '').trim();
+    function mk(subj, body) {
       return 'mailto:' + DEV.mail
-        + '?subject=' + encodeURIComponent(head)
+        + '?subject=' + encodeURIComponent(subj)
         + '&body=' + encodeURIComponent(body);
     }
-    var list = [
-      buildMailPack(type, text),
-      '[' + mailShort(type) + '] ' + String(text || '').trim().slice(0, 40)
-    ];
-    for (var i = 0; i < list.length; i++) {
-      var u = mk(list[i]);
+    var cuts = [40, 20, 12, 6];
+    for (var i = 0; i < cuts.length; i++) {
+      var n = cuts[i];
+      var u = mk('[' + mailShort(type) + '] ' + t.slice(0, Math.min(n, 12)),
+                 buildMailPack(type, t, n));
       if (u.length <= MAIL_URL_MAX) return u;
     }
-    return mk(list[list.length - 1]);
+    var last = mk(mailShort(type), '[' + mailShort(type) + '] ' + t.slice(0, 6));
+    return last.length <= MAIL_URL_MAX ? last : null;
+  }
+  // 微信 / 小红书 / QQ 等内置浏览器大多不处理 mailto：点了要么没反应，要么把整串
+  // 编码塞进收件人。这些环境里干脆不跳邮件，直接让用户复制。
+  function mailDisabled() { return !!inApp(); }
+  // 静默复制：不弹提示，失败也不吭声。邮件正文装不下完整包，但剪贴板装得下。
+  function silentCopy(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(null, function () {});
+        return;
+      }
+    } catch (e) {}
+    try {
+      var el = document.createElement('textarea');
+      el.value = text;
+      el.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      el.remove();
+    } catch (e2) {}
   }
 
   // ---------- UI ----------
@@ -303,7 +327,8 @@
     ov.id = 'fbFbOv';
     var subBtns = '';
     if (DEV.mail) {
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail">📧 发邮件</a>';
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail">'
+        + (mailDisabled() ? '📋 复制反馈包' : '📧 发邮件') + '</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
@@ -413,19 +438,33 @@
     var mailBtn = document.getElementById('fbFbMail');
     if (mailBtn) {
       mailBtn.addEventListener('click', function (e) {
-        var txt = (ta.value || '').trim();
-        if (!txt) { e.preventDefault(); toast('先写一句发生了什么 🙂'); ta.focus(); return; }
-        var pack = currentPack();
         e.preventDefault();
-        // 完整包先静默塞进剪贴板：邮件正文放不下它，但用户想贴就能贴
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(pack).then(null, function () {});
-          }
-        } catch (err0) {}
-        toast('完整反馈包已复制，可在邮件正文长按粘贴');
-        location.href = buildMailto(type, txt);
+        var txt = (ta.value || '').trim();
+        if (!txt) { toast('先写一句发生了什么 🙂'); ta.focus(); return; }
+        var pack = currentPack();
+        // 两种情况绝不跳 mailto：① 内置浏览器（点了没反应或收件人变乱码）
+        // ② 正文砍到最短还是超预算（跳了就是收件人一坨编码）。都改成复制完整包。
+        var blocked = mailDisabled();
+        var url = blocked ? null : buildMailto(type, txt);
+        if (!url) {
+          silentCopy(pack);
+          toast(blocked
+            ? '当前环境打不开邮件 App，反馈包已复制，发到 ' + DEV.mail + ' 就行'
+            : '内容太长，反馈包已复制，发到 ' + DEV.mail + ' 就行');
+          event(blocked ? 'feedback_mail_webview' : 'feedback_mail_blocked', { type: type });
+          afterSubmit();
+          return;
+        }
+        // 完整包先塞剪贴板，邮件正文放不下，用户想贴随时能贴
+        silentCopy(pack);
+        location.href = url;
         event('feedback_mail', { type: type });
+        // 兜底：3 秒后还停在本页，说明邮件 App 根本没被唤起，提示手动发
+        setTimeout(function () {
+          if (document.visibilityState === 'visible') {
+            toast('没打开邮件？反馈包已复制，手动发到 ' + DEV.mail + ' 就行');
+          }
+        }, 3000);
         afterSubmit();
       });
     }
