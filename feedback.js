@@ -1,8 +1,9 @@
 /* FitBuddy 反馈通道 + 全局错误采集 (feedback.js) v1
  *
  * 「找 Bug · 公开测试」的落地：没有后端、没有第三方表单、零成本。
- * 用户点一下 → 自动把"设备/页面/计划/最近报错"打包成一段文本 → 复制走 →
- * 粘到微信/邮件/小红书私信即可。用户不用自己描述环境，那部分我们替他写。
+ * 用户点一下 → 自动把"设备/页面/计划/最近报错"打包成一段文本 →
+ * 「发邮件」直接跳 mailto（正文自动填好），「去群里说」进微信群。
+ * 用户不用自己描述环境，那部分我们替他写。
  *
  * 顺带做的：全局 JS 错误采集（存 localStorage，最多 10 条）。
  * 用户说"点了没反应"时，错误日志才是能真正定位的东西。
@@ -200,16 +201,13 @@
     var cuts = [40, 20, 12, 6];
     for (var i = 0; i < cuts.length; i++) {
       var n = cuts[i];
-      var u = mk('[' + mailShort(type) + '] ' + t.slice(0, Math.min(n, 12)),
+      var u = mk(('[' + mailShort(type) + '] ' + t.slice(0, Math.min(n, 12))).trim(),
                  buildMailPack(type, t, n));
       if (u.length <= MAIL_URL_MAX) return u;
     }
     var last = mk(mailShort(type), '[' + mailShort(type) + '] ' + t.slice(0, 6));
     return last.length <= MAIL_URL_MAX ? last : null;
   }
-  // 微信 / 小红书 / QQ 等内置浏览器大多不处理 mailto：点了要么没反应，要么把整串
-  // 编码塞进收件人。这些环境里干脆不跳邮件，直接让用户复制。
-  function mailDisabled() { return !!inApp(); }
   // 静默复制：不弹提示，失败也不吭声。邮件正文装不下完整包，但剪贴板装得下。
   function silentCopy(text) {
     try {
@@ -327,9 +325,9 @@
     ov.id = 'fbFbOv';
     var subBtns = '';
     if (DEV.mail) {
-      // 内置浏览器打不开邮件 App，这个按钮退化成「复制邮箱」，不跳链接
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail">'
-        + (mailDisabled() ? '📧 复制邮箱' : '📧 发邮件') + '</a>';
+      // 一律给真实 mailto href，让浏览器走原生 scheme 跳转（比 JS 改 location 更容易被接住）。
+      // 微信 iOS 那类环境确实可能跳不动，但跳不动由下面的兜底接，不提前把按钮降级成复制。
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail" rel="noopener">📧 发邮件</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
@@ -348,8 +346,9 @@
       + '挑一个顺手的渠道就行。<br>发邮件会自动带上设备、页面和最近的报错，<br>你只需要补一句「发生了什么」。'
       + '</div>'
       + '<div class="fb-fb-subs" style="margin-top:14px">' + subBtns + '</div>'
-      + (DEV.mail && mailDisabled()
-          ? '<div class="fb-fb-note">这个环境打不开邮件 App，<br>邮箱 <b style="user-select:all;font-size:12.5px">'
+      + (DEV.mail && inApp()
+          ? '<div class="fb-fb-note">这个环境偶尔点不动邮件：<br>真没反应的话，点右上角 <b>···</b> '
+            + '→ 在浏览器打开，或者直接发到<br><b style="user-select:all;font-size:12.5px">'
             + DEV.mail + '</b>（长按可复制）</div>'
           : '')
       + '</div>';
@@ -384,34 +383,31 @@
 
     var mailBtn = document.getElementById('fbFbMail');
     if (mailBtn) {
+      // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
+      // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
+      var url = buildMailto(type, '');
+      if (url) mailBtn.href = url;
       mailBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        // 内置浏览器打不开邮件 App：点了只把邮箱复制走，不跳链接
-        if (mailDisabled()) {
-          silentCopy(DEV.mail);
-          toast('邮箱已复制：' + DEV.mail + '，写一句发生了什么发过来就行');
-          event('feedback_mail_copyaddr', { type: type });
-          return;
-        }
-        // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
-        // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
-        var url = buildMailto(type, '');
         if (!url) {
+          // 包太长，只能复制
+          e.preventDefault();
           silentCopy(DEV.mail);
           toast('邮箱已复制：' + DEV.mail);
           event('feedback_mail_blocked', { type: type });
           return;
         }
-        location.href = url;
-        event('feedback_mail', { type: type });
+        // 先跳（a 标签原生处理，不 preventDefault）；同时把邮箱复制好。
+        // 微信 iOS 等环境 mailto 可能被系统拦掉，复制这条后路不管成没成都用得上。
+        silentCopy(DEV.mail);
+        event('feedback_mail', { type: type, env: inApp() || 'browser' });
         afterSubmit();
-        // 兜底：3 秒后还停在本页，说明邮件 App 根本没被唤起
+        // 兜底：1.4 秒后还停在本页，说明邮件 App 没被唤起，把后路明说
         setTimeout(function () {
           if (document.visibilityState === 'visible') {
-            silentCopy(DEV.mail);
-            toast('没打开邮件？邮箱已复制：' + DEV.mail);
+            toast('邮件没自动打开的话，邮箱已经复制好了：' + DEV.mail
+              + (inApp() ? '（微信里可点右上角 ··· → 在浏览器打开）' : ''));
           }
-        }, 3000);
+        }, 1400);
       });
     }
 
