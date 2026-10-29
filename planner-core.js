@@ -9592,6 +9592,151 @@ function openTimerFab() {
   startRestTimerCustom(60);
 }
 
+// ============ FAB 可拖动 ============
+// 为什么非要能拖: 这个按钮固定在右下角, 练卧推/划船时正好压在小臂下面, 或者挡住
+// 计划表最后一列; 它又是全局唯一能开组间计时器的入口, 藏掉不行, 只能让用户挪。
+//
+// 三个必须处理好的坑:
+//   ① 点击 vs 拖动 —— 手指按下去必然抖几像素, 用 6px 阈值区分; 判定为拖动后
+//      松手会补发一次 click, 必须吃掉, 否则每挪一次位置都弹出计时器。
+//   ② 不能拖出屏幕, 也不能骑到 tab bar(固定高 56px)上 —— 骑上去等于按钮失灵。
+//   ③ 位置要跨会话记住, 而且存「相对比例」而不是像素 —— 同一个站会在竖屏、
+//      横屏、桌面宽屏之间切来切去, 存像素会把按钮甩到屏幕外面去。
+(function(){
+  var KEY  = 'fitbuddy_fab_pos';
+  var SIZE = 52;   // 必须和 CSS 里 .fab-timer 的 width/height 一致
+  var PAD  = 8;    // 离屏幕边缘的最小间距
+  var DOWN = 64;   // 底部禁区 = tab bar 56 + 8 呼吸, 防止按钮压在导航栏上
+  var SLOP = 6;    // 超过这个位移才算「拖」, 否则算「点」
+
+  var el = document.getElementById('fabTimer');
+  if (!el) return;
+
+  var dragging = false, moved = false;
+  var startX = 0, startY = 0, baseX = 0, baseY = 0;
+
+  // 当前视口下允许摆放的矩形范围
+  function limits(){
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var minX = PAD, maxX = Math.max(minX, vw - SIZE - PAD);
+    var minY = PAD, maxY = Math.max(minY, vh - SIZE - DOWN);
+    return { minX:minX, maxX:maxX, minY:minY, maxY:maxY };
+  }
+
+  function place(x, y){
+    var L = limits();
+    x = Math.min(Math.max(x, L.minX), L.maxX);
+    y = Math.min(Math.max(y, L.minY), L.maxY);
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.right  = 'auto';   // 作废 CSS 里的 right:calc(50% - 195px)
+    el.style.bottom = 'auto';   // 作废 CSS 里的 bottom:90px
+  }
+
+  function save(x, y){
+    var L = limits();
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        x: (x - L.minX) / Math.max(1, L.maxX - L.minX),
+        y: (y - L.minY) / Math.max(1, L.maxY - L.minY)
+      }));
+    } catch(e) {}   // 隐私模式下 localStorage 直接抛错, 记不住位置也不该影响拖动
+  }
+
+  function restore(){
+    var raw = null;
+    try { raw = localStorage.getItem(KEY); } catch(e) { return false; }
+    if (!raw) return false;
+    try {
+      var o = JSON.parse(raw);
+      if (typeof o.x !== 'number' || typeof o.y !== 'number') return false;
+      var L = limits();
+      place(L.minX + o.x * (L.maxX - L.minX), L.minY + o.y * (L.maxY - L.minY));
+      return true;
+    } catch(e) { return false; }
+  }
+
+  restore();
+
+  function pt(e){
+    var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    return { x: t.clientX, y: t.clientY };
+  }
+
+  function onDown(e){
+    if (e.button && e.button > 0) return;      // 只响应主键
+    var p = pt(e);
+    var r = el.getBoundingClientRect();
+    dragging = true; moved = false;
+    startX = p.x; startY = p.y;
+    baseX = r.left; baseY = r.top;
+    // 捕获指针: 手指滑得快、瞬间跑出按钮范围时也不会把这次拖动断掉
+    if (el.setPointerCapture && e.pointerId != null) {
+      try { el.setPointerCapture(e.pointerId); } catch(err) {}
+    }
+  }
+
+  function onMove(e){
+    if (!dragging) return;
+    var p = pt(e);
+    var dx = p.x - startX, dy = p.y - startY;
+    if (!moved) {
+      if (Math.abs(dx) + Math.abs(dy) < SLOP) return;   // 微抖, 还算「点」不算「拖」
+      moved = true;
+      el.classList.add('fab-dragging');
+    }
+    if (e.cancelable) e.preventDefault();
+    place(baseX + dx, baseY + dy);
+  }
+
+  function onUp(){
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('fab-dragging');
+    if (moved) {
+      var r = el.getBoundingClientRect();
+      save(r.left, r.top);
+      // moved 留着不清, 交给下面的 click 处理器把这一次补发的 click 吃掉
+    }
+  }
+
+  if (window.PointerEvent) {
+    el.addEventListener('pointerdown', onDown);
+    // move/up 挂在 window 上: 某些老内核不支持 setPointerCapture,
+    // 手指跑出按钮后事件就收不到了, 挂 window 兜住这种情况
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  } else {
+    el.addEventListener('touchstart', onDown, { passive:true });
+    window.addEventListener('touchmove', onMove, { passive:false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
+    el.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  // 点击必须在 JS 里绑(原因见 index.html 里按钮上方的注释)。
+  // 内联 onclick 早就注册好了, 永远比这个监听器先跑, 只有挪进来才能用 moved 拦住。
+  el.addEventListener('click', function(e){
+    if (moved) { moved = false; e.preventDefault(); e.stopPropagation(); return; }
+    openTimerFab();
+  });
+
+  // 旋屏 / 改窗口大小: 位置是相对比例存的, 重新落一次就能贴回可见区
+  function reflow(){ if (el.style.left) restore(); }
+  window.addEventListener('resize', reflow);
+  window.addEventListener('orientationchange', function(){ setTimeout(reflow, 250); });
+
+  // 拖到角落想要复位时, 控制台跑一下 fbResetFab()
+  window.fbResetFab = function(){
+    try { localStorage.removeItem(KEY); } catch(e) {}
+    el.style.left = el.style.top = '';
+    el.style.right = el.style.bottom = '';
+  };
+})();
+
 function startRestTimerCustom(sec) {
   if (typeof track === 'function') track('timer_start', { sec: sec });
   // 高亮当前预设
