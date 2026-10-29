@@ -1351,14 +1351,61 @@ input,select{font-family:inherit;}
 </footer>
 
 <script>
-// PWA Service Worker 注册
-if ('serviceWorker' in navigator) {
+// PWA Service Worker 注册 + 版本自救
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+
+  // 紧急清缓存入口: 地址栏打开 ?clear=1 → 注销 SW、清空全部缓存、回到干净首页。
+  // 用武之地: 微信 webview 的缓存非常顽固, 用户在手机上会一直停在几周前的版本,
+  // 表现为"某些功能凭空没了"。带 query 的 URL 不命中旧的 HTTP 缓存, 必定走网络,
+  // 所以这条链接一定能拿到最新的 index.html, 从而执行到这里的清理代码。
+  try {
+    if (/[?&]clear=1\b/.test(location.search)) {
+      var done = function () {
+        try { history.replaceState(null, '', location.pathname + (location.hash || '')); } catch (e) {}
+        try { location.reload(); } catch (e) {}
+      };
+      var chain = Promise.resolve();
+      if (navigator.serviceWorker.getRegistrations) {
+        chain = chain.then(function () {
+          return navigator.serviceWorker.getRegistrations();
+        }).then(function (regs) {
+          return Promise.all((regs || []).map(function (r) { return r.unregister(); }));
+        });
+      }
+      if (window.caches && caches.keys) {
+        chain = chain.then(function () { return caches.keys(); })
+          .then(function (keys) {
+            return Promise.all((keys || []).map(function (k) { return caches.delete(k); }));
+          });
+      }
+      chain.catch(function () {}).then(done);
+      return;
+    }
+  } catch (e) {}
+
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('sw.js').catch(function(e) {
+    navigator.serviceWorker.register('sw.js').then(function(reg) {
+      if (!reg) return;
+      // 发现新版本: 新 SW 装好后自动刷新一次, 让用户立刻拿到新代码。
+      // sessionStorage 打标记只刷一次, 防止反复 reload。
+      reg.addEventListener('updatefound', function () {
+        var nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', function () {
+          if (nw.state !== 'installed' || !navigator.serviceWorker.controller) return;
+          try {
+            if (sessionStorage.getItem('fitbuddy_sw_reloaded')) return;
+            sessionStorage.setItem('fitbuddy_sw_reloaded', '1');
+          } catch (e) {}
+          try { location.reload(); } catch (e) {}
+        });
+      });
+    }).catch(function(e) {
       console.log('SW 注册失败（离线不可用，功能正常）:', e.message);
     });
   });
-}
+})();
 </script>
 
 <script>

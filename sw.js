@@ -2,10 +2,14 @@
 // 生产环境禁用 console.log（控制台执行 self._DEBUG=1 可重新启用）
 (function(){ if (!self._DEBUG) { var _noOp=function(){}; try{console.log=_noOp;}catch(e){} } })();
 
-// ⚠️ 发版必须 bump 这个数字: JS/CSS 走 cacheFirst(第 91 行), 只改 index.html 里的 ?v=NNN
-//   不够 —— 旧 key 的条目还躺在同名 cache 里, 用户拿到的仍是旧代码。
-//   名字一变, activate 里"删掉不在白名单的 cache"那段就会自动清掉旧的。
-var APP_VER = '10';
+// ⚠️ 发版必须 bump 这个数字。名字一变, activate 里"删掉不在白名单的 cache"
+//   那段就会自动清掉旧的缓存桶, 用户下次打开必然重新拉全部资源。
+//   v10 → v11 的血案: v122 那次 bump 之后, v126/v129/v136~v148 全都没 bump,
+//   而当时 JS/CSS 还走 cacheFirst(靠 index.html 里的 ?v=NNN 刷新)。
+//   微信 webview 连 index.html 一起缓存 → 手机拿到旧 HTML → 引用旧 ?v= →
+//   旧 js 在缓存里直接命中 → 整站停在几周前的版本, 表现为"进度页好几个功能凭空没了"。
+//   现在 JS/CSS 已改成 networkFirst, 但 bump 仍然是发版习惯: 清掉历史堆积的旧条目。
+var APP_VER = '11';
 var CACHE_STATIC = 'fitbuddy-static-v' + APP_VER;
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
@@ -90,9 +94,13 @@ self.addEventListener('fetch', function(e) {
     return;
   }
 
-  // JS/CSS/JSON：缓存优先（靠版本号 ?v= 刷新）
+  // JS/CSS/JSON：网络优先 + 缓存兜底（离线仍可用）
+  // 以前这里是 cacheFirst，靠 index.html 里的 ?v=NNN 刷新，实测不可靠 —— 详见 APP_VER 注释。
+  // 只要 index.html 被微信 webview 或磁盘缓存拦住一版，用户就永远回不到新代码。
+  // networkFirst 联网时必拿最新（cache:'no-cache' 会重新验证，命中 304 很便宜），
+  // 断网时才退回缓存，离线可用性不受影响。
   if (isLocal && /\.(js|css|json)(\?|$)/i.test(url)) {
-    e.respondWith(cacheFirst(e.request, CACHE_STATIC));
+    e.respondWith(networkFirst(e.request, CACHE_STATIC));
     return;
   }
 
@@ -164,6 +172,7 @@ function trimGifCache() {
 // ============ 缓存策略工具 ============
 
 // Cache-First：先缓存，没有则网络
+// 注：JS/CSS 已改用 networkFirst（见 fetch 拦截），这里只留给将来可能的静态资源。
 function cacheFirst(request, cacheName) {
   return caches.match(request).then(function(cached) {
     if (cached) return cached;
@@ -173,22 +182,43 @@ function cacheFirst(request, cacheName) {
       }
       return response;
     }).catch(function() {
-      // 网络失败 → 返回离线兜底
-      return caches.match('./index.html');
+      // 网络失败 → 走统一兜底（JS/CSS 不会拿到 index.html）
+      return offlineFallback(request);
     });
   });
 }
 
 // Network-First：先网络，失败用缓存
 function networkFirst(request, cacheName) {
-  return fetch(request).catch(function() {
-    return caches.match(request);
-  }).then(function(response) {
-    if (response && response.status === 200 && !response.fromCache) {
-      caches.open(cacheName).then(function(cache) { cache.put(request, response.clone()); });
-    }
-    return response || caches.match('./index.html');
-  });
+  // cache:'no-cache' = 每次向服务器重新验证（命中 304 成本极低），
+  // 不让浏览器磁盘缓存 / 微信 webview 把旧版本一直喂给用户
+  //
+  // ⚠️ 别写成 `response || caches.match(request) || offlineFallback(request)` ——
+  // caches.match() 返回的是 Promise，永远 truthy，会短路掉后面的兜底，
+  // 最终 respondWith(undefined) 直接抛错。兜底必须放在独立的 then 里判断。
+  return fetch(request, { cache: 'no-cache' })
+    .then(function(response) {
+      if (response && response.status === 200) {
+        caches.open(cacheName).then(function(cache) { cache.put(request, response.clone()); });
+      }
+      return response;
+    })
+    .catch(function() {
+      return caches.match(request);
+    })
+    .then(function(response) {
+      if (response) return response;
+      return offlineFallback(request);
+    });
+}
+
+// 离线兜底。⚠️ 只有 HTML 导航请求能回退到 index.html。
+// 以前 JS/CSS 请求失败也返回 index.html —— <script> 收到一段 HTML 直接解析报错，
+// 后面依赖它的功能集体消失，而且很难往缓存方向去想。现在直接报网络错误。
+function offlineFallback(request) {
+  var u = (request && request.url) || '';
+  if (/\.(js|css|json)(\?|$)/i.test(u)) return Response.error();
+  return caches.match('./index.html');
 }
 
 // 仅抓取并缓存（用于外部资源）
