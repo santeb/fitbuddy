@@ -179,13 +179,13 @@
   // 标签一律用短词：中文一个字编码后是 9 个字符，能省就省
   function buildMailPack(type, text, cut) {
     var lines = [];
+    var t = String(text || '').trim();
     lines.push('[' + mailShort(type) + ']');
-    lines.push(String(text || '').trim().slice(0, cut));
+    lines.push(t ? t.slice(0, cut) : '(发生了什么,写在这里)');
     lines.push('环境: ' + envLine());
     lines.push('页面: ' + pageName() + ' ' + screenLine());
     var err = errLines();
     if (err) lines.push('报错: ' + err.split('\n')[0].slice(0, 60));
-    lines.push('(完整包已复制,可粘贴)');
     return lines.join('\n');
   }
   // 逐级压缩直到达标：先带完整环境信息，描述字数 40 → 20 → 12 → 6 一路砍。
@@ -326,47 +326,36 @@
     ov.className = 'fb-fb-ov';
     ov.id = 'fbFbOv';
     var subBtns = '';
-    // 内置浏览器里邮件按钮会和主按钮（复制反馈包）撞成两个一模一样的，
-    // 所以这种环境干脆不放按钮，邮箱地址改到下方提示里让用户长按复制
-    if (DEV.mail && !mailDisabled()) {
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail">📧 发邮件</a>';
+    if (DEV.mail) {
+      // 内置浏览器打不开邮件 App，这个按钮退化成「复制邮箱」，不跳链接
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail">'
+        + (mailDisabled() ? '📧 复制邮箱' : '📧 发邮件') + '</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
     }
     subBtns += '<button type="button" class="fb-fb-sub" id="fbFbWx">🤝 去群里说</button>';
 
+    // 不设输入框：让用户自己去邮件 / Issue / 群里说，门槛最低。
+    // 邮件里照样自动带设备、页面、报错，用户只需要补一句「发生了什么」。
     ov.innerHTML =
-      '<div class="fb-fb-sheet" role="dialog" aria-modal="true" aria-label="提交反馈">'
+      '<div class="fb-fb-sheet" role="dialog" aria-modal="true" aria-label="联系开发者">'
       + '<div class="fb-fb-head">'
       + '<div class="fb-fb-title">' + (type === 'bug' ? '🐞 抓到一个 Bug' : '💡 有个想法') + '</div>'
       + '<button class="fb-fb-x" id="fbFbClose" aria-label="关闭">✕</button>'
       + '</div>'
-      + '<div class="fb-fb-chips">' + TYPES.map(function (t) {
-        return '<button type="button" class="fb-fb-chip' + (t.k === type ? ' on' : '') + '" data-k="' + t.k + '">' + esc(t.t) + '</button>';
-      }).join('') + '</div>'
-      + '<div class="fb-fb-tip" id="fbFbTip"></div>'
-      + '<textarea class="fb-fb-ta" id="fbFbText" maxlength="500" placeholder="'
-      + (type === 'bug'
-        ? '我点了什么 → 我以为会怎样 → 实际发生了什么'
-        : '我想要什么 / 哪里用着别扭') + '"></textarea>'
-      + '<input class="fb-fb-nick" id="fbFbNick" maxlength="16" placeholder="昵称（可留空，被采纳后刻上荣誉墙）">'
-      + '<button class="fb-fb-main" id="fbFbCopy">📋 复制反馈包</button>'
-      + '<div class="fb-fb-subs">' + subBtns + '</div>'
       + '<div class="fb-fb-note">'
-      + (DEV.mail && mailDisabled()
-          ? '这里打不开邮件 App，复制后发到<br><b style="user-select:all;font-size:12.5px">'
-            + DEV.mail + '</b>（长按可复制）'
-          : '复制时会自动带上设备、页面和最近的报错，<br>这些不用你自己写。')
+      + '挑一个顺手的渠道就行。<br>发邮件会自动带上设备、页面和最近的报错，<br>你只需要补一句「发生了什么」。'
       + '</div>'
+      + '<div class="fb-fb-subs" style="margin-top:14px">' + subBtns + '</div>'
+      + (DEV.mail && mailDisabled()
+          ? '<div class="fb-fb-note">这个环境打不开邮件 App，<br>邮箱 <b style="user-select:all;font-size:12.5px">'
+            + DEV.mail + '</b>（长按可复制）</div>'
+          : '')
       + '</div>';
 
     document.body.appendChild(ov);
     requestAnimationFrame(function () { ov.classList.add('show'); });
-
-    var ta = document.getElementById('fbFbText');
-    var nickEl = document.getElementById('fbFbNick');
-    var tipEl = document.getElementById('fbFbTip');
 
     function close() {
       ov.classList.remove('show');
@@ -374,25 +363,6 @@
     }
     document.getElementById('fbFbClose').addEventListener('click', close);
     ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
-
-    ov.querySelectorAll('.fb-fb-chip').forEach(function (c) {
-      c.addEventListener('click', function () {
-        type = c.getAttribute('data-k');
-        ov.querySelectorAll('.fb-fb-chip').forEach(function (x) { x.classList.remove('on'); });
-        c.classList.add('on');
-        tipEl.textContent = (TYPES.filter(function (t) { return t.k === type; })[0] || {}).h || '';
-        ta.placeholder = type === 'bug'
-          ? '我点了什么 → 我以为会怎样 → 实际发生了什么'
-          : '我想要什么 / 哪里用着别扭';
-        document.querySelector('.fb-fb-title').textContent =
-          type === 'bug' ? '🐞 抓到一个 Bug' : (type === 'idea' ? '💡 有个想法' : '❓ 说说哪里不对');
-      });
-    });
-    tipEl.textContent = (TYPES.filter(function (t) { return t.k === type; })[0] || {}).h || '';
-
-    function currentPack() {
-      return buildPack(type, ta.value, nickEl.value);
-    }
 
     function afterSubmit() {
       var n = 0;
@@ -412,68 +382,36 @@
       }
     }
 
-    document.getElementById('fbFbCopy').addEventListener('click', function () {
-      var txt = (ta.value || '').trim();
-      if (!txt) { toast('先写一句发生了什么 🙂'); ta.focus(); return; }
-      var pack = currentPack();
-      var btn = this;
-      function ok() {
-        btn.textContent = '✅ 已复制，去粘给开发者';
-        event('feedback_copy', { type: type });
-        afterSubmit();
-        toast(mailDisabled() && DEV.mail
-          ? '✅ 已复制，发到 ' + DEV.mail
-          : '✅ 已复制，粘到微信/邮件发我就行');
-        setTimeout(function () { btn.textContent = '📋 复制反馈包'; }, 2500);
-      }
-      function fallback() {
-        ta.select();
-        try { if (document.execCommand('copy')) { ok(); return; } } catch (e) {}
-        // 兜底：把内容摊开让用户长按自己复制
-        var pre = document.createElement('textarea');
-        pre.value = pack;
-        pre.style.cssText = 'position:fixed;left:0;top:0;opacity:0;height:1px;';
-        document.body.appendChild(pre);
-        pre.select();
-        toast('请长按选中内容 → 复制');
-        setTimeout(function () { pre.remove(); }, 8000);
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(pack).then(ok, fallback);
-      } else fallback();
-    });
-
     var mailBtn = document.getElementById('fbFbMail');
     if (mailBtn) {
       mailBtn.addEventListener('click', function (e) {
         e.preventDefault();
-        var txt = (ta.value || '').trim();
-        if (!txt) { toast('先写一句发生了什么 🙂'); ta.focus(); return; }
-        var pack = currentPack();
-        // 两种情况绝不跳 mailto：① 内置浏览器（点了没反应或收件人变乱码）
-        // ② 正文砍到最短还是超预算（跳了就是收件人一坨编码）。都改成复制完整包。
-        var blocked = mailDisabled();
-        var url = blocked ? null : buildMailto(type, txt);
-        if (!url) {
-          silentCopy(pack);
-          toast(blocked
-            ? '当前环境打不开邮件 App，反馈包已复制，发到 ' + DEV.mail + ' 就行'
-            : '内容太长，反馈包已复制，发到 ' + DEV.mail + ' 就行');
-          event(blocked ? 'feedback_mail_webview' : 'feedback_mail_blocked', { type: type });
-          afterSubmit();
+        // 内置浏览器打不开邮件 App：点了只把邮箱复制走，不跳链接
+        if (mailDisabled()) {
+          silentCopy(DEV.mail);
+          toast('邮箱已复制：' + DEV.mail + '，写一句发生了什么发过来就行');
+          event('feedback_mail_copyaddr', { type: type });
           return;
         }
-        // 完整包先塞剪贴板，邮件正文放不下，用户想贴随时能贴
-        silentCopy(pack);
+        // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
+        // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
+        var url = buildMailto(type, '');
+        if (!url) {
+          silentCopy(DEV.mail);
+          toast('邮箱已复制：' + DEV.mail);
+          event('feedback_mail_blocked', { type: type });
+          return;
+        }
         location.href = url;
         event('feedback_mail', { type: type });
-        // 兜底：3 秒后还停在本页，说明邮件 App 根本没被唤起，提示手动发
+        afterSubmit();
+        // 兜底：3 秒后还停在本页，说明邮件 App 根本没被唤起
         setTimeout(function () {
           if (document.visibilityState === 'visible') {
-            toast('没打开邮件？反馈包已复制，手动发到 ' + DEV.mail + ' 就行');
+            silentCopy(DEV.mail);
+            toast('没打开邮件？邮箱已复制：' + DEV.mail);
           }
         }, 3000);
-        afterSubmit();
       });
     }
 
@@ -484,25 +422,13 @@
     }
 
     document.getElementById('fbFbWx').addEventListener('click', function () {
-      // 群里说更自然：先复制好，进群直接粘贴
-      var pack = currentPack();
-      function go() {
-        try { if (typeof window.showGroupQR === 'function') { window.showGroupQR(); return; } } catch (e) {}
-        toast('复制好了，粘到 FitBuddy 训练群就行');
-      }
-      if ((ta.value || '').trim() && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(pack).then(function () {
-          toast('✅ 已复制，进群直接粘贴');
-          go();
-        }, go);
-      } else {
-        go();
-      }
+      // 没有输入框了，进群直接说就行，不用预先复制什么
+      var opened = false;
+      try { if (typeof window.showGroupQR === 'function') { window.showGroupQR(); opened = true; } } catch (e) {}
+      if (!opened) toast('进群直接说就行，看到会回你 🙂');
       event('feedback_wx', { type: type });
       afterSubmit();
     });
-
-    setTimeout(function () { try { ta.focus(); } catch (e) {} }, 320);
   }
 
   // 调试用：控制台执行 fbBuildPack('bug','描述','昵称') 可直接看打包结果
