@@ -12,6 +12,7 @@
  * 未配置时本模块零开销, 不加载任何外部脚本。
  *
  * 事件: page_view / generate_plan / week_advance / calc_1rm / timer_start
+ *       数据状态(2026-10-29 新增): data_empty / snap_recoverable —— 见文件末尾
  * 接口: track(event, params) —— 与旧 GA4 版完全兼容, 业务代码无需改动
  */
 (function () {
@@ -80,3 +81,56 @@ function track(event, params) {
     }
   } catch (e) { /* 埋点失败不影响主功能 */ }
 }
+
+/* =========================================================================
+ * 数据状态埋点 (2026-10-29 新增) —— 用来监控"用户数据丢失"的规模
+ *
+ * 设计原则: **只报异常, 正常不开口**。
+ *   - 省事件量(免费版 51LA 有额度);
+ *   - 后台看到的数字直接就是"需要关注的人数", 不用做除法;
+ *   - 分母用 51LA 自动采的 UV(自带新老访客维度), 所以不需要再报 data_ok。
+ *
+ *   data_empty       打开时训练数据是空的 —— 可能真丢了, 也可能是全新用户
+ *                    参数 any: '1' = localStorage 还有别的 fitbuddy_ key(用过, 疑似真丢)
+ *                             '0' = 一个 key 都没有(大概率全新用户, 属正常)
+ *   snap_recoverable 存在比当前更全的快照 —— 其实还有救, 只是没去点救援
+ *                    参数 n: 有几个 key 有更全的版本
+ *
+ * ⚠️ 必须延时执行: analytics.js 排在 persistence.js **之前**,
+ *    defer 只保证顺序执行, 不保证 persistence 的 init() 与 window.name
+ *    快照比对已经跑完 —— 早读了 __fbSnapLongerKeys 永远是 undefined。
+ * ======================================================================= */
+function fbTrackDataState() {
+  try {
+    var DATA_KEYS = [
+      'fitbuddy_trainlog', 'fitbuddy_lastplan',
+      'fitbuddy_history', 'fitbuddy_prs', 'fitbuddy_bodylog'
+    ];
+    var has = false, i, v;
+
+    for (i = 0; i < DATA_KEYS.length; i++) {
+      v = localStorage.getItem(DATA_KEYS[i]);
+      if (v && v !== '[]' && v !== '{}') { has = true; break; }
+    }
+
+    if (!has) {
+      // 一个 fitbuddy_ key 都不剩 = 全新用户; 还剩别的 key = 用过, 疑似被清过
+      var any = false;
+      for (i = 0; i < localStorage.length; i++) {
+        if (String(localStorage.key(i)).indexOf('fitbuddy_') === 0) { any = true; break; }
+      }
+      track('data_empty', { any: any ? '1' : '0' });
+    }
+
+    // v155 起: persistence.init() 发现快照比当前更全时会写这个全局量
+    var bigger = window.__fbSnapLongerKeys;
+    if (bigger && bigger.length) track('snap_recoverable', { n: bigger.length });
+  } catch (e) { /* 埋点永远不能影响主功能 */ }
+}
+
+(function () {
+  // 2.5s: 等 persistence.init() 里的 IndexedDB 打开 + window.name 快照比对跑完
+  function schedule() { setTimeout(fbTrackDataState, 2500); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule);
+  else schedule();
+})();
