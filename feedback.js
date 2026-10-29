@@ -167,29 +167,19 @@
     return lines.join('\n');
   }
 
-  // ---------- 邮件专用（短包） ----------
-  // 手机邮件客户端对 mailto 链接有硬长度上限，超了就不再解析 ? 后面的参数，
-  // 把整串编码原样塞进「收件人」框（收件人框不做 %xx 解码，所以显示成乱码）。
-  // 实测完整反馈包 1186 字符就会这样。中文经 encodeURIComponent 一个字变 9 个字符，
-  // 所以这里设 600 的安全线（不到出事长度的一半），并逐级压缩正文去够这条线。
-  // 万一连最精简版都超，返回 null —— 宁可让用户复制，也绝不再跳一条会出错的 mailto。
-  // 注：iOS 微信里那个"一整串编码"是另一回事，见 mailBlocked()。
-  var MAIL_URL_MAX = 600;
+  // ---------- 邮件专用 ----------
+  // mailto 的惨痛教训（v140 → v145 连修四版，别再走回头路）：
+  // 只要 mailto 里带 ? 后面的参数（subject / body），从微信跳到 iOS 邮件 App 时，
+  // 收件人栏就会出现一整串 %XX 编码 —— 不是"太长才炸"，是它压根没解析 ? 后的东西。
+  // 砍到只剩 subject 的 134 字符版本照样出问题，所以最终结论：
+  // **mailto 只留收件人，一个参数都不带。** 没有 ? 就没有解析，收件人栏必然是干净的邮箱。
+  // 标题、正文、设备信息全部走剪贴板，用户粘一下即可。
   function mailShort(type) {
     return type === 'idea' ? '建议' : (type === 'other' ? '其他' : 'Bug');
   }
 
-  // 实测：iPhone 微信里 mailto 是能唤起邮件 App 的，但只要正文一长（尤其带换行 %0A），
-  // iOS Mail 就不再解析 ? 后面的参数，把整串塞进「收件人」—— 跟内置浏览器没关系。
-  // 所以 mailto 只干三件事：填满收件人、带个标题、留一行占位正文，实测 154 字符。
-  // 环境 / 页面 / 报错那些有价值的信息全部改走剪贴板（点按钮时就复制好），用户粘一下即可。
   function buildMailto(type, text) {
-    var subj = '[' + mailShort(type) + ']';
-    var body = '(发生了什么,写在这里)';
-    var u = 'mailto:' + DEV.mail
-      + '?subject=' + encodeURIComponent(subj)
-      + '&body=' + encodeURIComponent(body);
-    return u.length <= MAIL_URL_MAX ? u : null;
+    return DEV.mail ? ('mailto:' + String(DEV.mail).trim()) : null;
   }
   // 静默复制：不弹提示，失败也不吭声。邮件正文装不下完整包，但剪贴板装得下。
   function silentCopy(text) {
@@ -326,8 +316,8 @@
       + '<button class="fb-fb-x" id="fbFbClose" aria-label="关闭">✕</button>'
       + '</div>'
       + '<div class="fb-fb-note">'
-      + '挑一个顺手的渠道就行。<br>发邮件会自动填好收件人和标题，'
-      + '设备和报错信息也帮你复制好了，<br>粘到正文里，再补一句「发生了什么」就行。'
+      + '挑一个顺手的渠道就行。<br>发邮件会自动填好收件人，'
+      + '标题和设备报错信息已经复制好，<br>在正文里长按粘贴，再补一句「发生了什么」就行。'
       + '</div>'
       + '<div class="fb-fb-subs" style="margin-top:14px">' + subBtns + '</div>'
       + (DEV.mail && inApp()
@@ -367,8 +357,6 @@
 
     var mailBtn = document.getElementById('fbFbMail');
     if (mailBtn) {
-      // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
-      // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
       var url = buildMailto(type, '');
       if (url) mailBtn.href = url;
       mailBtn.addEventListener('click', function (e) {
@@ -380,14 +368,15 @@
           return;
         }
         // 先跳（a 标签原生处理，不 preventDefault）；同时把完整包复制好。
-        // mailto 只带收件人和标题，环境/页面/报错全靠剪贴板，用户粘一下就补全。
-        silentCopy(buildPack(type, '', ''));
+        // mailto 只有收件人，标题和环境/页面/报错全靠剪贴板，用户粘一下补全。
+        // 第一行给个现成标题，粘进去后照抄到标题栏就行。
+        silentCopy('标题：[' + mailShort(type) + ']\n' + buildPack(type, '', ''));
         event('feedback_mail', { type: type, env: inApp() || 'browser' });
         afterSubmit();
         // 兜底：1.4 秒后还停在本页，说明邮件 App 没被唤起，把后路明说
         setTimeout(function () {
           if (document.visibilityState === 'visible') {
-            toast('邮件没自动打开的话，设备和报错信息已经复制好了，发到 ' + DEV.mail
+            toast('邮件没自动打开的话，内容已经复制好了，发到 ' + DEV.mail
               + (inApp() ? '（微信里可点右上角 ··· → 在浏览器打开）' : ''));
           }
         }, 1400);
