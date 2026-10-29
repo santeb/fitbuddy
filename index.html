@@ -1182,13 +1182,13 @@ input,select{font-family:inherit;}
       <div class="dh-sub">FitBuddy 永久免费 · 无广告 · 无需注册<br>如果你觉得好用，欢迎请开发者喝杯咖啡 ☕️</div>
     </div>
     <div class="donate-qr-row">
-      <div class="donate-qr-card" onclick="this.querySelector('.qr-img').requestFullscreen?this.querySelector('.qr-img').requestFullscreen():null">
+      <div class="donate-qr-card" id="donateCardWx">
         <div class="qr-label">💚 微信赞赏</div>
         <div class="qr-hint">打开微信扫一扫</div>
         <img class="qr-img" src="exercise-images/wechat-donate.png" alt="微信赞赏码" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
         <div class="qr-tap" style="display:none">📷 点击上传你的赞赏码</div>
       </div>
-      <div class="donate-qr-card" onclick="this.querySelector('.qr-img').requestFullscreen?this.querySelector('.qr-img').requestFullscreen():null">
+      <div class="donate-qr-card" id="donateCardAli">
         <div class="qr-label">💙 支付宝赞赏</div>
         <div class="qr-hint">打开支付宝扫一扫</div>
         <img class="qr-img" src="exercise-images/alipay-donate.png" alt="支付宝赞赏码" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
@@ -1299,6 +1299,8 @@ input,select{font-family:inherit;}
 <!-- 反馈通道 + 全局错误采集: 必须排在业务脚本之前, 才能抓到初始化阶段的报错 -->
 <script src="feedback.js?v=1" defer></script>
 <script src="contributors.js?v=1" defer></script>
+<!-- 为爱发电页: 按所在 App 给出最短付款路径 -->
+<script src="donate.js?v=1" defer></script>
 <script src="onboarding.js?v=3" defer></script>
 <script src="data-constants.js?v=41" defer></script>
 <script src="persistence.js?v=1" defer></script>
