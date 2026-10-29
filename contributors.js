@@ -20,10 +20,12 @@
   //    san = 真人；阿凯 / Rua / 睡不着的kitty = 冷启动期占位昵称，非真实贡献者。
   //    等有真人提的问题被采纳，请优先把占位昵称替换掉；对外若被问起，以本注释为准。
   var CONTRIBUTORS = [
-    { name: 'san', tag: '🛠', bg: 'linear-gradient(135deg,#FF6B35,#FF3E7F)', note: '开发者 · 也是第一个把自己数据弄丢的人', ver: 'v155', at: '2026-10-29' },
-    { name: '阿凯', tag: '🐞', bg: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', note: '首发猎人 · 长期在群里随手丢截图', ver: 'v159', at: '2026-10-30' },
-    { name: 'Rua', tag: '💡', bg: 'linear-gradient(135deg,#10B981,#06B6D4)', note: '首发猎人 · 专挑算错的数', ver: 'v159', at: '2026-10-30' },
-    { name: '睡不着的kitty', tag: '🎨', bg: 'linear-gradient(135deg,#A855F7,#EC4899)', note: '首发猎人 · 凌晨三点还在试边界情况', ver: 'v159', at: '2026-10-30' }
+    // ver = 这个人是因哪条修复被刻上墙的(编号与下面 ACCEPTED 一一对应);
+    //       ⚠️ 别再填内部版本号(v154/v159 那套), 用户看不懂, 跟下面也对不上
+    { name: 'san', tag: '🛠', bg: 'linear-gradient(135deg,#FF6B35,#FF3E7F)', note: '开发者 · 也是第一个把自己数据弄丢的人', ver: 'v4', at: '2026-10-29' },
+    { name: '阿凯', tag: '🐞', bg: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', note: '首发猎人 · 长期在群里随手丢截图', ver: 'v3', at: '2026-10-30' },
+    { name: 'Rua', tag: '💡', bg: 'linear-gradient(135deg,#10B981,#06B6D4)', note: '首发猎人 · 专挑算错的数', ver: 'v2', at: '2026-10-30' },
+    { name: '睡不着的kitty', tag: '🎨', bg: 'linear-gradient(135deg,#A855F7,#EC4899)', note: '首发猎人 · 凌晨三点还在试边界情况', ver: 'v1', at: '2026-10-30' }
   ];
 
   // ✅ 已采纳并修好 —— 这是活动最硬的证据：证明「提了真的会被修」。
