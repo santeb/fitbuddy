@@ -6280,8 +6280,64 @@ function fbCountWeekProgress() {
   return { done: done, total: total };
 }
 
+// 📦 累计资产行(2026-10-30):把"攒了多少"从看不见的 localStorage 变成看得见的沉没成本。
+// 设计约束:只在练过 >=3 天时出现 —— 新用户(最容易被长页面劝退的那批)首屏一个像素都不变,
+// 老用户(已经有留存价值的)每次打开被提醒一次"你在这儿练了 47 次"。
+// ⚠️ 口径:总容量只取 src!=='auto' 的真实成绩(auto 是打卡时按上次成绩带入的预测占位,
+//    那个重量根本没被举起来过);但**不过滤减载周** —— 减载周举的也是真重量,
+//    fbLooksLikeDeload() 是给"下次该推多重"算基准用的,拿它算总量会把历史凭空改小。
+function fbAccumLineHtml() {
+  try {
+    var hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]');
+    if (!hist || !hist.length) return '';
+    var dayMap = {}, totalKm = 0, totalCal = 0;
+    hist.forEach(function (h) {
+      if (!h || !h.date) return;
+      dayMap[h.date] = 1;
+      totalKm += Number(h.distance) || 0;
+      totalCal += Number(h.calories) || 0;
+    });
+    var days = Object.keys(dayMap).length;
+    if (days < 3) return '';                       // 练不到 3 天, 亮这行只会显得寒酸
+
+    var log = {};
+    try { log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}'); } catch (e) {}
+    var totalKg = 0;
+    Object.keys(log || {}).forEach(function (n) {
+      (log[n] || []).forEach(function (e) {
+        if (!e || e.src === 'auto') return;        // 老数据无 src = 当年手填的, 算数
+        totalKg += (Number(e.weight) || 0) * (Number(e.reps) || 0);
+      });
+    });
+
+    var B = 'style="color:var(--text2);"';
+    var parts = ['累计 <b ' + B + '>' + days + '</b> 天训练'];
+    if (totalKg >= 1000) {
+      var t = totalKg / 1000;
+      parts.push('举起 <b ' + B + '>' + (t >= 10 ? Math.round(t) : t.toFixed(1)) + '</b> 吨');
+    }
+    if (totalKm >= 1) {
+      parts.push('跑 <b ' + B + '>' + (totalKm >= 100 ? Math.round(totalKm) : totalKm.toFixed(1)) + '</b> km');
+    }
+    if (totalCal >= 1000) parts.push('消耗 <b ' + B + '>' + Math.round(totalCal) + '</b> kcal');
+
+    // "相遇 N 天"是情感钩子, 不是数据汇报 —— 从第一次训练日算起
+    var dates = Object.keys(dayMap).sort();
+    var first = new Date(dates[0] + 'T00:00:00');
+    var today = new Date(); today.setHours(0, 0, 0);
+    var span = Math.round((today - first) / 86400000);
+    if (span >= 7) parts.push('相遇 <b ' + B + '>' + span + '</b> 天');
+
+    if (parts.length < 2) return '';
+    return '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;'
+      + 'font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;">'
+      + '<span style="flex-shrink:0;">📦</span><span>' + parts.join(' · ') + '</span></div>';
+  } catch (e) { return ''; }
+}
+
 // 未完成感 banner HTML(今日剩余动作 + 本周进度条 + 完成态海报入口)
 // 2026-10-09 升级: 加 streak 火焰 + 差 X 天解锁 X 徽章 + 大字钩子
+// 2026-10-30 升级: 顶部补一行累计资产(攒了多少), 与 streak(别断)形成互补
 function fbProgressBannerHtml() {
   if (!lastPlan || !lastPlan.trainingDays) return '';
   var hasContent = false;
@@ -6303,6 +6359,10 @@ function fbProgressBannerHtml() {
     }
     html += '</div>';
   }
+
+  // 🆕 累计资产行:和上面那行是同一件事的正反面 —— 上面讲"别断", 这里讲"已经攒了这么多"
+  var accum = fbAccumLineHtml();
+  if (accum) { hasContent = true; html += accum; }
 
   var ti = fbGetTodayDayIdx();
   if (ti >= 0) {

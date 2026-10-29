@@ -9,7 +9,7 @@
 //   微信 webview 连 index.html 一起缓存 → 手机拿到旧 HTML → 引用旧 ?v= →
 //   旧 js 在缓存里直接命中 → 整站停在几周前的版本, 表现为"进度页好几个功能凭空没了"。
 //   现在 JS/CSS 已改成 networkFirst, 但 bump 仍然是发版习惯: 清掉历史堆积的旧条目。
-var APP_VER = '19';
+var APP_VER = '20';
 var CACHE_STATIC = 'fitbuddy-static-v' + APP_VER;
 var CACHE_GIFS   = 'fitbuddy-gifs-v1';
 var CACHE_MAX    = 60; // GIF 缓存最多保留 60 个，超出后按 LRU 清理
