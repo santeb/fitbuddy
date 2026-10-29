@@ -173,20 +173,20 @@
   // 实测完整反馈包 1186 字符就会这样。中文经 encodeURIComponent 一个字变 9 个字符，
   // 所以这里设 600 的安全线（不到出事长度的一半），并逐级压缩正文去够这条线。
   // 万一连最精简版都超，返回 null —— 宁可让用户复制，也绝不再跳一条会出错的 mailto。
+  // 注：iOS 微信里那个"一整串编码"是另一回事，见 mailBlocked()。
   var MAIL_URL_MAX = 600;
   function mailShort(type) {
     return type === 'idea' ? '建议' : (type === 'other' ? '其他' : 'Bug');
   }
   // 标签一律用短词：中文一个字编码后是 9 个字符，能省就省
+  // "环境:"/"页面:"这类标签纯属浪费，全砍掉，一行说清，链接越短越不容易撞上限。
   function buildMailPack(type, text, cut) {
     var lines = [];
     var t = String(text || '').trim();
-    lines.push('[' + mailShort(type) + ']');
-    lines.push(t ? t.slice(0, cut) : '(发生了什么,写在这里)');
-    lines.push('环境: ' + envLine());
-    lines.push('页面: ' + pageName() + ' ' + screenLine());
+    lines.push('[' + mailShort(type) + '] ' + (t ? t.slice(0, cut) : '(发生了什么,写在这里)'));
+    lines.push(envLine() + ' / ' + pageName() + ' / ' + screenLine());
     var err = errLines();
-    if (err) lines.push('报错: ' + err.split('\n')[0].slice(0, 60));
+    if (err) lines.push('报错 ' + err.split('\n')[0].slice(0, 40));
     return lines.join('\n');
   }
   // 逐级压缩直到达标：先带完整环境信息，描述字数 40 → 20 → 12 → 6 一路砍。
@@ -207,6 +207,14 @@
     }
     var last = mk(mailShort(type), '[' + mailShort(type) + '] ' + t.slice(0, 6));
     return last.length <= MAIL_URL_MAX ? last : null;
+  }
+  // iOS 的所有内置浏览器（微信 / 小红书 / QQ …）对 mailto 基本不处理：不是毫无反应，
+  // 就是把整条 mailto（含 %xx 编码）当地址显示出来 —— 用户看到的就是一长串乱码，
+  // 而且这一串跟长度无关，30 字符也照样。iOS 上只有 Safari 能正常唤起邮件。
+  // Android 内置浏览器（微信 X5 等）多数能唤起邮件 App，所以只对 iOS 内置降级。
+  function mailBlocked() {
+    if (!inApp()) return false;
+    return /iPhone|iPad|iPod/.test(navigator.userAgent || '');
   }
   // 静默复制：不弹提示，失败也不吭声。邮件正文装不下完整包，但剪贴板装得下。
   function silentCopy(text) {
@@ -325,9 +333,10 @@
     ov.id = 'fbFbOv';
     var subBtns = '';
     if (DEV.mail) {
-      // 一律给真实 mailto href，让浏览器走原生 scheme 跳转（比 JS 改 location 更容易被接住）。
-      // 微信 iOS 那类环境确实可能跳不动，但跳不动由下面的兜底接，不提前把按钮降级成复制。
-      subBtns += '<a class="fb-fb-sub" id="fbFbMail" rel="noopener">📧 发邮件</a>';
+      // 能跳的环境一律给真实 mailto href，让浏览器走原生 scheme 跳转（比 JS 改 location 容易被接住）。
+      // iOS 内置浏览器不挂 href —— 挂了点下去就是一整串编码，见 mailBlocked()。
+      subBtns += '<a class="fb-fb-sub" id="fbFbMail" rel="noopener">📧 '
+        + (mailBlocked() ? '复制邮箱' : '发邮件') + '</a>';
     }
     if (DEV.gh) {
       subBtns += '<a class="fb-fb-sub" id="fbFbGh" target="_blank" rel="noopener">🐙 提 Issue</a>';
@@ -346,10 +355,10 @@
       + '挑一个顺手的渠道就行。<br>发邮件会自动带上设备、页面和最近的报错，<br>你只需要补一句「发生了什么」。'
       + '</div>'
       + '<div class="fb-fb-subs" style="margin-top:14px">' + subBtns + '</div>'
-      + (DEV.mail && inApp()
-          ? '<div class="fb-fb-note">这个环境偶尔点不动邮件：<br>真没反应的话，点右上角 <b>···</b> '
-            + '→ 在浏览器打开，或者直接发到<br><b style="user-select:all;font-size:12.5px">'
-            + DEV.mail + '</b>（长按可复制）</div>'
+      + (DEV.mail && mailBlocked()
+          ? '<div class="fb-fb-note">这个环境打不开邮件 App（点了会显示一乱码地址）。<br>'
+            + '点右上角 <b>···</b> → 在浏览器打开，就能一键发；<br>或者直接发到 '
+            + '<b style="user-select:all;font-size:12.5px">' + DEV.mail + '</b>（长按可复制）</div>'
           : '')
       + '</div>';
 
@@ -386,14 +395,17 @@
       // 不带用户输入，正文只有设备/页面/报错这类自动信息，长度稳得很；
       // 万一还是超预算，buildMailto 返回 null，就退回复制邮箱，绝不跳一个会炸的 mailto
       var url = buildMailto(type, '');
-      if (url) mailBtn.href = url;
+      if (url && !mailBlocked()) mailBtn.href = url;
       mailBtn.addEventListener('click', function (e) {
-        if (!url) {
-          // 包太长，只能复制
+        if (!url || mailBlocked()) {
+          // iOS 内置浏览器：跳了只会显示一整串编码，不如直接给邮箱
           e.preventDefault();
           silentCopy(DEV.mail);
-          toast('邮箱已复制：' + DEV.mail);
-          event('feedback_mail_blocked', { type: type });
+          toast(mailBlocked()
+            ? '这里跳不到邮件 App，邮箱已复制：' + DEV.mail
+              + '，点右上角 ··· → 在浏览器打开就能一键发'
+            : '邮箱已复制：' + DEV.mail);
+          event(mailBlocked() ? 'feedback_mail_copyaddr' : 'feedback_mail_blocked', { type: type });
           return;
         }
         // 先跳（a 标签原生处理，不 preventDefault）；同时把邮箱复制好。
