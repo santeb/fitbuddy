@@ -1956,6 +1956,52 @@ window.fbRescueApply = function (opts) {
       '<pre id="diagText" style="white-space:pre-wrap;font:12px/1.8 ui-monospace,Menlo,Consolas,monospace;">' +
       String(txt).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
     document.body.appendChild(box);
+
+    // ⚠️ 2026-10-29 血的教训: 快照里明明躺着更全的数据, 救援页却报「没有能救回来的数据」。
+    //    根因不在扫描逻辑, 而是**诊断页只给了一句纯文本提示** —— "去 ?fbrescue=1 点…"。
+    //    微信 webview 里地址栏不可编辑, 用户只能退出去重新点链接 = 开一个全新的 webview
+    //    = window.name 当场清空 = 唯一那份快照没了, 再进救援页自然什么都扫不到。
+    //    等于让提示把用户指引到一个「只要去了就会毁掉证据」的地方。
+    //    所以这里**就地**给恢复按钮, 不跳转 —— 同一个标签页里 window.name 一直活着。
+    try {
+      if (typeof window.fbRescueBigger === 'function' && typeof window.fbRescueApply === 'function') {
+        window.fbRescueBigger().then(function (bigger) {
+          if (!bigger || !bigger.length) return;
+          var wrap = document.createElement('div');
+          wrap.style.cssText = 'margin:4px 0 14px;padding:12px;border-radius:12px;background:#FFF7ED;border:1.5px solid #F59E0B;';
+          wrap.innerHTML = '<div style="font-size:13.5px;font-weight:700;color:#9A3412;margin-bottom:6px;">'
+            + '🆘 快照里有更全的数据（' + bigger.length + ' 项）</div>'
+            + '<div style="font-size:11.5px;color:#9A3412;opacity:.85;margin-bottom:10px;line-height:1.75;">'
+            + bigger.map(function (b) {
+                return (b.key || '').replace('fitbuddy_', '') + '：现在 ' + b.cur
+                  + ' → 快照 ' + b.size + ' 字符（来自 ' + b.from + '）';
+              }).join('<br>')
+            + '<br>覆盖 = 把现在这几条短的换成更全的那份。</div>';
+          var btn = document.createElement('button');
+          btn.textContent = '🆘 用更全的那份覆盖并刷新';
+          btn.style.cssText = 'width:100%;padding:12px;border:none;border-radius:12px;font-size:14px;'
+            + 'font-weight:700;color:#fff;background:linear-gradient(135deg,#D97706,#F59E0B);cursor:pointer;';
+          btn.onclick = function () {
+            btn.disabled = true; btn.textContent = '恢复中…';
+            window.fbRescueApply({ bigger: true }).then(function (res) {
+              if (!res || !res.n) { btn.textContent = '没写进去任何数据'; btn.disabled = false; return; }
+              btn.textContent = '已覆盖 ' + res.n + ' 项，正在刷新…';
+              // 同标签刷新: window.name 保留, 顺手把 ?prodiag=1 从地址里抹掉
+              setTimeout(function () {
+                try { location.replace(location.pathname + (location.hash || '')); }
+                catch (e) { location.reload(); }
+              }, 700);
+            });
+          };
+          wrap.appendChild(btn);
+          // 放在自检正文**上面**: 正文很长, 按钮沉到底部就没人看得见了
+          var pre = box.querySelector('#diagText');
+          if (pre && pre.parentNode) pre.parentNode.insertBefore(wrap, pre);
+          else box.appendChild(wrap);
+        });
+      }
+    } catch (e) {}
+
     // 关掉面板顺手把 ?prodiag=1 从地址里抹掉 —— 否则用户下次刷新又弹一遍,
     // 还以为 App 出了什么问题。
     document.getElementById('diagClose').onclick = function () {
