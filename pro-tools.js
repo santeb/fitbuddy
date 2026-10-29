@@ -1546,4 +1546,165 @@ if (typeof _originalSwitchTab === 'function') {
   };
 }
 
+// ============ Pro 卡自检 · ?prodiag=1 ============
+// 起因: 手机上报"某几个 Pro 功能没了", 光看代码猜是哪张卡几乎不可能 ——
+// 每张卡都有 `typeof xxx !== 'function'` 守卫 + `!hasData` 门槛, 静默返回空串,
+// 页面上不留一点痕迹(不报错、不占位)。要么依赖函数没加载(缓存里的旧 js),
+// 要么数据不够(手机上训练记录是空的, 卡自然不出现)。
+// 这里把每张卡的"依赖在不在 / 数据够不够 / 渲染报不报错"摊开, 手机打开
+// ?prodiag=1 直接截图就行, 不用连电脑调试。
+// ⚠️ 不能只查 window —— pro-tools.js 自己就裹在 IIFE 里, fbPeriodCardVisible 这类
+//    函数是闭包内的, window 上根本没有。只查 window 会把它误报成"依赖没加载"(实测过),
+//    把人往缓存方向带偏。eval 在闭包内取值才能看到局部函数; 被 CSP 拦时退回归 window 判断。
+var _diagDepsOk = function (spec) {
+  var alts = String(spec).split('|');
+  for (var i = 0; i < alts.length; i++) {
+    var n = alts[i];
+    if (typeof window[n] === 'function') return true;
+    try { if (eval('typeof ' + n) === 'function') return true; } catch (e) {}
+  }
+  return false;
+};
+
+window.fbProDiag = function () {
+  var rows = [];
+  function add(name, deps, run) {
+    var miss = (deps || []).filter(function (d) { return !_diagDepsOk(d); });
+    if (miss.length) {
+      rows.push({ name: name, state: '缺失', why: '依赖没加载: ' + miss.join(', ') + ' —— 八成是手机缓存里的旧 js' });
+      return;
+    }
+    try {
+      var r = run();
+      if (r && r.ok) { rows.push({ name: name, state: '显示', why: '' }); return; }
+      rows.push({ name: name, state: '隐藏', why: (r && r.why) || '数据门槛没过' });
+    } catch (e) {
+      rows.push({ name: name, state: '报错', why: String((e && e.message) || e) });
+    }
+  }
+
+  add('⚖️ 今日能量收支', ['fbTodayEnergy|dietTodayIntake'], function () {
+    var e = null, eaten = null;
+    try { e = window.fbTodayEnergy(); } catch (x) {}
+    try { eaten = window.dietTodayIntake(); } catch (x) {}
+    if (!e && !eaten) return { ok: false, why: '没填身高体重(算不出消耗) 且 今天没记饮食' };
+    return { ok: true, why: '消耗=' + (e ? '有' : '无') + ' 摄入=' + (eaten ? '有' : '无') };
+  });
+  add('🎯 RPE 自调节建议', [], function () {
+    if (typeof trainingLog === 'undefined' || !trainingLog) return { ok: false, why: 'trainingLog 为空（手机上没有训练记录）' };
+    var keys = Object.keys(trainingLog).filter(function (k) { return getRPEAdjustment(k); });
+    if (!keys.length) return { ok: false, why: '有训练记录，但没有可算 RPE 建议的动作' };
+    return { ok: true, why: keys.length + ' 个动作' };
+  });
+  add('🔄 减载决策 P3', ['fbDeloadSignals'], function () {
+    var s = fbDeloadSignals();
+    if (!s || !s.hasData) return { ok: false, why: '近期训练记录不足，算不出信号' };
+    return { ok: true, why: (s.signals ? s.signals.length : 0) + ' 条信号' };
+  });
+  add('⚖️ 部位平衡 P2', ['fbBalanceReport'], function () {
+    var rep = fbBalanceReport();
+    if (!rep || !rep.hasData) return { ok: false, why: '训练日志为空，没有部位容量可统计' };
+    return { ok: true, why: '统计 ' + rep.spanDays + ' 天' };
+  });
+  add('📈 周期化编辑 P1', ['fbPeriodIntensity', 'fbPeriodCardVisible'], function () {
+    if (!fbPeriodCardVisible()) return { ok: false, why: '当前计划是跑步/有氧，或还没生成力量计划' };
+    return { ok: true, why: ((typeof fbPeriodTotalWeeks === 'function') ? fbPeriodTotalWeeks() : '?') + ' 周' };
+  });
+  add('📅 月度复盘 P4', ['fbMonthlyReport'], function () {
+    var rep = fbMonthlyReport(0);
+    if (!rep || (!rep.hasData && rep.days <= 0)) return { ok: false, why: '本月没有训练记录' };
+    return { ok: true, why: rep.label + ' · ' + rep.days + ' 天' };
+  });
+  add('🏆 个人纪录', ['buildPRsFromLog'], function () {
+    var prs = buildPRsFromLog();
+    var keys = Object.keys(prs).filter(function (k) { return prs[k] && prs[k].e1rm > 0; });
+    if (!keys.length) return { ok: false, why: '训练日志里没有带重量/次数的记录' };
+    return { ok: true, why: keys.length + ' 个动作' };
+  });
+  add('📤 力量档案导出', ['fbStrengthCardEntryHtml'], function () { return { ok: true, why: '' }; });
+  add('🔥 热身组 / 🏋️ 杠铃片 计算器', [], function () {
+    var w = document.getElementById('calcPanelWarmup');
+    var p = document.getElementById('calcPanelPlate');
+    if (!w && !p) return { ok: false, why: 'index.html 里找不到 calcPanelWarmup / calcPanelPlate 容器' };
+    return { ok: true, why: '容器在，渲染=' + ((w && w.dataset.rendered) || (p && p.dataset.rendered) ? '已' : '未') };
+  });
+
+  // 环境
+  var env = [];
+  env.push('UA: ' + navigator.userAgent);
+  env.push('微信: ' + (/MicroMessenger/i.test(navigator.userAgent) ? '是' : '否'));
+  try {
+    env.push('SW 受控: ' + (navigator.serviceWorker && navigator.serviceWorker.controller ? '是' : '否'));
+  } catch (e) { env.push('SW 受控: 未知'); }
+  // 实际加载到手的 js 版本号 —— 手机上最容易踩的坑就是 ?v= 停在旧值
+  try {
+    var res = (performance.getEntriesByType && performance.getEntriesByType('resource')) || [];
+    var js = res.filter(function (r) { return /\.js\?v=\d+/.test(r.name); })
+      .map(function (r) { return r.name.replace(/^.*\//, '') + ' @' + Math.round(r.startTime) + 'ms'; });
+    env.push('已加载 js(' + js.length + '): ' + js.join(' , '));
+  } catch (e) {}
+  var data = [];
+  try {
+    data.push('trainingLog 动作数: ' + ((typeof trainingLog !== 'undefined' && trainingLog) ? Object.keys(trainingLog).length : 0));
+  } catch (e) { data.push('trainingLog: 读不到'); }
+  ['lastplan', 'history', 'prs', 'bodylog', 'trainlog'].forEach(function (k) {
+    var v = null;
+    try { v = localStorage.getItem(k); } catch (e) {}
+    data.push(k + ': ' + (v ? v.length + ' 字符' : '空'));
+  });
+  var errs = [];
+  try {
+    var el = JSON.parse(localStorage.getItem('fitbuddy_errlog') || '[]');
+    errs = el.slice(-5).map(function (x) { return (x.msg || x.message || JSON.stringify(x)).slice(0, 160); });
+  } catch (e) {}
+
+  return { rows: rows, env: env, data: data, errs: errs };
+};
+
+// ?prodiag=1 → 直接把自检结果糊在页面上, 方便手机截图
+(function () {
+  if (!/[?&]prodiag=1\b/.test(location.search)) return;
+  var render = function () {
+    var d = null;
+    try { d = window.fbProDiag(); } catch (e) { d = { rows: [], env: ['自检本身报错: ' + e.message], data: [], errs: [] }; }
+    var txt = '=== Pro 卡自检 ===\n';
+    d.rows.forEach(function (r) {
+      txt += '[' + r.state + '] ' + r.name + (r.why ? ' —— ' + r.why : '') + '\n';
+    });
+    txt += '\n=== 环境 ===\n' + d.env.join('\n');
+    txt += '\n\n=== 本地数据 ===\n' + d.data.join('\n');
+    txt += '\n\n=== 最近 JS 报错 ===\n' + (d.errs.length ? d.errs.join('\n') : '（无）');
+
+    var box = document.createElement('div');
+    box.style.cssText = 'position:fixed;z-index:99999;left:0;right:0;top:0;bottom:0;overflow:auto;' +
+      'background:#fff;color:#111;padding:14px;font:13px/1.7 -apple-system,system-ui,sans-serif;';
+    box.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;position:sticky;top:-14px;background:#fff;padding:8px 0;">' +
+      '<b style="font-size:15px;">Pro 功能自检</b>' +
+      '<button id="diagCopy" style="padding:7px 12px;border:none;border-radius:8px;background:#FF6B35;color:#fff;font-weight:700;">复制结果</button>' +
+      '<button id="diagClose" style="padding:7px 12px;border:1px solid #ddd;border-radius:8px;background:#fff;">关闭</button></div>' +
+      '<pre id="diagText" style="white-space:pre-wrap;font:12px/1.8 ui-monospace,Menlo,Consolas,monospace;">' +
+      String(txt).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
+    document.body.appendChild(box);
+    document.getElementById('diagClose').onclick = function () { box.remove(); };
+    document.getElementById('diagCopy').onclick = function () {
+      var ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); this.textContent = '已复制 ✓'; } catch (e) { this.textContent = '复制失败，手动选中'; }
+      ta.remove();
+    };
+  };
+  // ⚠️ 必须等 DOMContentLoaded: pro-tools.js 是 defer 脚本且排在中间, 此刻它后面还有
+  //    5 个 js 没执行(calculator-diet / backup-code ...), 立刻渲染的话
+  //    "已加载 js" 只能看到一半, 而那几个恰恰最可能是手机上没刷新的那批。
+  //    defer 脚本全部执行完才触发 DOMContentLoaded, 所以这里不需要再套 setTimeout。
+  // ⚠️ defer 脚本执行时 readyState 已经是 'interactive', 若此时直接渲染,
+  //    pro-tools.js 后面那 5 个 js 还没请求, "已加载 js" 只能看到 9 个 ——
+  //    而缺的那几个(calculator-diet / backup-code)恰恰最可能是手机上没刷新的。
+  //    所以只有文档彻底加载完(complete)才立即渲染, 其余一律等 DOMContentLoaded。
+  if (document.readyState === 'complete') render();
+  else document.addEventListener('DOMContentLoaded', render);
+})();
+
 })();
