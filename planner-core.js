@@ -9602,8 +9602,13 @@ function openTimerFab() {
 //   ② 不能拖出屏幕, 也不能骑到 tab bar(固定高 56px)上 —— 骑上去等于按钮失灵。
 //   ③ 位置要跨会话记住, 而且存「相对比例」而不是像素 —— 同一个站会在竖屏、
 //      横屏、桌面宽屏之间切来切去, 存像素会把按钮甩到屏幕外面去。
+//   ④ 松手吸附左右边缘 —— 自由落位会停在屏幕正中挡住计划卡片。
+//
+// 另外加了一次性气泡提示: 不写一句话没人知道这球能拖, 但每次进来都说一遍
+// 又招人烦, 所以只在「从没拖过」时露一次脸, 拖过/点掉就永久不再出现。
 (function(){
   var KEY  = 'fitbuddy_fab_pos';
+  var HKEY = 'fitbuddy_fab_hint';   // 气泡提示是否已看过
   var SIZE = 52;   // 必须和 CSS 里 .fab-timer 的 width/height 一致
   var PAD  = 8;    // 离屏幕边缘的最小间距
   var DOWN = 64;   // 底部禁区 = tab bar 56 + 8 呼吸, 防止按钮压在导航栏上
@@ -9611,18 +9616,30 @@ function openTimerFab() {
 
   var el = document.getElementById('fabTimer');
   if (!el) return;
+  var hint = document.getElementById('fabHint');
 
   var dragging = false, moved = false;
   var startX = 0, startY = 0, baseX = 0, baseY = 0;
+
+  // 顶部禁区: header 是 sticky 的, 一直占着顶部一条。
+  // 而按钮的橙色渐变和 header 的渐变是同一套色 —— 拖上去之后按钮会整个糊进
+  // header 里, 看着就像按钮凭空消失了(其实还能点, 但没人找得到)。
+  // 所以按 header 实际高度把这块划成禁区, 高度动态量, 免得改了 padding 又对不上。
+  function topGuard(){
+    var h = document.querySelector('.header');
+    var hh = h ? h.getBoundingClientRect().height : 0;
+    return Math.max(PAD, Math.round(hh) + PAD);
+  }
 
   // 当前视口下允许摆放的矩形范围
   function limits(){
     var vw = window.innerWidth, vh = window.innerHeight;
     var minX = PAD, maxX = Math.max(minX, vw - SIZE - PAD);
-    var minY = PAD, maxY = Math.max(minY, vh - SIZE - DOWN);
+    var minY = topGuard(), maxY = Math.max(minY, vh - SIZE - DOWN);
     return { minX:minX, maxX:maxX, minY:minY, maxY:maxY };
   }
 
+  // 返回夹取后的真实坐标 —— 调用方要拿它去存/算箭头位置, 不能再猜
   function place(x, y){
     var L = limits();
     x = Math.min(Math.max(x, L.minX), L.maxX);
@@ -9631,6 +9648,17 @@ function openTimerFab() {
     el.style.top = y + 'px';
     el.style.right  = 'auto';   // 作废 CSS 里的 right:calc(50% - 195px)
     el.style.bottom = 'auto';   // 作废 CSS 里的 bottom:90px
+    return { x:x, y:y };
+  }
+
+  // 松手吸附: 按钮中心落在屏幕左半边就贴左, 右半边就贴右, 纵向不动。
+  // 只吸左右不吸上下 —— 上下留给用户自己决定, 有人练卧推要挪到顶部看计时,
+  // 有人躺着想放下面, 强行归位等于替他做了决定。
+  function snapX(){
+    var r = el.getBoundingClientRect();
+    var L = limits();
+    var cx = r.left + r.width / 2;
+    return cx < window.innerWidth / 2 ? L.minX : L.maxX;
   }
 
   function save(x, y){
@@ -9651,7 +9679,15 @@ function openTimerFab() {
       var o = JSON.parse(raw);
       if (typeof o.x !== 'number' || typeof o.y !== 'number') return false;
       var L = limits();
-      place(L.minX + o.x * (L.maxX - L.minX), L.minY + o.y * (L.maxY - L.minY));
+      // 开场这一次落位必须掐掉过渡: CSS 带着 transition:all .25s,
+      // 不掐的话每次刷新都能看见按钮从右下角「飞」到左边, 像页面抽了一下。
+      el.style.transition = 'none';
+      var p = place(L.minX + o.x * (L.maxX - L.minX), L.minY + o.y * (L.maxY - L.minY));
+      // v137 是自由落位, 老用户存过「停在屏幕中间」的比例, 升级后统一吸到边上,
+      // 否则吸附等于没生效 —— 正是这次要解决的问题。
+      place(snapX(), p.y);
+      void el.offsetWidth;            // 强制回流, 让 none 生效后再还回去
+      el.style.transition = '';
       return true;
     } catch(e) { return false; }
   }
@@ -9670,6 +9706,7 @@ function openTimerFab() {
     dragging = true; moved = false;
     startX = p.x; startY = p.y;
     baseX = r.left; baseY = r.top;
+    hideHint(false);   // 手指一按下去气泡就该让位, 别挡着正在拖的按钮
     // 捕获指针: 手指滑得快、瞬间跑出按钮范围时也不会把这次拖动断掉
     if (el.setPointerCapture && e.pointerId != null) {
       try { el.setPointerCapture(e.pointerId); } catch(err) {}
@@ -9695,7 +9732,17 @@ function openTimerFab() {
     el.classList.remove('fab-dragging');
     if (moved) {
       var r = el.getBoundingClientRect();
-      save(r.left, r.top);
+      var tx = snapX(), ty = r.top;
+      // 先摘 class 把 transition:all .25s 放回来, 再隔一帧才改 left ——
+      // 同一帧里同时改 transition 和 left, 部分内核不认这次过渡, 按钮会瞬移;
+      // 隔一帧它才把 .25s 当真, 吸附才有那段滑到边上的动画。
+      // 拖过一次说明已经知道这球能拖了, 提示没必要再留着(万一气泡被引导遮罩
+      // 挡掉没露过脸, 这里就是兜底)
+      markHint();
+      requestAnimationFrame(function(){
+        var p = place(tx, ty);
+        save(p.x, p.y);
+      });
       // moved 留着不清, 交给下面的 click 处理器把这一次补发的 click 吃掉
     }
   }
@@ -9725,13 +9772,82 @@ function openTimerFab() {
   });
 
   // 旋屏 / 改窗口大小: 位置是相对比例存的, 重新落一次就能贴回可见区
-  function reflow(){ if (el.style.left) restore(); }
+  function reflow(){
+    if (el.style.left) restore();
+    // 气泡还挂着的话要重新贴一次, 不然旋屏后它留在旧坐标上, 箭头指向空气
+    if (hint && hint.classList.contains('show')) placeHint();
+  }
   window.addEventListener('resize', reflow);
   window.addEventListener('orientationchange', function(){ setTimeout(reflow, 250); });
 
+  // ============ 一次性气泡提示 ============
+  // 为什么要它: 没有任何视觉线索暗示这颗球能拖, title 提示只有电脑鼠标悬停才看得到,
+  // 手机上等于零提示。但又不能每次进来都说一遍, 所以「从没拖过」才露脸,
+  // 拖过一次 / 点掉 / 6 秒没人理 → 记一笔, 之后永远不再出现。
+  var hintTimer = null;
+
+  function hintSeen(){
+    try { return !!localStorage.getItem(HKEY); } catch(e) { return true; }
+  }
+  function markHint(){
+    try { localStorage.setItem(HKEY, '1'); } catch(e) {}
+  }
+
+  function hideHint(remember){
+    if (!hint) return;
+    if (remember) markHint();
+    hint.classList.remove('show');
+    if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
+  }
+
+  function placeHint(){
+    if (!hint) return;
+    var r = el.getBoundingClientRect();
+    var hw = hint.offsetWidth, hh = hint.offsetHeight;
+    var vw = window.innerWidth;
+    // 水平: 气泡中心对准按钮中心, 再整体夹进屏幕里
+    var hx = r.left + r.width / 2 - hw / 2;
+    hx = Math.min(Math.max(hx, PAD), Math.max(PAD, vw - hw - PAD));
+    // 垂直: 优先挂按钮上方; 上方放不下就翻到下方。
+    // 判定线用 topGuard() 而不是 PAD —— 按钮贴着 header 下沿时, 气泡放上面会
+    // 直接盖在 header 上, 白字压红底还压着 logo, 比不放还乱。
+    var above = true;
+    var hy = r.top - hh - 10;
+    if (hy < topGuard()) { above = false; hy = r.bottom + 10; }
+    hint.style.left = hx + 'px';
+    hint.style.top  = hy + 'px';
+    hint.classList.toggle('above', above);
+    hint.classList.toggle('below', !above);
+    // 箭头要指向按钮中心 —— 气泡可能已经被屏幕边缘顶回来, 所以箭头位置得按
+    // 「按钮中心 - 气泡左沿」重算, 不能写死居中
+    var ax = r.left + r.width / 2 - hx;
+    hint.style.setProperty('--fab-arrow-x',
+      Math.min(Math.max(ax, 18), Math.max(18, hw - 18)) + 'px');
+  }
+
+  function showHint(){
+    if (!hint || hintSeen()) return;
+    // 新手引导(全屏遮罩)正在显示时不插嘴 —— 两层提示叠一起只会互相打架
+    if (document.getElementById('obOverlay')) return;
+    placeHint();
+    hint.classList.add('show');
+    // 露过一次脸就算看过 —— 显示即记账, 不用等用户去点或等 6 秒走完。
+    // 否则会出现「气泡冒出来了、用户没理、下次进来又冒」的复读机。
+    markHint();
+    if (hintTimer) clearTimeout(hintTimer);
+    hintTimer = setTimeout(function(){ hideHint(false); }, 6000);   // 没人理就自己退场
+  }
+
+  if (hint) {
+    hint.addEventListener('click', function(){ hideHint(true); });
+    // 延后 2.5 秒: 刚落地那会儿首屏还在排布, 立刻糊一个气泡上去只像弹窗广告
+    setTimeout(showHint, 2500);
+  }
+
   // 拖到角落想要复位时, 控制台跑一下 fbResetFab()
+  // (顺带清掉气泡标记, 方便重新看一遍提示长什么样)
   window.fbResetFab = function(){
-    try { localStorage.removeItem(KEY); } catch(e) {}
+    try { localStorage.removeItem(KEY); localStorage.removeItem(HKEY); } catch(e) {}
     el.style.left = el.style.top = '';
     el.style.right = el.style.bottom = '';
   };

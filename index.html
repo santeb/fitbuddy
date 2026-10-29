@@ -401,6 +401,19 @@ input,select{font-family:inherit;}
 .fab-timer.fab-dragging{transition:none;animation:none;transform:scale(1.12);box-shadow:0 8px 26px rgba(255,107,53,0.6);}
 @media(min-width:431px){.fab-timer{right:calc(50% - 215px + 16px);}}
 
+/* FAB 一次性气泡提示: 不说明没人知道这按钮能拖。
+   ① 默认 opacity:0 + pointer-events:none —— 靠 visibility/display 切换会丢掉过渡,
+      而且 display:none 时量不到尺寸, 气泡没法算「别超出屏幕」。
+   ② 箭头用伪元素, 位置靠 JS 写进来的 --fab-arrow-x(气泡内的像素偏移),
+      这样气泡被屏幕边缘顶回来时, 箭头仍然指向按钮中心而不会跟着跑偏。 */
+.fab-hint{position:fixed;left:0;top:0;z-index:201;max-width:210px;padding:8px 12px;border-radius:12px;background:rgba(24,24,34,0.95);color:#fff;font-size:12px;font-weight:600;line-height:1.5;white-space:nowrap;box-shadow:0 8px 22px rgba(0,0,0,0.32);opacity:0;pointer-events:none;transform:translateY(6px) scale(0.94);transition:opacity .25s,transform .25s;}
+.fab-hint.show{opacity:1;pointer-events:auto;transform:translateY(0) scale(1);}
+.fab-hint::after{content:"";position:absolute;left:var(--fab-arrow-x,50%);margin-left:-6px;border:6px solid transparent;}
+/* 气泡在按钮上方 → 箭头朝下, 画在气泡底边 */
+.fab-hint.above::after{bottom:-12px;border-top-color:rgba(24,24,34,0.95);}
+/* 气泡在按钮下方 → 箭头朝上, 画在气泡顶边 */
+.fab-hint.below::after{top:-12px;border-bottom-color:rgba(24,24,34,0.95);}
+
 /* 补水提醒横幅 */
 .hydra-banner{display:none;position:fixed;bottom:160px;left:50%;transform:translateX(-50%);z-index:250;background:linear-gradient(135deg,#4FC3F7,#29B6F6);color:#fff;padding:12px 20px;border-radius:30px;box-shadow:0 4px 20px rgba(33,150,243,0.4);font-size:14px;font-weight:700;align-items:center;gap:8px;cursor:pointer;animation:hydraBounce 0.6s ease-out;white-space:nowrap;}
 .hydra-banner.show{display:flex;}
@@ -764,7 +777,7 @@ input,select{font-family:inherit;}
 @media print{
   @page { margin: 12mm 10mm; size: A4 portrait; }
   /* 隐藏所有 UI 交互元素 */
-  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,#chatbotWidget,#reminderBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
+  .header,.tab-bar,.btn-generate,.week-bar,.rest-btn,.ex-check,.timer-overlay,.modal-overlay,#paceCalc,.note-input,.sub-btn,.prog-input,.prog-row,.sub-modal-overlay,.cycle-banner,.injury-banner,.shoe-btn,.clear-btn,.export-btn,.rpe-badge,.fab-timer,.fab-hint,#chatbotWidget,#reminderBanner,#injuryBody,#reminderSettings,.donate-hero,.donate-qr-row,.donate-msg,.reminder-banner,.injury-banner,#proPlanModules,#calcHub,#proToolsSection,.deload-toggle-wrap,.reschedule-banner,.fatigue-banner,.periodization-card,.prog-chart-card,#hydraBanner,.supps-banner,.supp-card{display:none!important;}
   .app{max-width:100%;padding:0;background:#fff!important;color:#000!important;}
   body{background:#fff!important;color:#000!important;font-size:12px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   /* 强制白色背景+黑色文字 */
@@ -1267,6 +1280,9 @@ input,select{font-family:inherit;}
        内联 onclick 在 HTML 解析阶段就注册了, 执行顺序永远排在后面加的监听器之前,
        stopImmediatePropagation 也拦不住它, 那样每次拖完松手都会顺带弹出计时器。 -->
   <button class="fab-timer" id="fabTimer" title="组间休息计时器 · 可拖动">⏱</button>
+  <!-- 一次性气泡: 只提示一次「能拖」, 拖过/点过/关掉之后永久不再出现。
+       默认不显示, 文案和定位全由 planner-core.js 里的 FAB 模块接管。 -->
+  <div class="fab-hint" id="fabHint" role="tooltip">按住我，可以拖走</div>
 
   <!-- 补水提醒横幅 -->
   <div class="hydra-banner" id="hydraBanner" onclick="dismissHydraBanner()">
@@ -1314,7 +1330,7 @@ input,select{font-family:inherit;}
 <script src="persistence.js?v=1" defer></script>
 
 <script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=124" defer></script>
+<script src="planner-core.js?v=125" defer></script>
   <script src="pro-tools.js?v=33" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>
