@@ -1990,7 +1990,7 @@ function pickRefillEx(m, seenName, seenFam, equip, level, bwShift, bwLevel) {
   return pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false);
 }
 
-function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName, bud) {
+function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName) {
   if (!arr || !arr.length) return [];
   var topic = parseDayTopic(dayName);
   var accept = function(c) { return dayExOk(c, topic); };
@@ -2016,19 +2016,10 @@ function dedupFamilyAndRefill(arr, equip, level, bwShift, bwLevel, dayName, bud)
     // 严格:同肌群找不同族 → 搭档肌群找不同族
     // 放宽:同肌群里找同族但不同名的(池子太小,例如自重背池几乎全是引体族)
     //      宁可是"引体向上 + 前水平拉背",也不要让拉日只剩 2 个动作
-    //
-    // ⚠️ 周预算:默认顺序是「先补自己、补不到再补搭档」,而"自己"往往正是那个
-    //    整周已经排满的部位(拉日掉的槽位补回背 → 背 5 个动作 25 组,上限 20)。
-    //    cap 一旦用尽,就把搭档肌群提到前面 —— 掉的是背,补的是二头/核心,总量照样够。
-    var order = [slot.drop].concat(PARTNER_MUSCLES[slot.drop] || []);
-    if (fbBudgetLeft(bud, slot.drop) <= 0) {
-      var alt = (PARTNER_MUSCLES[slot.drop] || []).filter(function (m) { return fbBudgetLeft(bud, m) > 0; });
-      if (alt.length) order = alt;
-    }
-    var c = pickRefillExFrom(order,
+    var c = pickRefillExFrom([slot.drop].concat(PARTNER_MUSCLES[slot.drop] || []),
               seenName, seenFam, equip, level, bwShift, bwLevel, false, acceptSafe)
          || pickRefillExFrom([slot.drop], seenName, seenFam, equip, level, bwShift, bwLevel, true, accept);
-    if (c) { slots[i] = { keep: c }; fbBudgetTake(bud, c.m); }
+    if (c) slots[i] = { keep: c };
   });
   return slots.filter(function(s) { return s.keep; }).map(function(s) { return s.keep; });
 }
@@ -2039,7 +2030,7 @@ window.dedupFamilyAndRefill = dedupFamilyAndRefill;
 //   pickExes 取不满,再经过同族去重,分化日实际只剩 2-3 个动作 ——
 //   用户看到的就是"今天才练两个?"(实测 6096 个训练日里 2701 个动作数 <= 3)。
 // 只追加到末尾:打卡状态按 day_ex序号 存,末尾新增不会让已勾选的动作错位。
-function ensureMinExes(day, equip, level, bwShift, bwLevel, minOverride, bud) {
+function ensureMinExes(day, equip, level, bwShift, bwLevel) {
   var exes = (day && day.exes) || [];
   if (!exes.length) return exes;
   var name = (day && day.name) || '';
@@ -2047,32 +2038,15 @@ function ensureMinExes(day, equip, level, bwShift, bwLevel, minOverride, bud) {
   // 注意"力量+有氧 1"这种混合日不算 —— 它的力量部分照样要保底。
   var allCardio = exes.every(function(e) { return !e.m || e.m === '有氧' || e.m === '跑步'; });
   if (allCardio) return exes;
-  // 新手 4 个起步,中/高级 5 个 —— 低于这个数,一次训练撑不起来。
-  //
-  // ⚠️ v166:这个"4/5"是写死的,跟每周容量目标完全脱钩 —— 练 4 天和练 6 天,
-  //    每天都被强行补到 5 个动作,于是天数越多、总量越高,最后必然顶穿
-  //    FB_VOLUME_TARGET(实测 6 天计划胸被补到 32 组、上限 20)。
-  //    所以 buildPlan 会按「每周目标动作数 ÷ 天数」算一个 minOverride 传进来。
-  //    ⚠️ 补位只按天名的主题肌群补,而它总是先补主题里的第一个部位 ——
-  //    这就是为什么额外日必须本身够数,靠补位填空等于把容量全堆到胸上。
-  var min = (typeof minOverride === 'number' && minOverride > 0)
-    ? minOverride
-    : ((level === 'beginner') ? 4 : 5);
+  // 新手 4 个起步,中/高级 5 个 —— 低于这个数,一次训练撑不起来
+  var min = (level === 'beginner') ? 4 : 5;
   if (exes.length >= min) return exes;
 
   var topic = parseDayTopic(name);
-  // 最后一轮用的宽松版:允许补进带 ⚠️ 的伤病动作,也允许超出周预算 ——
-  //    ⚠️ 但只在"这天已经只剩 2 个动作"时才放开周预算:
-  //    训练日空到不像话(2 个动作)确实比某部位超上限一点点更糟;
-  //    只是没凑到 min(比如 3 个还差 1 个)就别硬塞 —— 那是在给已经排满的部位加码,
-  //    实测 muscle/进阶/6天 就是这么把背从 20 组顶到 25 组的。
-  var accept = function(c) {
-    return dayExOk(c, topic) && (out.length < 3 || fbBudgetLeft(bud, c.m) > 0);
-  };
-  // 🩹 前几轮用的严格版:躲开伤病动作 **并且** 该部位本周还装得下。
-  //    周预算这层放在 chk 里而不是只靠排序:排序只是"优先别的部位",
-  //    chk 才是硬闸门 —— 就算 order 里只剩背,背满了也取不出动作来。
-  var acceptSafe = function(c) { return dayExOk(c, topic) && !isInjured(c.n) && fbBudgetLeft(bud, c.m) > 0; };
+  var accept = function(c) { return dayExOk(c, topic); };
+  // 🩹 同 dedupFamilyAndRefill:保底补进来的动作也要躲开伤病动作。
+  //    前几轮只补能练的,最后一轮才放宽 —— 补不满比补进一堆灰动作要好,但也不能让训练日只剩 2 个。
+  var acceptSafe = function(c) { return dayExOk(c, topic) && !isInjured(c.n); };
   var seenName = {}, seenFam = {}, coreCnt = 0;
   exes.forEach(function(e) {
     if (!e) return;
@@ -2092,44 +2066,32 @@ function ensureMinExes(day, equip, level, bwShift, bwLevel, minOverride, bud) {
   // 最后兜底:核心和腿在任何力量日都不算离谱,同侧其次,反侧垫底
   var fallback = ['核心','腿'].concat(sameSide).concat(['肩','胸','背','臂']);
   // 核心配额:主题里带核心就随便加,否则最多补 2 个 —— 别把拉日补成核心日
-  // ⚠️ 周预算优先:核心这周已经够了就一个都不补(实测 3 天进阶全身日每天自带 1 个核心,
-  //    再补一个 = 4 个 20 组,上限 12)。全身日(noTopic)以前是 99 不限,同样要被预算管住。
-  var coreCap = (fbBudgetLeft(bud, '核心') <= 0) ? 0
-              : ((topic.main.indexOf('核心') >= 0 || noTopic) ? 99
-                 : ((level === 'beginner') ? 1 : 2));
+  var coreCap = (topic.main.indexOf('核心') >= 0 || noTopic) ? 99
+              : ((level === 'beginner') ? 1 : 2);
 
   var out = exes.slice();
-  function fill(order, allowCore, acc, strict) {
-    var ord = fbBudgetOrder(bud, order, strict);
-    for (var i = 0; i < ord.length && out.length < min; i++) {
-      var m = ord[i];
+  function fill(order, allowCore, acc) {
+    for (var i = 0; i < order.length && out.length < min; i++) {
+      var m = order[i];
       if (m === '核心' && (!allowCore || coreCnt >= coreCap)) continue;
       var c = pickRefillExFrom([m], seenName, seenFam, equip, level, bwShift, bwLevel, false, acc || accept);
       if (!c) continue;
       out.push(c);
       if (c.m === '核心') coreCnt++;
-      fbBudgetTake(bud, c.m);
     }
   }
   // 分档补:主题内 → 核心(限额) → 同侧 → 全身兜底。多轮直到达标或补不动
   for (var round = 0; round < 4 && out.length < min; round++) {
     var before = out.length;
     var acc = (round === 3) ? accept : acceptSafe;   // 最后一轮才允许补进带 ⚠️ 的动作
-    // 前两轮尊重周上限(已满的部位连 order 都不进),后两轮放宽到"排在后面也能补"。
-    //   分两级而不是一刀切:一律 strict 会让小器械/伤病场景下训练日真的只剩两三个动作;
-    //   一律放宽则这道闸门形同虚设。先礼后兵。
-    var strict = round < 2;
-    if (noTopic) { fill(fallback, true, acc, strict); }
+    if (noTopic) { fill(fallback, true, acc); }
     else {
-      fill(own, false, acc, strict);
-      if (out.length < min) fill(['核心','核心'], true, acc, strict);
-      if (out.length < min) fill(sameSide, false, acc, strict);
-      if (out.length < min) fill(fallback, true, acc, strict);
+      fill(own, false, acc);
+      if (out.length < min) fill(['核心','核心'], true, acc);
+      if (out.length < min) fill(sameSide, false, acc);
+      if (out.length < min) fill(fallback, true, acc);
     }
-    // ⚠️ strict 轮"一个都没补进"不等于"池子枯了",很可能只是被周预算挡住 ——
-    //    原来的 `if (out.length === before) break;` 会在这里直接收工,
-    //    放宽轮永远轮不到,闸门变成"宁可让训练日缺一块也不许超一点"。
-    if (out.length === before && !strict) break;
+    if (out.length === before) break;
   }
   return out;
 }
@@ -2583,7 +2545,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     var actualKm = calcMarathonWeekKm(trainingDays);
     if (actualKm) goalCfg = Object.assign({}, goalCfg, {_weekKm: actualKm});
   }
-  html += renderSummary(goalNames[goal], levelNames[level], equipNames[equip], days, goalCfg, cfg.sets, intensityStr, goal, trainingDays);
+  html += renderSummary(goalNames[goal], levelNames[level], equipNames[equip], days, goalCfg, cfg.sets, intensityStr, goal);
   // 🧠 自适应提示:紧跟摘要卡 —— 用户第一眼就能看到"为什么这周是这么多组 / 档位为什么变了"
   html += renderLevelCalibrationBanner();
   html += renderAdaptiveVolumeBanner();
@@ -3191,185 +3153,6 @@ function fbMaybePromptInstall() {
   } catch (e) { /* 安装引导失败不影响主流程 */ }
 }
 
-// ==================== 计划容量 / 频率核算（v166）====================
-// 为什么要抽这一层:以前每个部位每周排多少组、练几次,是模板里写死数字"碰"出来的 ——
-//   4 天计划把腿排成 7 个动作槽、胸背各 2 个,于是中级腿 28 组(上限 20)、胸背肩却各只有
-//   1 次/周,而页面上还写着"每部位每周 2 次"。改天数、改水平、改组数,没有任何一处会跟着变。
-//   现在改成:先按 FB_VOLUME_TARGET 算出每周该多少组 → 除以每动作组数得到"该排几个动作"
-//   → 再把这个动作数分到该部位出现的那几天。任一变量变了,分配自动重算。
-// ⚠️ 只改"怎么分配",绝不改 CONFIGS.sets 本身:它有 8 处读取点,全都当"每动作组数"用,
-//    动它会同时改摘要卡、卡路里估算、老日志折算、计算器处方。
-
-// 每动作几组。CONFIGS 里只存一次,这里不要再抄一份 3/4/5 —— 抄了就是第二个真相。
-function fbLevelSets(level) {
-  try {
-    if (typeof CONFIGS !== 'undefined' && CONFIGS[level] && CONFIGS[level].sets) return CONFIGS[level].sets;
-  } catch (e) {}
-  return level === 'beginner' ? 3 : (level === 'intermediate' ? 4 : 5);
-}
-
-// ── 周容量预算 ────────────────────────────────────────────────────────────
-// ⚠️ 补位(dedupFamilyAndRefill)和保底(ensureMinExes)天生只看见**单天**:
-//    它们的职责是"这天动作太少/去重掉了,补一个上来",补哪个部位完全由当天天名决定,
-//    根本不知道这个部位整周已经排了多少。于是出现:
-//      分配器算得再准(拉A×2 / 拉B×2 = 背 4 个动作 20 组,正好是上限),
-//      去重后一补位,又往背上塞一个 → 背 5 个动作 25 组,顶穿上界(实测 muscle/进阶/6天)。
-//    分配器没错,错在补位不看整周。修分配器是南辕北辙。
-//
-// 解法:把「周容量」做成一个可传递的预算对象,补位挑部位时先问它一句"这个部位还装得下吗"。
-//   cap[m]  = 部位本周最多几个动作 = floor(周组数上限 / 每组数)
-//             ⚠️ 用 floor 不用 ceil:ceil(12/5)=3 个核心 = 15 组 > 上限 12,
-//                等于"允许补到超 25%",那这道闸门就没意义了。
-//   used[m] = 当前已排的动作数(含尚未处理的那几天的原始值,处理到哪天就实时校正为真实值)
-var FB_BUDGET_MUSCLES = ['腿','胸','背','肩','臂','核心'];
-function fbWeekBudget(plan, level) {
-  var per = fbLevelSets(level), cap = {}, used = {};
-  FB_BUDGET_MUSCLES.forEach(function (m) {
-    var hi = (typeof FB_VOLUME_TARGET !== 'undefined' && FB_VOLUME_TARGET[m]) ? FB_VOLUME_TARGET[m][1] : 16;
-    cap[m] = Math.max(2, Math.floor(hi / per));
-    used[m] = 0;
-  });
-  (plan || []).forEach(function (d) {
-    ((d && d.exes) || []).forEach(function (e) {
-      if (e && e.m && used[e.m] != null) used[e.m]++;
-    });
-  });
-  return { cap: cap, used: used, per: per };
-}
-// 按 plan 的**当前**内容重算 used。处理到哪天就再算一次:已处理的天已经是真实值,
-// 未处理的天还是模板原值 —— 两者混在同一个账上,闸门看到的才是"整周已排了多少"。
-function fbBudgetRecount(bud, plan) {
-  if (!bud || !bud.used) return bud;
-  FB_BUDGET_MUSCLES.forEach(function (m) { bud.used[m] = 0; });
-  (plan || []).forEach(function (d) {
-    ((d && d.exes) || []).forEach(function (e) {
-      if (e && e.m && bud.used[e.m] != null) bud.used[e.m]++;
-    });
-  });
-  return bud;
-}
-// >0 = 还装得下;<=0 = 这周别再往这个部位塞了
-function fbBudgetLeft(bud, m) {
-  if (!bud || !bud.cap || bud.cap[m] == null) return 1;
-  return bud.cap[m] - (bud.used[m] || 0);
-}
-function fbBudgetTake(bud, m) {
-  if (bud && bud.used && bud.used[m] != null) bud.used[m] = (bud.used[m] || 0) + 1;
-}
-// 把 order 拆成「没满的先、满了的后」;strict=true 时直接丢掉已满的(本轮不许再补它)
-function fbBudgetOrder(bud, order, strict) {
-  if (!bud) return order;
-  var ok = [], full = [];
-  order.forEach(function (m) { (fbBudgetLeft(bud, m) > 0 ? ok : full).push(m); });
-  return strict ? ok : ok.concat(full);
-}
-
-// 计划([{name, exes}]) → 每部位每周被练到几天。
-// 同一天里某部位排 3 个动作也只算 1 次 —— 频率看的是"几天",不是"几个动作"。
-function fbPlanFreq(plan) {
-  var freq = {};
-  (plan || []).forEach(function (day) {
-    var seen = {};
-    ((day && day.exes) || []).forEach(function (e) { if (e && e.m) seen[e.m] = true; });
-    Object.keys(seen).forEach(function (m) { freq[m] = (freq[m] || 0) + 1; });
-  });
-  return freq;
-}
-
-// 计划 → 每部位每周几组(动作个数 × 每动作组数)
-function fbPlanWeeklyVolume(plan, sets) {
-  var cnt = {};
-  (plan || []).forEach(function (day) {
-    ((day && day.exes) || []).forEach(function (e) { if (e && e.m) cnt[e.m] = (cnt[e.m] || 0) + 1; });
-  });
-  var out = {};
-  Object.keys(cnt).forEach(function (m) { out[m] = cnt[m] * (sets || fbLevelSets('beginner')); });
-  return out;
-}
-
-// 每部位每周目标组数:在 FB_VOLUME_TARGET 区间里按水平取不同位置。
-// 新手贴下限(最小有效量就够了)、中级取中、进阶偏上 —— 同一个区间不该三个人用同一个数。
-function fbWeeklyTargetSets(m, level) {
-  var t = (typeof FB_VOLUME_TARGET !== 'undefined' && FB_VOLUME_TARGET[m]) || [10, 16];
-  var f = level === 'beginner' ? 0 : (level === 'intermediate' ? 0.5 : 0.75);
-  return Math.round(t[0] + (t[1] - t[0]) * f);
-}
-
-// 每周该排几个动作 = 目标组数 ÷ 每动作组数。
-// 目标组数和 sets 是同步涨的(新手 12 组/3 组、进阶 18 组/5 组),所以动作数基本恒定 ——
-// 这正是"算对了"该有的样子:水平上去了加的是组数,不是往一天里塞更多动作。
-//
-// goal === 'strength' 时走力量口径:低次数、高强度(RPE 8-10、85% 1RM),
-//   容量不该按增肌那套"取区间中上段"算 —— 直接用增肌口径,进阶每个部位都会顶到
-//   区间上限(腿 20 组还带 RPE 9,一周恢复不过来);只取下限时新手(3 组/动作)刚好,
-//   中级/进阶又会掉到区间以下。取两者较大值:下限保底 + 目标 85 折兜住上不去的部分,
-//   三档水平实测都落在区间内。
-function fbWeeklyExCount(m, level, sets, goal) {
-  var s = sets || fbLevelSets(level);
-  var t = fbWeeklyTargetSets(m, level);
-  var n;
-  if (goal === 'strength') {
-    var low = ((typeof FB_VOLUME_TARGET !== 'undefined' && FB_VOLUME_TARGET[m]) || [10, 16])[0];
-    n = Math.max(Math.ceil(low / s), Math.round(t * 0.85 / s));
-  } else {
-    n = Math.round(t / s);
-  }
-  return Math.max(1, Math.min(6, n));
-}
-
-// 把"某部位每周 N 个动作"分到它出现的 slots 个训练日里。
-// 频率优先:动作数不够每人分 1 个时,宁可总量多一个也不让某天轮空 ——
-// 轮空 = 这个部位这周只练 1 次,而"每周 2 次优于 1 次"正是我们要保的东西。
-function fbSplitCount(total, slots) {
-  var out = [], i;
-  if (!(slots > 0)) return out;
-  for (i = 0; i < slots; i++) out.push(0);
-  if (!(total > 0)) return out;
-  var base = Math.floor(total / slots), rest = total - base * slots;
-  if (base < 1) { base = 1; rest = 0; }
-  for (i = 0; i < slots; i++) out[i] = base + (i < rest ? 1 : 0);
-  return out;
-}
-
-// 按权重分摊(三头/二头这种子池用)。
-// ⚠️ 权重 = 该子池出现在几个训练日里,不是平均分成两份:
-//    muscle 6 天 臂周目标 3 个、三头只有推 A 一个天位、二头有拉 A/拉 B 两个天位 ——
-//    平均分 = 三头 2 个 + 二头 1 个,于是推 A 堆到 6 个动作、拉 B 只剩 2 个,
-//    少的那天被 ensureMinExes 补位,补的又总是天名第一个部位(背)→ 背 5 个 25 组(上限 20)。
-//    按天位加权 = 三头 1 + 二头 2,两个拉日各 1 个,天天够数,不用补。
-function fbSplitWeighted(total, weights) {
-  var n = (weights || []).length, out = [], i;
-  if (!(n > 0)) return out;
-  var sum = 0;
-  for (i = 0; i < n; i++) sum += (weights[i] > 0 ? weights[i] : 0);
-  if (sum <= 0) { for (i = 0; i < n; i++) weights[i] = 1; sum = n; }
-  var used = 0;
-  for (i = 0; i < n; i++) { out[i] = Math.floor(total * (weights[i] > 0 ? weights[i] : 0) / sum); used += out[i]; }
-  var rest = total - used, order = [];
-  for (i = 0; i < n; i++) order.push(i);
-  order.sort(function (a, b) { return (weights[b] - weights[a]) || (a - b); });   // 余数给天位多的
-  for (i = 0; i < rest && i < n * 4; i++) out[order[i % n]]++;
-  // 同 fbSplitCount:有天位就该练到,total 不够就宁可总量多一个也不让某个子池轮空
-  for (i = 0; i < n; i++) if (out[i] < 1 && weights[i] > 0) out[i] = 1;
-  return out;
-}
-
-// 取 n 个动作。n<=0 返回空数组 —— 调用方一律 concat,空数组是安全的。
-function fbPickN(pool, n, off) {
-  if (!(n > 0)) return [];
-  return pickExes(pool, n, off) || [];
-}
-
-// 臂要按推/拉拆开排(三头进推日、二头进拉日),合成一个"臂"池会排错日子。
-function fbArmPool(equip, level, kind) {
-  var pool = getExes('臂', equip, level) || [];
-  return pool.filter(function (e) {
-    var n = (e && e.n) || '';
-    if (kind === 'tri') return n.indexOf('三头') >= 0 || n.indexOf('下压') >= 0 || n.indexOf('臂屈伸') >= 0;
-    return n.indexOf('二头') >= 0 || n.indexOf('弯举') >= 0;
-  });
-}
-
 // ⚠️ 训练日数量保底: buildMusclePlan / buildStrengthPlan 的模板最多只铺到 6 天,
 // buildMarathonPlan 更是写死 4/5/6 三档。days=7 时末尾就会出现"空白训练日"
 // (渲染层取不到 day 对象)。这里统一补齐,补给动作按 goal 主题取,并用 wOff + 已有天数
@@ -3428,44 +3211,15 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
       });
     });
   }
-  // 训练量保底的下限按容量算:每周该排多少个动作 ÷ 天数。
-  // ⚠️ 不能在 ensureMinExes 里写死"每天至少 4/5 个" —— 容量是"每周该多少",不是"每天该多少"。
-  //    同样写死 5 个,练 6 天就比练 4 天多一半总量,必然顶穿 FB_VOLUME_TARGET
-  //    (实测旧版 6 天计划:胸被一路补到 32 组,而上限是 20)。
-  //    clamp 在 [3,5]:再低就没有"一次训练"的样子了,再高就又是老毛病。
-  //    ⚠️ 用 floor 不用 round:round(19/4)=5 会让 4 天计划的拉日/腿日(各 4 个动作)触发补位,
-  //       而补位总是补主题里的第一个部位 → 腿/背被顶到 5 个动作(进阶 25 组,上限 20)。
-  //    ⚠️ 还要再 -1:平均值本身就是"有的天多、有的天少"的分界,拿它当**下限**等于要求
-  //       每天都 ≥ 平均 —— 少的那天必然挨补,补的又总是天名里的第一个部位,
-  //       结果少的那天被补到平均、多的那天(推 A 7 个)一动不动,容量全堆到主项上。
-  //       保底就该是"别太少"(明显低于平均才管),不是"必须够到平均"。
-  var _weekExTotal = 0;
-  //    ⚠️ goal 必须传进去:力量目标走的是"够到有效容量下限"的口径(见 fbWeeklyExCount),
-  //       用增肌的周动作数去算力量的保底下限,力量计划每天都会被判定成"动作太少"而挨补位。
-  ['腿','胸','背','肩','臂','核心'].forEach(function (m) {
-    _weekExTotal += fbWeeklyExCount(m, level, fbLevelSets(level), goal);
-  });
-  var _minPerDay = Math.max(3, Math.min(5, Math.floor(_weekExTotal / (days || 1)) - 1));
-  // 周容量预算:让补位/保底看得见整周,而不是只盯着眼下这一天(详见 fbWeekBudget)。
-  // 传进两个补位函数,它们据此挑"还装得下的部位",并在补进后记账。
-  var _bud = fbWeekBudget(trainingDays, level);
   trainingDays.forEach(function(day){
     if (!day.exes || day.exes.length === 0) day.exes = getFullBody(equip, level, goal, weekOffset);
     day.exes = dedup(day.exes).filter(function(e){ return !!e; });
-    // 每处理一天,先按**当前真实状态**重算整周用量(已处理的天是真实值、未处理的是模板原值)。
-    //    ⚠️ 不能"先把这一天减出去、处理完再加回来":减出去之后账面上凭空多出 cap 的余量,
-    //      闸门就变成"别的天还剩多少",而看不见这一天自己已经排了几个 ——
-    //      实测 muscle/进阶/6天 拉B 本来就有 2 个背,减掉后 left=2,于是又放进来第 3 个
-    //      → 背 5 个动作 25 组(上限 20)。闸门形同虚设。
-    //    重算而不是只在函数内部 take() 累加,是为了兜住"去重掉一个却没补上"的净减少。
-    fbBudgetRecount(_bud, trainingDays);
     // 同一天同"变式族"只留一个(俯卧撑 + 宽距俯卧撑 这种实质重复),空出的槽位补不同族动作
     day.exes = dedupFamilyAndRefill(day.exes, equip, level,
-      isBwMap ? shift : 0, isBwMap ? level : null, day.name, _bud);
+      isBwMap ? shift : 0, isBwMap ? level : null, day.name);
     // 训练量保底:去重后动作太少(池子小)就按主题肌群补齐,别让训练日只剩两三个动作
     day.exes = ensureMinExes(day, equip, level,
-      isBwMap ? shift : 0, isBwMap ? level : null, _minPerDay, _bud);
-    fbBudgetRecount(_bud, trainingDays);
+      isBwMap ? shift : 0, isBwMap ? level : null);
   });
   // 兜底补标记:补位/保底进来的动作也走 applyBwProgression,挑战周同样会越级上探,
   // 但那次映射不经过上面的标记逻辑。不补的话同一天里有的动作提示"做不动可退回上一档"、
@@ -3484,6 +3238,7 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
 }
 
 function buildMusclePlan(level, days, equip, wOff) {
+  var exCnt = level === "beginner" ? 3 : level === "intermediate" ? 4 : 5;
   if (days <= 3) {
     var arr = [];
     // wOff + i 错开每天的轮转起点。旧版传的是同一个 wOff → Day1/2/3 动作完全一样,
@@ -3491,153 +3246,28 @@ function buildMusclePlan(level, days, equip, wOff) {
     for (var i=0; i<days; i++) arr.push({name:"全身训练 Day"+(i+1), exes:getFullBody(equip, level, "muscle", wOff + i, true)});
     return arr;
   }
-  // ⚠️ days≥4 一律走下面按容量算出来的编排(含 4 天),不再单开"上下分化"分支。
-  //    旧版 4 天是上肢 A/下肢 A/上肢 B/下肢 B,两个问题:
-  //    ① 下肢日只有「腿 + 核心」两个部位可排,要凑满一天就只能往腿上堆 ——
-  //       实测中级腿 28 组、进阶 40 组(上限 20),腿被练爆;
-  //    ② 胸/背/肩各自只在一个上肢日出现 → 频率 1 次/周,而页面写着"每个部位每周 2 次"。
-  //
-  //    现在:先定「每天练哪些部位」的结构表,再由 fbBuildFromStruct 按
-  //    「每部位每周该排几个 = 目标组数 ÷ 每动作组数」往里填。天数/水平/组数任一变化,
-  //    分配自动重算 —— 改天数不会再出现"天数越多容量越离谱"。
-  //
-  //    臂用 "臂:tri"(三头,进推日) / "臂:bi"(二头,进拉日) 标记:
-  //    合成一个"臂"池去排,三头会被排进拉日、二头排进推日,日子就错了。
-  var struct = [
-    {name:"推 A(胸·肩·三头)", allow:["胸","肩","臂:tri"]},
-    {name:"拉 A(背·二头)",    allow:["背","臂:bi"]},
-    {name:"腿 A(腿·核心)",    allow:["腿","核心"]}
-  ];
   if (days === 4) {
-    // 全身日:每个部位过一遍,把所有部位的频率抬到 2 次
-    struct.push({name:"全身循环(胸·背·腿·肩·臂·核心)", allow:["胸","背","腿","肩","臂","核心"]});
-  } else if (days === 5) {
-    struct.push({name:"全身 A(胸·背·腿·肩·臂·核心)", allow:["胸","背","腿","肩","臂","核心"]});
-    struct.push({name:"全身 B(胸·背·腿·肩)",        allow:["胸","背","腿","肩"]});
-  } else {
-    // ⚠️ 6 天刻意不用全身日,走「推/拉/腿 ×2」。
-    //    试过 3 个全身日:主项在全身日各再 +1 → 进阶腿/胸/背 30 组(上限 20)、肩 25 组,顶穿。
-    //    推 B 刻意不带三头:臂每周 3 个动作就够(目标 8-16 组),推A/拉A/拉B 各 1 个正好 3 个;
-    //    推 B 再带一个就 4 个 → 进阶 20 组超上限。推 B = 胸2+肩1 = 3 个,够保底下限不挨补位。
-    struct.push({name:"推 B(胸·肩)",   allow:["胸","肩"]});
-    struct.push({name:"拉 B(背·二头)", allow:["背","臂:bi"]});
-    struct.push({name:"腿 B(腿·核心)", allow:["腿","核心"]});
+    // 真·上下分化 ×2:上肢 A(推侧重)/下肢 A/上肢 B(拉侧重)/下肢 B(后链)
+    // 每个部位每周自然 2 次(上肢 周一·周四,下肢 周二·周五),间隔 ≥48 小时
+    return [
+      {name:"上肢 A(推:胸·肩·三头)", exes: dedup(pickExes(getExes("胸",equip,level),2,wOff).concat(pickExes(getExes("肩",equip,level),2,wOff)).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("臂屈伸")>=0||e.n.indexOf("下压")>=0;}),1,wOff)))},
+      {name:"下肢 A(腿·核心)", exes: dedup(pickExes(getExes("腿",equip,level),exCnt,wOff).concat(pickExes(getExes("核心",equip,level),1,wOff)))},
+      {name:"上肢 B(拉:背·二头)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("二头")>=0||e.n.indexOf("弯举")>=0;}),2,wOff)))},
+      {name:"下肢 B(后链·核心)", exes: dedup(pickExes(getExes("腿",equip,level).filter(function(e){return e.n.indexOf("硬拉")>=0||e.n.indexOf("弯举")>=0||e.n.indexOf("罗马尼亚")>=0||e.n.indexOf("保加利亚")>=0||e.n.indexOf("单腿")>=0;}),2,wOff).concat(pickExes(getExes("腿",equip,level),1,wOff)).concat(pickExes(getExes("核心",equip,level),2,wOff)))}
+    ];
   }
-  return fbBuildFromStruct(struct, equip, level, wOff, 'muscle');
-}
-
-// 按「每部位每周该排几个动作」往结构表里填。
-//
-// ⚠️ 关键约束 —— 全身日(allow ≥5 个部位)每个部位**最多 1 个**:
-//    全身日的定义就是"每个部位过一遍"。不限量的话,胸/背/腿在全身日里各拿 2 个,
-//    一天就 9 个动作(进阶一次训练 45 组),同时主项周组数顶穿上限。
-//    所以先给全身日每部位塞 1 个,**剩下的全给专项日**。
-//
-// ⚠️ 天名必须带括号部位表:ensureMinExes 的保底补位按 parseDayTopic(天名) 决定"能补什么",
-//    天名不写部位 = 没主题限制 = 可能把动作补到核心/臂上,把刻意避开的那两个部位塞回来。
-function fbBuildFromStruct(struct, equip, level, wOff, goal) {
-  var setsN = fbLevelSets(level);
-  var plan = struct.map(function (d) { return {name: d.name, exes: []}; });
-
-  // 取某天某部位的候选池。d.pool 可指定:
-  //   {"腿": {sub:[深蹲池], base:[整个腿池]}}  优先 sub,取不够从 base 补(力量计划的主项语义)
-  //   {"腿": [池]}                             直接用
-  //   不指定 → 部位池("臂:tri"/"臂:bi" 走拆开的臂池,池空退回整臂池)
-  function poolOf(d, m, sub) {
-    var p = d.pool && (d.pool[m + ':' + (sub || '')] || d.pool[m]);
-    if (p && !Array.isArray(p)) return (p.sub && p.sub.length) ? p : {base: p.base || p};
-    if (p) return {base: p};
-    if (sub) {
-      var arm = fbArmPool(equip, level, sub);
-      return arm.length ? {base: arm} : {base: getExes(m, equip, level)};
-    }
-    return {base: getExes(m, equip, level)};
+  var plan = [
+    {name:"推(胸·肩·三头)", exes: dedup(pickExes(getExes("胸",equip,level),2,wOff).concat(pickExes(getExes("肩",equip,level),2,wOff)).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("下压")>=0||e.n.indexOf("臂屈伸")>=0;}),1,wOff)))},
+    {name:"拉(背·二头)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("二头")>=0||e.n.indexOf("弯举")>=0;}),2,wOff)))},
+    {name:"腿·核心", exes: dedup(pickExes(getExes("腿",equip,level),4,wOff).concat(pickExes(getExes("核心",equip,level),1,wOff)))}
+  ];
+  if (days >= 5) {
+    plan.push({name:"推(强化)", exes: dedup(pickExes(getExes("胸",equip,level),2,wOff+1).concat(pickExes(getExes("肩",equip,level),1,wOff+1)).concat(pickExes(getExes("臂",equip,level).filter(function(e){return e.n.indexOf("三头")>=0||e.n.indexOf("下压")>=0;}),1,wOff+1)))});
+    plan.push({name:"拉(强化)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff+1).concat(pickExes(getExes("核心",equip,level),1,wOff+1)))});
   }
-  // 取 n 个:有 sub 池就先取 sub,不够从 base 补(同名跳过)。
-  // ⚠️ 不能一次只取 1 个然后循环:pickExes(pool,1,off) 每次都返回同一个动作。
-  function takeN(d, m, sub, n, off) {
-    if (!(n > 0)) return [];
-    var sp = poolOf(d, m, sub);
-    if (!sp.sub) return pickExes(sp.base, n, off) || [];
-    var a = pickExes(sp.sub, n, off) || [];
-    if (a.length >= n) return a;
-    var seen = {};
-    a.forEach(function (e) { seen[e.n] = true; });
-    var rest = (sp.base || []).filter(function (e) { return !seen[e.n]; });
-    return a.concat(pickExes(rest, n - a.length, off) || []);
+  if (days >= 6) {
+    plan.push({name:"腿(强化)", exes: dedup(pickExes(getExes("腿",equip,level),3,wOff+1).concat(pickExes(getExes("核心",equip,level),1,wOff+1)))});
   }
-  // 把"某部位每周 total 个动作"放进 hits 指定的那些天。
-  function place(m, hits, total) {
-    if (total <= 0 || !hits.length) return;
-    var left = total, k;
-    // ① 全身日每部位 1 个
-    hits.forEach(function (h) {
-      if (!h.full || left <= 0) return;
-      plan[h.i].exes = plan[h.i].exes.concat(takeN(struct[h.i], m, h.sub, 1, wOff + h.i));
-      left--;
-    });
-    var spec = hits.filter(function (h) { return !h.full; });
-    if (!spec.length || left <= 0) return;
-    // ② 频率优先:每个专项日至少 1 个。宁可总量多一个也不让某天轮空 ——
-    //    轮空 = 这个部位这周少练一次,而"每周 2 次优于 1 次"正是要保的东西。
-    //    ⚠️ 按「当天已有动作数最少」的顺序发,不是按结构表顺序:
-    //      总量不够每人一个时,顺序决定谁轮空。按结构表顺序 = 排在最后的日子挨饿
-    //      (实测 strength 6 天:核心 2 个全给了深蹲日/硬拉日,"下肢+核心专项"拿 0 个 →
-    //       那天只剩腿 1 个动作,再被保底补成腿 3 个 = 进阶 25 组,上限 20)。
-    // ③ 剩下的同样按"当天已有动作数最少"投放。
-    //    只按结构表顺序填会让排在前面的日子堆到 6 个、后面的日子只剩 2 个 ——
-    //    少的那几天会被 ensureMinExes 补位,而补位总是补天名里的第一个部位
-    //    (实测 strength 4 天就是这样把腿补到 6 个动作 = 进阶 30 组,上限 20)。
-    //
-    // ⚠️ ②③ 必须先**算完配额再一次 takeN**,不能"先各取 1 个、不够再各取 1 个":
-    //    两次 takeN(1) 用的是同一个 off,pickExes 会返回同一个动作,dedup 一去重
-    //    等于白取 —— 实测进阶力量 4 天腿只剩 2 个动作(10 组,下限 12)。
-    var quota = spec.map(function () { return 0; });
-    var need = spec.map(function (h, k) { return { k: k, len: plan[h.i].exes.length }; });
-    need.sort(function (a, b) { return a.len - b.len || a.k - b.k; });
-    for (k = 0; k < need.length && left > 0; k++) { quota[need[k].k]++; left--; }
-    while (left > 0) {
-      var best = -1, minLen = Infinity;
-      for (k = 0; k < spec.length; k++) {
-        var len = plan[spec[k].i].exes.length + quota[k];
-        if (len < minLen) { minLen = len; best = k; }
-      }
-      if (best < 0) break;
-      quota[best]++; left--;
-    }
-    spec.forEach(function (h, k) {
-      if (quota[k] > 0) plan[h.i].exes = plan[h.i].exes.concat(takeN(struct[h.i], m, h.sub, quota[k], wOff + h.i));
-    });
-  }
-
-  ['腿','胸','背','肩','臂','核心'].forEach(function (m) {
-    var hits = [];
-    struct.forEach(function (d, i) {
-      for (var k = 0; k < d.allow.length; k++) {
-        var a = d.allow[k];
-        if (a === m) { hits.push({i:i, sub:'', full: d.allow.length >= 5}); return; }
-        if (a.indexOf(m + ':') === 0) { hits.push({i:i, sub: a.split(':')[1] || '', full: d.allow.length >= 5}); return; }
-      }
-    });
-    if (!hits.length) return;
-    var total = fbWeeklyExCount(m, level, setsN, goal);
-    // ⚠️ 臂拆成 三头/二头 两个子池时,周目标要在子池之间**分摊**,不是每个子池各拿一份 ——
-    //    否则三头 3 个 + 二头 3 个 = 臂一周 6 个动作(进阶 30 组,上限 16)。
-    var subs = [];
-    hits.forEach(function (h) { if (h.sub && subs.indexOf(h.sub) < 0) subs.push(h.sub); });
-    if (subs.length > 1) {
-      var w = subs.map(function (s) {
-        return hits.filter(function (h) { return h.sub === s; }).length;
-      });
-      var share = fbSplitWeighted(total, w);
-      subs.forEach(function (s, si) {
-        place(m, hits.filter(function (h) { return h.sub === s; }), share[si]);
-      });
-    } else {
-      place(m, hits, total);
-    }
-  });
-  plan.forEach(function (d) { d.exes = dedup(d.exes); });
   return plan;
 }
 
@@ -3656,51 +3286,28 @@ function buildStrengthPlan(level, days, equip, wOff) {
     var names = ["全身力量 A","全身力量 B","全身力量 C"];
     return Array.from({length:days},function(_,i){
       // sq/core 旧版用的是同一个 wOff(只有 bp/rw 错开)→ 三天里深蹲和核心动作永远一样。
-      // ⚠️ 肩必须有:旧版全身力量日只有深蹲/卧推/划船/臂/核心,肩一周 0 次,
-      //    而摘要卡写着"每部位每周 ≥2 次" —— 页面上明写着练肩,计划里一次没有。
-      //    肩推是力量训练的正统主项(站姿推举),不是"孤立动作",加它不算凑数。
-      //    臂按天轮换三头/二头,保证两类都练到。
+      // 另外旧版全身力量日只有深蹲/卧推/划船/核心,肩和臂一周一次都不练 —— 补一个臂动作,
+      // 按天轮换三头/二头,保证两类都练到(力量计划靠卧推/划船覆盖肩,不必再加孤立肩推)。
       var arm = (i % 2 === 0) ? tri : bic;
       return {name:names[i]||"全身力量 "+(i+1), exes:dedup(
         pickSub(sq,legPool,1,wOff+i).concat(
         pickExes(bp,1,wOff+i)).concat(
         pickExes(rw,1,wOff+i)).concat(
-        pickSub(pr,shPool,1,wOff+i)).concat(
         pickExes(arm,1,wOff+i)).concat(
         pickExes(core,1,wOff+i))
       )};
     });
   }
-  // ⚠️ days≥4 走「结构表 + 分配器」,跟 buildMusclePlan 同一套算法。
-  //    旧版写死「每天 4 个动作」,两个后果:
-  //    ① 前三天共用一套写死编排,4 天时第 4 天是被 if 单独 push 进去的 ——
-  //       腿在第 1/3 天各 2 个 = 中级 16 组、进阶 20 组,再加保底补位就顶穿(实测进阶 30 组);
-  //    ② 肩只出现在「推(卧推)」日一次 → 肩每周 1 次,而摘要卡写着"每个部位每周 2 次"。
-  //
-  //    力量计划的特殊性:**没有全身日**,每天都是主项日。主项靠 pool.sub 保证
-  //    (深蹲日先取深蹲/腿举、硬拉日先取硬拉、推日先取卧推、拉日先取划船/引体),
-  //    sub 池被伤病砍空时自动退回整个部位池(膝伤的"深蹲日"改排臀桥、腿弯举,不空着)。
-  //
-  //    第 4 天刻意带肩:拉日练后束/侧束(面拉、俯身飞鸟)是力量训练的常规搭配,
-  //    这样 4 天也能让肩到 2 次。但**只给非推类肩动作** —— 肩推进划船日等于一天练两次推。
-  var shPull = shPool.filter(function(e){ return e.n.indexOf("肩推") < 0 && e.n.indexOf("推举") < 0; });
-  if (!shPull.length) shPull = shPool;
-  var chPool = getExes("胸",equip,level), baPool = getExes("背",equip,level);
-  var struct = [
-    {name:"深蹲日(腿·胸·核心)", allow:["腿","胸","核心"],
-     pool:{"腿":{sub:sq, base:legPool}, "胸":{sub:bp,  base:chPool}}},
-    {name:"推 A(胸·肩·三头)",   allow:["胸","肩","臂:tri"],
-     pool:{"胸":{sub:bp, base:chPool}, "肩":{sub:pr, base:shPool}}},
-    {name:"硬拉日(腿·背·核心)", allow:["腿","背","核心"],
-     pool:{"腿":{sub:dl, base:legPool}, "背":{sub:rw, base:baPool}}},
-    {name:"拉(背·肩·二头)",     allow:["背","肩","臂:bi"],
-     pool:{"背":{sub:rw, base:baPool}, "肩":shPull}}
+  var plan = [
+    // 深蹲池/硬拉池/推举池被伤病砍空时自动退回整个腿池/肩池(膝伤的"深蹲日"改排臀桥、腿弯举,而不是空着)
+    {name:"深蹲日 + 辅助", exes: dedup(pickSub(sq,legPool,2,wOff).concat(pickExes(bp,1,wOff)).concat(pickExes(core,1,wOff)))},
+    {name:"推(卧推)+ 辅助", exes: dedup(pickExes(bp,2,wOff).concat(pickSub(pr,shPool,1,wOff)).concat(pickExes(tri,1,wOff)))},
+    {name:"硬拉日 + 辅助", exes: dedup(pickSub(dl,legPool,2,wOff).concat(pickExes(rw,1,wOff)).concat(pickExes(core,1,wOff)))}
   ];
-  if (days >= 5) struct.push({name:"上肢力量综合(胸·肩·背)", allow:["胸","肩","背"],
-     pool:{"胸":{sub:bp, base:chPool}, "背":{sub:rw, base:baPool}}});
-  if (days >= 6) struct.push({name:"下肢 + 核心专项(腿·核心)", allow:["腿","核心"],
-     pool:{"腿":{sub:sq, base:legPool}}});
-  return fbBuildFromStruct(struct, equip, level, wOff, 'strength');
+  if (days >= 4) plan.push({name:"拉(划船/引体)+ 辅助", exes: dedup(pickExes(rw,2,wOff).concat(pickExes(bic,1,wOff)).concat(pickExes(core,1,wOff)))});
+  if (days >= 5) plan.push({name:"上肢力量综合", exes: dedup(pickExes(bp,1,wOff+1).concat(pickSub(pr,shPool,2,wOff+1)).concat(pickExes(rw,1,wOff+1)))});
+  if (days >= 6) plan.push({name:"下肢 + 核心专项", exes: dedup(pickSub(sq,legPool,2,wOff+1).concat(pickExes(core,2,wOff+1)))});
+  return plan;
 }
 
 // 有氧池被伤病砍空时的兜底动作:取一个"伤处不受压"的低冲击有氧。
@@ -4084,42 +3691,17 @@ function calcMarathonWeekKm(trainingDays) {
 }
 
 // 分化方案说明:把编排算法"说出来",让用户看到计划背后的道理(算法即壁垒的外显)
-// 按真实计划算出频率文案。
-// ⚠️ 以前这里写死"每个部位每周 2 次",实测 4 天计划胸/背/肩各只有 1 次、5 天腿只有 1 次 ——
-//    承诺和实际对不上,而用户是照着这句承诺理解自己每周练几次的。现在直接从 plan 里数。
-//    plan 为空(拿不到真实计划)时返回 '',调用方退回静态文案,不硬编一个数字。
-function fbSplitFreqNote(plan) {
-  var f = fbPlanFreq(plan);
-  var ms = ['腿','胸','背','肩','臂','核心'];
-  var min = 99, max = 0, ones = [], any = false;
-  ms.forEach(function (m) {
-    var n = f[m] || 0;
-    if (n <= 0) return;
-    any = true;
-    if (n < min) min = n;
-    if (n > max) max = n;
-    if (n <= 1) ones.push(m);
-  });
-  if (!any) return '';
-  // 全是 1 次(2 天计划、减脂/塑形交替日)说明本来就是"每个部位过一遍"的结构,不是失衡,不报。
-  if (max < 2) return '';
-  if (!ones.length) return '每部位每周 ≥' + min + ' 次';
-  return '多数部位每周 2 次 · ' + ones.join('/') + ' 1 次';
-}
-
-function getSplitInfo(goal, days, plan) {
-  // 有真实计划就用数出来的频率,没有才退回写死的文案。
-  var freq = fbSplitFreqNote(plan);
+function getSplitInfo(goal, days) {
   if (goal === "muscle") {
-    if (days <= 3)  return {name:"全身循环 ×" + days, note:freq || "每个部位每周 " + days + " 次，新手涨最快"};
-    if (days === 4) return {name:"推/拉/腿 + 全身", note:freq || "每部位每周 2 次，间隔 ≥48 小时"};
-    if (days === 5) return {name:"推/拉/腿 + 全身 + 强化", note:freq || "每部位每周 2 次，容量更高"};
-    return {name:"推/拉/腿 + 全身 ×2", note:freq || "容量拉满，前提是睡够吃够"};
+    if (days <= 3)  return {name:"全身循环 ×" + days, note:"每个部位每周 2 次，新手涨最快"};
+    if (days === 4) return {name:"上下分化 ×2", note:"每部位每周 2 次，间隔 ≥48 小时"};
+    if (days === 5) return {name:"推拉腿 + 强化日", note:"每部位每周 2 次，容量更高"};
+    return {name:"推拉腿 ×2", note:"容量拉满，前提是睡够吃够"};
   }
   if (goal === "strength") {
-    if (days <= 3)  return {name:"全身力量 A/B", note:freq || "三大项高频打磨，恢复充分"};
-    if (days === 4) return {name:"大项分化 + 拉日", note:freq || "深蹲/卧推/硬拉各 1 次 + 划船辅助"};
-    return {name:"大项分化", note:freq || "各大项每周 1~2 次，注意间隔 48 小时"};
+    if (days <= 3)  return {name:"全身力量 A/B", note:"三大项高频打磨，恢复充分"};
+    if (days === 4) return {name:"大项分化 + 拉日", note:"深蹲/卧推/硬拉各 1 次 + 划船辅助"};
+    return {name:"大项分化", note:"各大项每周 1~2 次，注意间隔 48 小时"};
   }
   if (goal === "cut")     return {name:"力量 + 有氧交替", note:"力量保肌肉，有氧烧脂肪"};
   if (goal === "shape")   return {name:"力量塑形 + 有氧线条", note:"臀腿/肩背重点轮换，线条和体脂两头抓"};
@@ -4127,7 +3709,7 @@ function getSplitInfo(goal, days, plan) {
   return null; // 马拉松等专项有自己的说明面板
 }
 
-function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, intensity, goal, plan) {
+function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, intensity, goal) {
   var presTag;
   if (goal === "marathon") {
     presTag = "周跑量 " + (goalCfg._weekKm != null ? goalCfg._weekKm : goalCfg.weeklyKms) + "km";
@@ -4138,8 +3720,7 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
     //   周期表写着 +5%、处方却一整周期不动, 用户会以为计划坏了。
     presTag = sets + '组 x ' + fbCurrentWeekReps(goalCfg.reps);
   }
-  // 传真实计划:宣传卡上的"每周练几次"是按这个 plan 数出来的,不是写死的
-  var split = getSplitInfo(goal, days, plan);
+  var split = getSplitInfo(goal, days);
   return '<div class="summary-card">'+
     '<div class="summary-label">你的专属计划已生成</div>'+
     '<div class="summary-title">'+goalName+' · '+days+'天/周</div>'+
