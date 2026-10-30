@@ -4480,7 +4480,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         if (isBodyweight) {
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
             '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide(this, \''+ex.n.replace(/'/g,"\\'")+'\')" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>'+
             fbProgQuickHtml(progId, ex.n, true, '', preR)+
@@ -4489,7 +4489,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           progInputsHtml = '<div class="prog-row" id="'+progId+'">'+
             '<span class="prog-label">重量</span><input type="number" inputmode="decimal" class="prog-input'+(preW!==''?preCls:'')+'" placeholder="kg" step="0.5" min="0" value="'+(preW===''?'':preW)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
             '<span class="prog-label">次数</span><input type="number" inputmode="numeric" class="prog-input'+(preR!==''?preCls:'')+'" placeholder="次" min="1" max="50" value="'+(preR===''?'':preR)+'"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" onfocus="this.select()">'+
-            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide()" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
+            '<span class="prog-label">RPE<span class="rpe-help" onclick="fbShowRpeGuide(this, \''+ex.n.replace(/'/g,"\\'")+'\')" title="RPE 怎么打分？">?</span></span><input type="number" inputmode="numeric" class="prog-input" placeholder="选填" min="1" max="10"'+_touch+' onchange="logProg(\''+ex.n.replace(/'/g,"\\'")+'\',\''+progId+'\')" style="width:44px;">'+
             lastLogHtml +
             '</div>'+
             fbProgQuickHtml(progId, ex.n, false, preW, preR)+
@@ -4911,7 +4911,16 @@ window.fbChartDate = fbChartDate;
 
 // ============ 渐进超负荷记录 ============
 // RPE 打分指南(底部弹窗): 核心是"还能标准做几次"的 RIR 换算法
-function fbShowRpeGuide() {
+//
+// ⚠️ 这里塞了一台**可拖的 RPE⇄RIR 换算器**(来自 rpe-rir.js 的 fbRpeConverterHtml)。
+//    为什么换算器在这里而不是在进度页的 Pro 卡片里: 它是**教学工具不是分析工具** ——
+//    唯一有价值的出场时机是"用户正捏着 RPE 框不知道填几"的这一秒。
+//    摆在这儿它顺手把 RPE 填写率抬上去(整个 RPE 模块的输入口), 摆在进度页深处
+//    它只是在教一个已经被困住的人。详见 rpe-rir.js 头部 FB_RPE_RIR_CFG 那段注释。
+//
+// anchorEl = 打卡行里被点的那个「?」(用来定位同一行的 RPE 输入框)
+// exName   = 动作名(回填时要知道往哪份日志里补)
+function fbShowRpeGuide(anchorEl, exName) {
   var rows = [
     {r:'10', tag:'力竭', desc:'一个都做不动了，最后几次动作可能已变形', color:'#EF4444'},
     {r:'9',  tag:'极限', desc:'还能标准地做 1 次', color:'#F97316'},
@@ -4920,6 +4929,15 @@ function fbShowRpeGuide() {
     {r:'5-6',tag:'轻松', desc:'有明显富余，动作很稳', color:'#3B82F6'},
     {r:'1-4',tag:'热身', desc:'几乎无负担，热身/恢复水平', color:'#999999'}
   ];
+  // 定位这一行的 RPE 框: 每行最后一个 input 就是 RPE(自重 [次数,RPE] / 器械 [重量,次数,RPE])
+  var row = (anchorEl && anchorEl.closest) ? anchorEl.closest('.prog-row') : null;
+  var curRpe = '';
+  if (row) {
+    var _ins = row.querySelectorAll('input');
+    if (_ins.length) curRpe = _ins[_ins.length - 1].value || '';
+  }
+  window.__fbRpeGuideCtx = { rowId: row ? row.id : '', ex: exName || '' };
+
   var html = '<div class="modal-handle"></div><div class="modal-title">💪 RPE 怎么打分？</div>'
     + '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;">RPE = 自我感觉用力程度，1~10 分</div>'
     + '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px;padding:12px;background:var(--bg);border-radius:12px;">做完一组后问自己一句话：<b style="color:var(--primary);">「我还能标准地再做几次？」</b><br>答案就是你的 RPE——还剩 2 次就是 RPE 8，一次不剩就是 RPE 10。</div>';
@@ -4929,11 +4947,81 @@ function fbShowRpeGuide() {
       + '<span style="font-weight:700;font-size:13px;color:var(--text);min-width:32px;">'+x.tag+'</span>'
       + '<span style="font-size:12px;color:var(--text2);flex:1;">'+x.desc+'</span></div>';
   });
-  html += '<div style="font-size:12px;color:var(--text2);line-height:1.6;margin:14px 0 4px;">💡 增肌建议大部分组落在 <b style="color:var(--green);">RPE 7~8</b>：刺激到位、动作不变形。状态好时偶尔冲 9，但别组组都顶到 10。</div>'
-    + '<button onclick="closeModal()" style="width:100%;margin-top:14px;padding:12px;border-radius:14px;background:var(--primary);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">懂了</button>';
+  // 换算器: 与 Pro 区块那张卡共用同一个组件(id 前缀 'rac'), 改一处两边一起变。
+  // rpe-rir.js 万一没加载(file 被 SW 缓存挡了/旧版本), 这里静默降级成纯说明弹窗, 不能整块崩掉。
+  var hasConv = (typeof fbRpeConverterHtml === 'function');
+  if (hasConv) {
+    html += '<div style="margin-top:14px;font-size:12px;color:var(--text2);font-weight:700;">拿不准就拖一下 👇</div>'
+      + '<div style="margin-top:8px;">' + fbRpeConverterHtml('rac', parseFloat(curRpe) || 8) + '</div>';
+  }
+  html += '<div style="font-size:12px;color:var(--text2);line-height:1.6;margin:14px 0 4px;">💡 增肌建议大部分组落在 <b style="color:var(--green);">RPE 7~8</b>：刺激到位、动作不变形。状态好时偶尔冲 9，但别组组都顶到 10。</div>';
+  if (hasConv && row) {
+    html += '<button onclick="fbApplyGuideRpe()" style="width:100%;margin-top:14px;padding:12px;border-radius:14px;background:var(--primary);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">就用这个分数</button>'
+      + '<button onclick="closeModal()" style="width:100%;margin-top:8px;padding:12px;border-radius:14px;background:transparent;color:var(--text2);border:1px solid var(--border);font-size:14px;font-weight:600;cursor:pointer;">只是看看</button>';
+  } else {
+    html += '<button onclick="closeModal()" style="width:100%;margin-top:14px;padding:12px;border-radius:14px;background:var(--primary);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">懂了</button>';
+  }
   document.getElementById('modalBody').innerHTML = html;
   document.getElementById('modal').classList.add('show');
+  // 初值落地: 滑块 value 已在 html 里, 但 RIR/文案/区间是 paintConv 画的 —— 必须拉一次。
+  if (hasConv && typeof RpeRirUI !== 'undefined') {
+    try { RpeRirUI.syncFromRpe(parseFloat(curRpe) || 8, 'rac'); } catch (e) {}
+  }
 }
+window.fbShowRpeGuide = fbShowRpeGuide;
+
+// 换算器选定 → 回填这一行的 RPE 框。
+// ⚠️ 这里最容易被想当然写错的一步: **不能直接调 logProg 提交**。
+//    logProg 是**追加**式的(saveTrainingLog 往数组里 push 一条), 提前提交会让同一组
+//    变成两条记录 —— 容量翻倍、趋势线凭空多一个点, 比不记还糟。分两种情况处理:
+//    A) 重量/次数还没被用户确认过(还带着预填值): 只回填不提交。
+//       等他改重量/次数时 blur → onchange → logProg, RPE 跟着一起入库, 一条刚好。
+//    B) 这一组已经确认过了(data-touched): 把 RPE 补进**今天最后那条** manual 记录,
+//       不新增。这也是为什么这里不走 checkPR —— 那条早就判过了, 再判一次没必要。
+function fbApplyGuideRpe() {
+  var ctx = window.__fbRpeGuideCtx || {};
+  var vEl = document.getElementById('racRpe');
+  closeModal();
+  if (!ctx.rowId || !vEl) return;
+  var row = document.getElementById(ctx.rowId);
+  if (!row) return;
+  var ins = row.querySelectorAll('input');
+  if (!ins.length) return;
+  var rpeIn = ins[ins.length - 1];
+  if (!rpeIn) return;
+  var rpe = parseFloat(vEl.value);
+  if (!(rpe > 0)) return;
+
+  // 回填前先问一句: 除 RPE 外还有没有框是被用户亲手改过的?
+  var confirmed = false;
+  for (var i = 0; i < ins.length - 1; i++) {
+    if (ins[i].getAttribute('data-touched') === '1') confirmed = true;
+  }
+  rpeIn.value = String(rpe);
+  fbProgTouch(rpeIn);   // 摘掉预填态: 这个值是他亲手选的, 不是我猜的
+
+  if (!confirmed) {
+    showToast('RPE ' + rpe + ' 已填上，改完重量/次数会一起记');
+    return;
+  }
+  // 情况 B: 补进今天最后那条人工记录
+  try {
+    var name = ctx.ex || '';
+    var arr = (typeof trainingLog !== 'undefined' && trainingLog && trainingLog[name]) || null;
+    if (!arr || !arr.length) return;
+    var today = new Date().toISOString().slice(0, 10);
+    var e = arr[arr.length - 1];
+    // 只认「今天 + 人工」那条; 认错对象会把 RPE 记到别人的组上。
+    if (!e || e.date !== today || e.src === 'auto') return;
+    e.rpe = rpe;
+    localStorage.setItem('fitbuddy_trainlog', JSON.stringify(trainingLog));
+    if (typeof fbRefreshProgHint === 'function') fbRefreshProgHint(ctx.rowId, name);
+    showToast('RPE ' + rpe + ' 已记到这一组');
+  } catch (err) {
+    try { if (typeof window.fbErr === 'function') window.fbErr(err); } catch (e2) {}
+  }
+}
+window.fbApplyGuideRpe = fbApplyGuideRpe;
 
 function saveTrainingLog(exName, weight, reps, rpeVal, src, isTest) {
   if (!exName) return;

@@ -1419,6 +1419,16 @@ window.initProToolsProgress = function() {
         // 🎯 行动指令优先:先看"下次练多重",再看成就和趋势
         proHtml += rpeSummaryHtml;
 
+        // 🎚 RPE · RIR 换算 + 自动调节(独立模块 rpe-rir.js, 本文件只负责占位)
+        //    排在上一条之后:上面那张是"自动算好的结论"(打开就有),
+        //    这张是"要自己动手填的工具"(换算器 / 反推阶梯 / 组间调节)。
+        //    ⚠️ 它刻意不给"下次训练用多重"的跨次指令 —— 那是 fbCalcNextLoad 的活。
+        //       两个出口各报一个数字, 同屏就是两张卡打架, 用户不知道该信谁。
+        if (typeof renderRpeRirCard === 'function') {
+          proHtml += renderRpeRirCard();
+        }
+
+
         // ⚖️ 今日能量收支:跟上一条同级——它也是"今天就能执行"的指令
         //    (还能吃 680 / 已超 120),而下面那些是本周/本月的规划与回顾。
         proHtml += renderTodayEnergyCard();
@@ -1462,6 +1472,9 @@ window.initProToolsProgress = function() {
           || progContent.querySelector('[data-pc-id="pc-muscle-dist"]');
         if (anchor) anchor.insertAdjacentHTML('beforebegin', proHtml);
         else progContent.insertAdjacentHTML('beforeend', proHtml);
+        // ⚠️ 阶梯和组间结果是靠 id 填进已有容器的, 必须等上面这段 HTML 真正进了 DOM
+        //    才拿得到元素。写在这里而不是卡片 HTML 里, 就是因为它得跑在插入之后。
+        try { if (window.fbRpeRirBoot) window.fbRpeRirBoot(); } catch (e0) {}
       } catch(e) {
         console.warn('Pro Tools 进度页增强失败(不影响主功能):', e);
       }
@@ -1602,6 +1615,22 @@ window.fbProDiag = function () {
       if (a) h += '<div>' + k + ' — ' + (a.text || '') + '</div>';
     });
     return h;
+  });
+  card('🎚 RPE · RIR 换算', function () {
+    if (typeof renderRpeRirCard !== 'function') return '';
+    // ⚠️ 这里必须把「脚本没加载」和「加载了但被开关关掉」说清楚。
+    //    两者在页面上长得一模一样(都是 0 字符), 但处置完全不同 ——
+    //    前者要去查 SW 缓存 / 版本号, 后者是**故意的**, 别再排查一遍。
+    if (typeof FB_RPE_RIR_CFG !== 'undefined' && !FB_RPE_RIR_CFG.SHOW_CARD) {
+      return '<div style="font-size:12px;color:var(--text2);line-height:1.7;">'
+        + '整卡已按开关隐藏（<b>FB_RPE_RIR_CFG.SHOW_CARD = false</b>）—— 这是<b>故意的</b>，不是脚本没加载。'
+        + '<br>理由：这个模块的输入是训练日志里的 RPE，而打卡页那个框是「选填、不预填」，多数人没填，'
+        + '没数据还渲染 = 占屏 + 橙色警告 + 没依据的数字。'
+        + '<br>换算器没跟着消失：已挪进打卡页 RPE 框旁边的「?」引导里（fbShowRpeGuide），'
+        + '那才是用户卡住需要它的那一刻。'
+        + '<br>想临时看整卡：控制台执行 <b>FB_RPE_RIR_CFG.SHOW_CARD = true</b> 后重渲染。</div>';
+    }
+    try { return renderRpeRirCard(); } catch (e) { return ''; }
   });
   card('⚖️ 今日能量收支', function () { return renderTodayEnergyCard(); });
   card('🔄 减载决策 P3', function () { return renderDeloadDecision(); });
