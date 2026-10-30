@@ -2503,7 +2503,13 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     if (wkInfo && wkInfo.deload && typeof fbPushDeloadLog === 'function') fbPushDeloadLog(fbWeekKey());
   } catch (e) {}
   var warmup = getWarmup(level, goal);
-  var tips = GOAL_TIPS[goal] || [];
+  var tips = (GOAL_TIPS[goal] || []).slice();   // ⚠️ 必须复制:下面会 unshift,直接改会永久污染 GOAL_TIPS
+  // 器械不够时的解释(v169):自重/弹力带用户全程看不到"重量"两个字,很容易以为"没重量 = 白练"。
+  //   证据口径:30-60% 1RM 这种低负荷,只要每组做到接近力竭(还能再做 1-2 次),增肌效果与大重量接近。
+  //   只在器械少的组合里插这句话 —— 健身房用户看到反而是噪音。
+  if ((goal === 'muscle' || goal === 'strength') && (equip === 'bodyweight' || equip === 'band')) {
+    tips.unshift('重量不够就用次数补：每组做到接近力竭（还能再做 1-2 次），30-60% 1RM 的低负荷一样能增肌');
+  }
   // 运动消耗:用体重+目标+水平的正确算法(而非逐动作瞎估)
   // 注意:必须在营养计算块之前算好,旧代码在此处之前引用 dayCalBurns 会 ReferenceError 导致营养面板静默失效
   var userWeight = parseFloat(document.getElementById('bodyWeight').value) || 70;
@@ -2539,7 +2545,9 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   html += fbWeekCloseBarHtml();
   // 🎉 v108:水平提升提问 —— 跟着结算条一起出现,答完才消失(状态在 localStorage,跳周也不丢)
   html += fbLevelUpCardHtml();
-  var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : goalCfg.intensity;
+  // 心肺目标:把"心率 55-65%"换成按年龄算出来的具体 bpm,用户照着手表就能对上。
+  // 力量目标(50-65% 1RM)fbHrIntensityText 会原样返回,不受影响。
+  var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : fbHrIntensityText(goalCfg.intensity, fbUserAge());
   // 马拉松:动态计算实际周跑量,覆盖静态配置
   if (goal === "marathon" && trainingDays) {
     var actualKm = calcMarathonWeekKm(trainingDays);
@@ -4193,7 +4201,12 @@ function doneKey(id) {
 // 💓 根据年龄计算心率 Zone 区间(用于马拉松跑步训练日展示)
 // Zone 1: 50-60% | Zone 2: 60-70% | Zone 3: 70-80% | Zone 4: 80-90% | Zone 5: 90-100%
 function getHeartRateZones(age) {
-  var maxHR = 220 - (age || 30); // 默认30岁
+  // ⚠️ 最大心率用 Tanaka 公式 208 − 0.7×年龄（v169），不是民间流传的 220 − 年龄。
+  //    220−年龄 是 1970 年代从少量样本里拟合出来的，标准差 ±10–12 bpm，40 岁以上偏差更大；
+  //    Tanaka(2001) 是 NSCA 现行教材采用的公式，对成年人（尤其 40+）明显更贴近实测。
+  //    ⚠️ 改这里要连带看 fbHrIntensityText —— 两处的 HRmax 必须是同一个公式，
+  //    否则「Zone 2」和「心率 60-70%」会算出两个不同的 bpm，用户看了只会以为算错了。
+  var maxHR = Math.round(208 - 0.7 * (age || 30)); // 默认30岁
   return {
     zone1: [Math.round(maxHR * 0.50), Math.round(maxHR * 0.60)],
     zone2: [Math.round(maxHR * 0.60), Math.round(maxHR * 0.70)],
@@ -4202,6 +4215,31 @@ function getHeartRateZones(age) {
     zone5: [Math.round(maxHR * 0.90), maxHR],
     maxHR: maxHR
   };
+}
+
+// ============ 把「心率 55-65%」翻译成手表上能看的数字 ============
+// 由来(v169):CONFIGS 里心肺强度写的是百分比("心率 65-80%"),用户拿到手并不知道该看手表上哪个数 ——
+//   年龄输入框(index.html #bodyAge)一直都在,却从没参与这个计算。
+// 口径:HRmax 走 Tanaka(208 − 0.7×年龄),与 getHeartRateZones 同一个公式,两个数字不能打起来。
+function fbUserAge() {
+  var a = 0;
+  try { a = parseInt((typeof lastPlan !== 'undefined' && lastPlan && lastPlan.age) ||
+        (document.getElementById('bodyAge') || {}).value, 10); } catch (e) {}
+  return (a >= 10 && a <= 100) ? a : 30;   // 没填/填错按 30 岁算,别给 NaN
+}
+// 输入 "心率 55-65%" / "心率 65-80%";不匹配的(如 "心率 Zone 2")原样返回,不瞎猜。
+function fbHrIntensityText(s, age) {
+  if (!s) return s || '';
+  var str = String(s);
+  // ⚠️ 只认「心率 xx-yy%」。力量目标的强度是「50-65% 1RM」,数字形状一模一样,
+  //    不拦住就会把 1RM 百分比当成心率百分比,显示成"心率 94-122 次/分(50-65% 1RM)"—— 离谱但看不出来。
+  if (str.indexOf('心率') < 0 || str.indexOf('1RM') >= 0) return s;
+  var m = str.match(/(\d+(?:\.\d+)?)\s*[-–~]\s*(\d+(?:\.\d+)?)\s*%/);
+  if (!m) return s;
+  var max = 208 - 0.7 * ((age && age >= 10 && age <= 100) ? age : 30);
+  var lo = Math.round(max * parseFloat(m[1]) / 100);
+  var hi = Math.round(max * parseFloat(m[2]) / 100);
+  return '心率 ' + lo + '-' + hi + ' 次/分（' + String(s).replace(/^心率\s*/, '') + '）';
 }
 
 // 根据训练类型返回对应的 Zone 名称和中英文描述
@@ -4352,6 +4390,10 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
   // 🔥 热身组
   if (warmup && warmup.type === "lift" && exCount > 0) {
     html += '<div class="warmup-section"><div class="warmup-title">🔥 热身组</div>';
+    // 一般热身(Raise)排在重量递增组之前:先让身体热起来,再上重量。
+    (warmup.general || []).forEach(function(g){
+      html += '<div class="warmup-item" style="opacity:.85;">• '+g+'</div>';
+    });
     (warmup.sets || []).forEach(function(w){
       html += '<div class="warmup-item">'+w.s+'组 x '+w.r+' ('+w.i+') - '+w.n+'</div>';
     });
@@ -4435,13 +4477,13 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         else if (cm2) cdDist = parseInt(cm2[1]) * parseInt(cm2[2]) / 1000;
         if (cdDist > 0) distData = ' data-dist="'+cdDist+'"';
         exPrescriptionHtml = '<div class="ex-sets">'+presDisplay+'</div>'+
-          '<div class="ex-intensity">'+goalCfg.intensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
+          '<div class="ex-intensity">'+fbHrIntensityText(goalCfg.intensity, fbUserAge())+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
           (goalCfg.rest && goalCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+goalCfg.rest+'\')">⏱ '+goalCfg.rest+'</button>' : '');
       } else if (ex.m === '有氧') {
         // 非心肺目标中的有氧动作 - 显示时长,不显示组×次
         var cardioCfg = (levelCfg && levelCfg.cardio) || {totalDuration:"30分钟", lissPerSet:"持续进行", rest:"30秒", intensity:"心率 Zone 2", rpe:"RPE 5-6"};
         exPrescriptionHtml = '<div class="ex-sets">🫁 ' + (cardioCfg.totalDuration || '有氧') + ' · ' + (cardioCfg.lissPerSet || '持续进行') + '</div>'+
-          '<div class="ex-intensity">' + cardioCfg.intensity + '</div><span class="rpe-badge">' + (cardioCfg.rpe || '') + '</span>'+
+          '<div class="ex-intensity">' + fbHrIntensityText(cardioCfg.intensity, fbUserAge()) + '</div><span class="rpe-badge">' + (cardioCfg.rpe || '') + '</span>'+
           (cardioCfg.rest && cardioCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+cardioCfg.rest+'\')">⏱ '+cardioCfg.rest+'</button>' : '');
       } else {
         exPrescriptionHtml =
@@ -4507,6 +4549,9 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
 
       var injuryClass = isInjuredEx ? ' injury-skipped' : '';
 
+      // 📏 执行幅度提示(拉伸位/全程幅度):只对力量动作给,有氧/跑步没有"拉长端"这回事。
+      var _romTip = (isLiftEx && typeof fbRomTip === 'function') ? fbRomTip(ex) : '';
+
       // data-sets: 这个动作安排了几组(v109 起打卡按"组"记, 不按"动作个数")。
       // 有氧/马拉松没有组的概念, 不挂 —— 挂了会把「跑 10km」记成 3 组力量容量。
       var setsData = isLiftEx ? ' data-sets="'+Math.max(1, sets + _setsAdj)+'"' : '';
@@ -4517,7 +4562,8 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
           '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
-        '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+'</div>'+
+        '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+
+          (_romTip?'<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">📏 '+_romTip+'</div>':'')+'</div>'+
       '</div>';
 
       // 渐进超负荷输入(在 ex-row 之后,力量动作专属)
@@ -7807,6 +7853,8 @@ function showEx(name) {
   var bt = BADGE_TEXT[ex.m]||(ex.m ? ex.m[0] : '?');
   var diffColor = ex.diff==="初级"?"#22C55E":ex.diff==="中级"?"#F59E0B":"#EF4444";
   var eqText = ex.eq==="gym"?"健身房":ex.eq==="dumbbell"?"哑铃":ex.eq==="band"?"弹力带":ex.eq==="outdoor"?"户外路跑":ex.eq==="treadmill"?"跑步机":"自重";
+  // 📏 执行幅度(与训练卡同一套文案,有氧/跑步不给)
+  var _romTip = (ex.m !== '有氧' && typeof fbRomTip === 'function') ? fbRomTip(ex) : '';
 
   // GIF动图(优先)
   var gifFile = GIF_MAP[name];
@@ -7837,6 +7885,7 @@ function showEx(name) {
         '</div></div></div>'+
     (ex.desc?'<div class="modal-desc">'+ex.desc+'</div>':'')+
     (ex.tips?'<div class="modal-section-title">✅ 动作要点</div><div class="tips-card">'+ex.tips+'</div>':'')+
+    (_romTip?'<div class="modal-section-title">📏 幅度</div><div class="tips-card">'+_romTip+'</div>':'')+
     mediaHtml+
     (ex._custom?'<div style="margin-top:16px;text-align:center;"><button class="btn-generate" style="background:#EF4444;width:100%;" onclick="deleteCustomEx(\''+ex.n.replace(/'/g,"\\'")+'\');closeModal();">🗑 删除此自定义动作</button></div>':'');
   document.getElementById("modalBody").innerHTML = html;
