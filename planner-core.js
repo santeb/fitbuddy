@@ -10674,17 +10674,44 @@ function fbRmCurEx() {
 }
 
 // 选了动作：把该动作的最好成绩带进输入框，省得用户回忆上次推了多少。
-// ⚠️ 只在两个框都空时才代填 —— 典型流程是「先敲今天的成绩，再选动作看比 PR 强多少」，
-//    这时候把人家刚敲的数字顶掉是灾难。
+//
+// ⚠️ 2026-10-30 重写（v165）。旧版守卫写作 `!wEl.value && !rEl.value`（两个框都空才代填），
+//    这是个**死结**：第一次代填完框里就有值了，「两个框都空」从此永远不成立 ——
+//    等于「自动载入动作成绩」一辈子只生效一次，之后换任何动作数字都纹丝不动。
+//    新做法：记住上次自动填进去的是什么，只要框里的数字**还是程序填的那个**（说明用户没动过），
+//    换动作就允许覆盖；用户手动改过任何一个数字，就一个字都不碰。
+//
+// ⚠️ 别退回「框空才代填」那种写法 —— 它看起来安全，实际上把功能锁死了。
+var _fbRmAutoFilled = null;   // {name, w, r} 最近一次由**程序**代填的成绩（不是用户敲的）
+
+// 这两个框现在是「程序代填、用户没碰过」吗？是 → 允许被换动作覆盖。
+function fbRmFieldsUntouched() {
+  var wEl = document.getElementById('rmWeight');
+  var rEl = document.getElementById('rmReps');
+  if (!wEl || !rEl) return false;
+  if (!wEl.value && !rEl.value) return true;            // 都空：本来就该代填
+  if (!_fbRmAutoFilled) return false;                   // 有值但从来没代填过 = 用户自己敲的
+  return parseFloat(wEl.value) === _fbRmAutoFilled.w &&
+         parseInt(rEl.value, 10) === _fbRmAutoFilled.r;
+}
+
 function onRmExChange() {
   var name = fbRmCurEx();
-  if (name) {
+  var wEl = document.getElementById('rmWeight');
+  var rEl = document.getElementById('rmReps');
+  if (wEl && rEl && !fbRmFieldsUntouched()) {
+    // 用户手输过 → 清掉代填记录，从此换任何动作都不许再动这两个框。
+    // ⚠️ 不清的后果：用户手输的数字恰好跟旧记录相同时会被误判成"没动过"而被顶掉。
+    _fbRmAutoFilled = null;
+  } else if (name && wEl && rEl) {
+    // 框里还是程序填的那个（或压根是空的）→ 放心载入这个动作的最好成绩。
+    // 注意：这里没要求"必须有 PR"——选中的动作没纪录时保持原样即可，别顺手清记录，
+    // 否则用户再换回一个有纪录的动作就再也载入不了了。
     var p = getPRs()[name];
-    var wEl = document.getElementById('rmWeight');
-    var rEl = document.getElementById('rmReps');
-    if (p && p.weight > 0 && p.reps > 0 && wEl && rEl && !wEl.value && !rEl.value) {
+    if (p && p.weight > 0 && p.reps > 0) {
       wEl.value = p.weight;
       rEl.value = p.reps;
+      _fbRmAutoFilled = { name: name, w: p.weight, r: p.reps };
     }
   }
   calc1RM();
@@ -10711,23 +10738,59 @@ function fbRenderRmPrCmp(name, rm) {
   var p = getPRs()[name] || null;
   if (!p || !(p.e1rm > 0)) {
     el.className = 'rm-pr-cmp on-old';
-    el.innerHTML = fbEsc(name) + ' 还没有纪录 · 存下这次就是第一个' + fbRmSaveBtnHtml();
+    // 也带小字：这个动作没纪录时，框里很可能还是上一个动作的成绩，
+    // 一点「存进纪录」就把 60kg 写成哑铃弯举的 PR 了 —— 得让人看见自己到底要存什么。
+    el.innerHTML = fbEsc(name) + ' 还没有纪录 · 存下这次就是第一个' +
+      fbRmSubLine(name) + fbRmSaveBtnHtml();
     return;
   }
   var base = '你的 ' + fbEsc(name) + ' 纪录 ' + p.e1rm + 'kg' +
     (p.weight > 0 && p.reps > 0 ? '（' + p.weight + 'kg × ' + p.reps + ' 次）' : '') +
     (p.date ? ' · ' + p.date : '');
   var d = Math.round((rm - p.e1rm) * 10) / 10;
+  // 代填进去的就是这条纪录本身，反算出的 1RM 差个零点几公斤纯粹是公式舍入 ——
+  // 用户刚选了个动作、什么都没做，不该弹「🎉 新纪录」。1kg 以内的噪声按打平处理。
+  if (fbRmIsAutoFilled(name) && d > 0 && d < 1) d = 0;
+  var sub = fbRmSubLine(name);
   if (d > 0) {
     el.className = 'rm-pr-cmp on-new';
-    el.innerHTML = '🎉 比 ' + base + ' 高出 <b>' + d + 'kg</b> —— 新纪录' + fbRmSaveBtnHtml();
+    el.innerHTML = '🎉 比 ' + base + ' 高出 <b>' + d + 'kg</b> —— 新纪录' + sub + fbRmSaveBtnHtml();
   } else if (d === 0) {
     el.className = 'rm-pr-cmp on-old';
-    el.innerHTML = '跟纪录打平：' + base;
+    el.innerHTML = '跟纪录打平：' + base + sub;
   } else {
     el.className = 'rm-pr-cmp on-old';
-    el.innerHTML = '离纪录还差 <b>' + Math.abs(d) + 'kg</b>：' + base;
+    el.innerHTML = '离纪录还差 <b>' + Math.abs(d) + 'kg</b>：' + base + sub;
   }
+}
+
+// 对照行底下那行小字。它只有一个任务：**说清楚这次是拿哪两个数字在比**。
+// 为什么必须有：典型流程是「先敲今天的成绩，再选动作看比 PR 强多少」—— 这时候框里可能是
+// 上一个动作的成绩（比如卧推 60×8），对照行却已经换成深蹲的纪录了。不写这行，用户会以为
+// 「离纪录还差 40kg」是用自己刚敲的深蹲成绩算出来的，那 40kg 是彻头彻尾的胡话。
+// 框里这两个数字是**程序刚代填的**、用户还没动过吗？（两处共用：小字文案 + 舍入噪声判定）
+function fbRmIsAutoFilled(name) {
+  var wEl = document.getElementById('rmWeight');
+  var rEl = document.getElementById('rmReps');
+  if (!_fbRmAutoFilled || _fbRmAutoFilled.name !== name || !wEl || !rEl) return false;
+  return parseFloat(wEl.value) === _fbRmAutoFilled.w &&
+         parseInt(rEl.value, 10) === _fbRmAutoFilled.r;
+}
+
+function fbRmSubLine(name) {
+  var wEl = document.getElementById('rmWeight');
+  var rEl = document.getElementById('rmReps');
+  if (!wEl || !rEl) return '';
+  var w = parseFloat(wEl.value), r = parseInt(rEl.value, 10);
+  if (!(w > 0) || !(r > 0)) return '';
+  var auto = fbRmIsAutoFilled(name);
+  if (auto) {
+    return '<div class="rm-pr-sub">↑ 这俩数字是自动载入的你在这个动作上的最好成绩，可以改</div>';
+  }
+  // 「换动作不会覆盖」这句必须写：它是「我换了动作怎么数字没变」的唯一解释，
+  // 不写用户只会以为 App 坏了。
+  return '<div class="rm-pr-sub">↑ 用的就是你填的 ' + w + 'kg × ' + r + ' 次' +
+    ' · 换动作不会覆盖你已经填的数字</div>';
 }
 
 function fbRmSaveBtnHtml() {
