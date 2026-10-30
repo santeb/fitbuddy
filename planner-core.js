@@ -3274,7 +3274,23 @@ function buildMusclePlan(level, days, equip, wOff) {
     plan.push({name:"拉(强化)", exes: dedup(pickExes(getExes("背",equip,level),3,wOff+1).concat(pickExes(getExes("核心",equip,level),1,wOff+1)))});
   }
   if (days >= 6) {
-    plan.push({name:"腿(强化)", exes: dedup(pickExes(getExes("腿",equip,level),3,wOff+1).concat(pickExes(getExes("核心",equip,level),1,wOff+1)))});
+    // ⚠️ 第 6 天是本周第二个腿日,必须和 Day3「腿·核心」拉开。
+    //    旧版直接从同一个腿池再取一轮:两个腿日拿到的是同样几个动作换个顺序
+    //    (进阶 6 天实测 = 前蹲/哈克深蹲/相扑硬拉/单腿腿举 100% 重复,且全是膝主导、零后链),
+    //    等于每个腿部动作一周练 10 组,臀和小腿整周一次都没练到。
+    //    做法:先把 Day3 已选的腿部动作从池子里踢掉再选;踢完不够 3 个就退回全池
+    //    —— 宁可有重复,也不能让这一天凑不出动作。
+    // ⚠️ 只对中/高级做错开。新手两个腿日重复是**刻意的**:新手缺的不是动作花样,是动作本身还没学会,
+    //    同一批基础动作一周摸两次有利于动作定型(而且新手每动作只有 3 组,重复也堆不出疲劳)。
+    var _legPool2 = getExes("腿", equip, level);
+    if (level !== "beginner") {
+      var _d3LegNames = {};
+      ((plan[2] && plan[2].exes) || []).forEach(function(e){ if (e && e.m === "腿") _d3LegNames[e.n] = 1; });
+      var _rest = _legPool2.filter(function(e){ return !_d3LegNames[e.n]; });
+      // 踢完不够 3 个就退回全池:宁可重复,也不能让这一天凑不出动作。
+      if (_rest.length >= 3) _legPool2 = _rest;
+    }
+    plan.push({name:"腿(强化)", exes: dedup(pickExes(_legPool2,3,wOff+1).concat(pickExes(getExes("核心",equip,level),1,wOff+1)))});
   }
   return plan;
 }
