@@ -308,6 +308,9 @@ var BW_PROGRESSIONS = [
 ];
 
 // ============ 配置参数（含重量建议）============
+// ⚠️ 减脂·进阶的组间休息原为 20 秒, 已提到 45 秒: 深蹲 @65-75% 1RM 做 10-12 次只歇 20 秒,
+//    第二组起根本做不动, 后几组重量只能一路往下掉 —— 想省时间反而把容量练没了。
+//    减脂要的是「密度」, 45 秒足够体现; 20 秒只会让训练变成有氧。
 var CONFIGS = {
   beginner: {
     sets: 3,
@@ -322,7 +325,7 @@ var CONFIGS = {
     sets: 4,
     muscle:   {reps:"8-12次",  rest:"75秒", intensity:"65-75% 1RM", rpe:"RPE 7-8", note:"力竭前留 1~2 个 RIR（还能再做几次），追求肌肉泵感<span class='term-badge' data-term='pump'>?</span>"},
     strength: {reps:"5-8次",   rest:"2分钟",intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"每组接近力竭，记录每次重量"},
-    cut:      {reps:"12-15次", rest:"30秒", intensity:"55-65% 1RM", rpe:"RPE 7-8", note:"可使用超级组提升燃脂效率"},
+    cut:      {reps:"12-15次", rest:"30秒", intensity:"55-65% 1RM", rpe:"RPE 7-8", note:"组间休息别超时；想再压缩时间，可自己把两个互不干扰的动作串成超级组<span class='term-badge' data-term='superset'>?</span>"},
     shape:    {reps:"10-12次", rest:"60秒", intensity:"60-70% 1RM", rpe:"RPE 7-8", note:"力竭前留 1~2 个 RIR（还能再做几次），练完加 15-20 分钟慢速有氧"},
     cardio:   {reps:"—", totalDuration:"30分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"45秒", intensity:"心率 65-80%", rpe:"LISS RPE5-6 / HIIT RPE8-9", note:"HIIT与LISS交替进行"},
     marathon: {weeklyKms:"50-70", longRunMax:35, easyPace:"5:30-6:00", tempoPace:"4:45-5:15", intervalPace:"4:15-4:30", longRunPace:"6:00-6:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 4:00-4:30，有比赛经验"}
@@ -331,8 +334,8 @@ var CONFIGS = {
     sets: 5,
     muscle:   {reps:"6-10次",  rest:"90秒", intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"力竭前留 1 个 RIR（还能再做 1 次），考虑降重组"},
     strength: {reps:"3-6次",   rest:"3分钟",intensity:"85%+ 1RM",   rpe:"RPE 8-10", note:"加入RPE评估，追求渐进超负荷"},
-    cut:      {reps:"10-12次", rest:"20秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"超级组<span class='term-badge' data-term='superset'>?</span>+递减组<span class='term-badge' data-term='dropset'>?</span>，最大化热量消耗"},
-    shape:    {reps:"8-12次",  rest:"75秒", intensity:"70-80% 1RM", rpe:"RPE 8-9", note:"超级组<span class='term-badge' data-term='superset'>?</span>提升密度，臀腿+肩背双重点"},
+    cut:      {reps:"10-12次", rest:"45秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"容量已拉满，密度靠别拖长休息。超级组<span class='term-badge' data-term='superset'>?</span>、递减组<span class='term-badge' data-term='dropset'>?</span>要自己安排 —— 本计划按单动作直上直下排"},
+    shape:    {reps:"8-12次",  rest:"75秒", intensity:"70-80% 1RM", rpe:"RPE 8-9", note:"臀腿+肩背双重点；想提密度可自己串超级组<span class='term-badge' data-term='superset'>?</span>，本计划按单动作排"},
     cardio:   {reps:"—", totalDuration:"40分钟", hiitPerSet:"45秒工作 + 15秒休息", lissPerSet:"持续进行", rest:"20秒", intensity:"心率 70-85%", rpe:"LISS RPE6-7 / HIIT RPE9-10", note:"高强度间歇为主，最大化燃脂效果"},
     marathon: {weeklyKms:"70-100", longRunMax:38, easyPace:"4:45-5:15", tempoPace:"4:15-4:30", intervalPace:"3:45-4:00", longRunPace:"5:15-5:45", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 3:30，冲击PB"}
   }
@@ -503,6 +506,89 @@ function fbRomTip(ex) {
     try { if (new RegExp(kw[i][0]).test(n)) return kw[i][1]; } catch (e) {}
   }
   return FB_ROM_TIPS[ex.m] || '';
+}
+
+// ============ 孤立动作处方偏移 ============
+// 病因: CONFIGS 里的处方是「目标 × 水平」一个全局值, 被原样套到当天每一个动作上。
+//   于是 力量·进阶 → 侧平举被要求 3-6 次 @85%+ 1RM、歇 3 分钟; 减脂·进阶 → 深蹲 @70% 只歇 20 秒。
+//   动作对象只有 {n,m,eq,diff,desc,tips,vid}, 没有「复合/孤立」字段, 所以按名字关键词判断(与 FB_ROM_TIPS 同一套路)。
+// ⚠️ 别拿 desc 里的"孤立"二字做运行时判断 —— 有的孤立动作 desc 里没写, 会漏判。
+// ⚠️ 只加关键词不改生成器: 孤立偏移全部发生在渲染层, 生成器/容量统计完全不受影响。
+var FB_ISO_KW = [
+  "侧平举","前平举","平举","飞鸟","夹胸","扩胸","面拉","耸肩",
+  "弯举","臂屈伸","下压","腕弯举",
+  "腿屈伸","腿弯举","提踵","侧抬腿","后踢","臀桥","山羊挺身",
+  "卷腹","举腿","悬垂抬腿","平板支撑","死虫","转体","伐木","侧屈",
+  "侧卧抬腿"
+];
+// 例外: 名字里带上面关键词、但其实是多关节复合动作的。误判复合为孤立比漏判更糟 ——
+//   深蹲被要求「17-20 次 @55%」是能练伤的处方, 而侧平举沿用全局处方只是不够好。
+var FB_ISO_EXCLUDE = ["双杠臂屈伸（胸）", "双杠臂屈伸(胸)"];
+
+function fbIsIsolation(ex) {
+  if (!ex || ex.m === '有氧') return false;
+  var n = String(ex.n || '');
+  if (!n) return false;
+  for (var j = 0; j < FB_ISO_EXCLUDE.length; j++) {
+    if (n.indexOf(FB_ISO_EXCLUDE[j]) >= 0) return false;
+  }
+  for (var i = 0; i < FB_ISO_KW.length; i++) {
+    if (n.indexOf(FB_ISO_KW[i]) >= 0) return true;
+  }
+  return false;
+}
+
+// 次数 +5(上下限同加): 侧平举做 3-6 次没有意义, 深蹲做 17-20 次是在做有氧。
+// 上限封顶 20 / 下限不低于 8, 防止把减脂的 15-20 次顶到天上去。
+function fbIsoReps(reps) {
+  var s = String(reps || '');
+  var m = s.match(/(\d+)\s*[-~]\s*(\d+)/);
+  if (m) {
+    var lo = parseInt(m[1], 10) + 5, hi = parseInt(m[2], 10) + 5;
+    if (hi > 20) hi = 20;          // 先压上限, 再回头压下限 —— 反过来会把 15-20 顶成 20-22
+    if (lo > hi - 2) lo = hi - 2;  // 保证区间至少有 2 次的跨度
+    if (lo < 8) lo = 8;
+    if (hi < lo) hi = lo;
+    return lo + '-' + hi + '次';
+  }
+  var m2 = s.match(/(\d+)/);
+  if (m2 && s.indexOf('次') >= 0) return Math.min(20, parseInt(m2[1], 10) + 5) + '次';
+  return s; // "—" 之类原样返回
+}
+
+// 休息 -30 秒, 地板 45 秒: 再短就不是"组间休息"了。分钟/秒两种写法都要能处理。
+function fbIsoRest(rest) {
+  var s = String(rest || '');
+  var sec = 0, isMin = false, m1 = s.match(/(\d+)\s*分/), m2 = s.match(/(\d+)\s*秒/);
+  if (m1) { sec = parseInt(m1[1], 10) * 60; isMin = true; }
+  else if (m2) { sec = parseInt(m2[1], 10); }
+  else return s;
+  sec = Math.max(45, sec - 30);
+  // ⚠️ 别用 Math.round(sec/60) 转分钟: 3分钟-30秒 = 150秒 → round(2.5) = 3 → "3分钟", 减完反而变长了。
+  if (sec >= 120) {
+    var mm = Math.floor(sec / 60), ss = sec % 60;
+    return mm + '分钟' + (ss ? ss + '秒' : '');
+  }
+  return sec + '秒';
+}
+
+// 强度降 10 个百分点(地板 40%)。"85%+ 1RM" 这种开区间先转成区间再降。
+// RPE 刻意不动 —— 孤立动作做到同样的 RPE, 重量自然就轻了, 不需要单独再改一次重量。
+function fbIsoIntensity(i) {
+  var s = String(i || '');
+  // ⚠️ 心肺强度也长着 "65-80%" 的样子(心率 65-80%), 不挡住的话会被换算成 "55-70% 1RM" —— 凭空多出一个杠铃重量。
+  if (s.indexOf('1RM') < 0) return s;
+  var m = s.match(/(\d+)\s*%\s*\+/);
+  if (m) {
+    var a = parseInt(m[1], 10);
+    return Math.max(40, a - 15) + '-' + Math.max(45, a - 5) + '% 1RM';
+  }
+  // ⚠️ 区间写法是 "65-75% 1RM"(只有一个百分号), 别写成要求两端各带 % —— 那样永远匹配不上, 偏移会静默失效。
+  var m2 = s.match(/(\d+)\s*[-~]\s*(\d+)\s*%/);
+  if (m2) {
+    return Math.max(40, parseInt(m2[1], 10) - 10) + '-' + Math.max(45, parseInt(m2[2], 10) - 10) + '% 1RM';
+  }
+  return s; // "心率 xx%" 之类原样返回(心肺分支本就不走这里)
 }
 
 // 周期化：第1周偏移0，第2周偏移1，…，最后一周(减载)与倒数第2周一致

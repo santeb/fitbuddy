@@ -4280,6 +4280,29 @@ function getZoneForRunType(runName) {
 }
 
 // 🧤 根据当天训练肌肉群推荐动态热身动作
+// 🎯 热身组百分比 → 具体 kg 的换算基数。
+//    热身组那几行写的是 "40% 1RM" —— 用户还得自己拿 1RM 去乘一遍, 等于没给。
+//    基数取当天主项(第一个复合动作)的 e1RM, 与 computeE1RM 同一口径(Epley)。
+//    ⚠️ 绝不编造重量: 没有历史记录就返回 null, 页面上保持百分比原样, 不猜 1RM、不给默认值。
+//    ⚠️ 自重/弹力带不参与 —— 徒手深蹲没有 "40% 1RM" 这回事。
+function fbWarmupBase1RM(day) {
+  if (!day || !day.exes || !day.exes.length) return null;
+  var main = null;
+  for (var i = 0; i < day.exes.length; i++) {
+    var ex = day.exes[i];
+    if (!ex || ex.m === '有氧') continue;
+    if (ex.eq === 'bodyweight' || ex.eq === 'band') continue;
+    if (typeof fbIsIsolation === 'function' && fbIsIsolation(ex)) continue;
+    main = ex; break;
+  }
+  if (!main) return null;
+  var log = (typeof getLastLog === 'function') ? getLastLog(main.n) : null;
+  if (!log) return null;
+  var e1 = (typeof computeE1RM === 'function') ? computeE1RM(parseFloat(log.weight), parseInt(log.reps, 10)) : 0;
+  if (!e1 || e1 <= 0) return null;
+  return { base: e1, name: main.n };
+}
+
 function getWarmupExercises(muscles) {
   var mapping = {
     '腿': [
@@ -4410,8 +4433,20 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
     (warmup.general || []).forEach(function(g){
       html += '<div class="warmup-item" style="opacity:.85;">• '+g+'</div>';
     });
+    var _wb = (typeof fbWarmupBase1RM === 'function') ? fbWarmupBase1RM(day) : null;
+    if (_wb) {
+      html += '<div style="font-size:10.5px;color:var(--text3);margin:2px 0 4px;">按你上次「'+_wb.name+'」的记录估：1RM ≈ '+_wb.base+'kg</div>';
+    }
     (warmup.sets || []).forEach(function(w){
-      html += '<div class="warmup-item">'+w.s+'组 x '+w.r+' ('+w.i+') - '+w.n+'</div>';
+      var _kgTxt = '';
+      if (_wb) {
+        var _pm = String(w.i || '').match(/(\d+)\s*%/);
+        if (_pm) {
+          var _kg = Math.round(_wb.base * parseInt(_pm[1], 10) / 100 / 2.5) * 2.5;
+          if (_kg > 0) _kgTxt = ' ≈ ' + _kg + 'kg';
+        }
+      }
+      html += '<div class="warmup-item">'+w.s+'组 x '+w.r+' ('+w.i+_kgTxt+') - '+w.n+'</div>';
     });
     html += '</div>';
   } else if (warmup && warmup.type === "run") {
@@ -4439,7 +4474,13 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       if (!isMarathon && goal !== 'cardio' && ex.m !== '有氧') {
         try { _setsAdj = (typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0; } catch (e) { _setsAdj = 0; }
       }
-      var _exPres = _setsAdj > 0 ? (sets + _setsAdj) + '组 x ' + fbCurrentWeekReps(goalCfg.reps) : presDisplay;
+      // 🔹 孤立动作(侧平举/弯举/卷腹/腿屈伸…)不套全局处方 —— 全局那套是按复合动作定的,
+      //    「力量·进阶 3-6 次 @85%+ 歇 3 分钟」直接套到侧平举上不成立。
+      //    次数 +5 / 强度 -10 个点 / 休息 -30 秒 / RPE 不动(做到同 RPE, 重量自然轻)。
+      var _iso = (typeof fbIsIsolation === 'function') ? fbIsIsolation(ex) : false;
+      var _wkReps = fbCurrentWeekReps(goalCfg.reps);
+      var _exReps = (_iso && typeof fbIsoReps === 'function') ? fbIsoReps(_wkReps) : _wkReps;
+      var _exPres = (_setsAdj > 0 ? (sets + _setsAdj) : sets) + '组 x ' + _exReps;
 
       // 马拉松专属处方显示
       var exPrescriptionHtml;
@@ -4502,12 +4543,14 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           '<div class="ex-intensity">' + fbHrIntensityText(cardioCfg.intensity, fbUserAge()) + '</div><span class="rpe-badge">' + (cardioCfg.rpe || '') + '</span>'+
           (cardioCfg.rest && cardioCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+cardioCfg.rest+'\')">⏱ '+cardioCfg.rest+'</button>' : '');
       } else {
+        var _exIntensity = (_iso && typeof fbIsoIntensity === 'function') ? fbIsoIntensity(goalCfg.intensity) : goalCfg.intensity;
+        var _exRest = (_iso && typeof fbIsoRest === 'function') ? fbIsoRest(goalCfg.rest) : goalCfg.rest;
         exPrescriptionHtml =
           // 可解释:多出来的组必须有出处。不然用户看到「怎么变 5 组了」只会以为是 bug。
           (_setsAdj > 0 ? '<div style="font-size:10.5px;color:var(--primary);opacity:0.9;margin-bottom:3px;">➕ 含你上次加的 ' + _setsAdj + ' 组</div>' : '')+
-          '<div class="ex-sets">'+_exPres+'</div>'+
-          '<div class="ex-intensity">'+goalCfg.intensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
-          (goalCfg.rest && goalCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+goalCfg.rest+'\')">⏱ '+goalCfg.rest+'</button>' : '');
+          '<div class="ex-sets">'+_exPres+(_iso ? ' <span style="font-size:10px;color:var(--text3);font-weight:600;" title="孤立动作：次数调高、重量调轻、休息缩短">孤立</span>' : '')+'</div>'+
+          '<div class="ex-intensity">'+_exIntensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
+          (_exRest && _exRest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+_exRest+'\')">⏱ '+_exRest+'</button>' : '');
       }
 
       // 渐进超负荷:上次记录
