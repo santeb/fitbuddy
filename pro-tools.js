@@ -433,6 +433,172 @@ function fbProBadgeHtml() {
     (free ? '<span style="font-size:10px;color:var(--text3);font-weight:500;margin-left:5px;">内测期免费</span>' : '');
 }
 
+// ============ Pro 解锁进度说明卡 ============
+// 起因(2026-11-02): 「减载决策 / 部位平衡 / 周期化 / 月度复盘」四张卡都是
+// 「数据不够就 return ''」—— 没有占位, 没有提示, 页面上一个坑都不留。
+// 新用户看到的是「Pro 专区什么都没有」: 既不知道这些功能存在, 也不知道要练多久才有,
+// 只会当成 bug(san 手机上「就只剩减载决策和周期化」是同一现象的另一面)。
+//
+// ⚠️ 修法刻意**不动**那四张卡自己的判断逻辑: 数据不够时算出来的必然是假结论
+//    (部位平衡会把每个部位都标成「偏少」, 因为分子分母全是 0),
+//    一张看着像结论的假结论比没有卡更毁信任。所以只在 Pro 区块最前面加一张说明卡,
+//    把「还差什么、差多少」直接写出来。
+//    「再练 1 次解锁」本身是回访钩子 —— 比直接摊开功能更能拉动第二天打开。
+//
+// 四项全都解锁时返回空串, 不留空壳。
+
+// 和 fbDeloadSignals() 里 `n1 >= 4` 同源。两处必须一起改, 否则卡上说「还差 0 条」却不出卡。
+var FB_PRO_RPE_NEED = 4;
+
+// 近 7 天填了 RPE 的记录条数。口径必须跟 fbDeloadSignals 完全一致:
+// 只要 age <= 7 且 rpe > 0 的条目, 不分动作、不分重量。
+function fbProRecentRpeCount() {
+  var n = 0;
+  try {
+    var log = (typeof trainingLog !== 'undefined' && trainingLog) ? trainingLog : null;
+    if (!log) log = JSON.parse(localStorage.getItem('fitbuddy_trainlog') || '{}') || {};
+    var nowT = new Date().setHours(0, 0, 0, 0);
+    var parse = (typeof fbParseLocalDate === 'function')
+      ? fbParseLocalDate
+      : function (s) { return new Date(String(s).replace(/-/g, '/')).getTime(); };
+    Object.keys(log).forEach(function (name) {
+      (log[name] || []).forEach(function (e) {
+        if (!e || !e.date) return;
+        var t = parse(e.date);
+        if (isNaN(t)) return;
+        if (Math.round((nowT - t) / 86400000) > 7) return;
+        if ((parseInt(e.rpe, 10) || 0) > 0) n++;
+      });
+    });
+  } catch (e) {}
+  return n;
+}
+
+// 逐项判定「这张卡现在出不出来」。返回只包含**没出来**的那几项。
+// ⚠️ 判据一律复用各卡自己的函数, 不在这里另写一套门槛 —— 写两套的最后一定是
+//    「说明卡说还差 2 条, 而那张卡已经出了」这种自相矛盾。
+function fbProUnlockRows() {
+  var rows = [];
+
+  // 🔄 减载决策: 7 个信号任一触发才出。新用户最可能差的就是 RPE 条数, 所以只报这一条进度,
+  //    其余信号(成绩回落 / 连练过多 / 从没减过载)本身不可「攒」, 报进度会误导。
+  if (typeof fbDeloadSignals === 'function') {
+    var ds = null;
+    try { ds = fbDeloadSignals(); } catch (e) { ds = null; }
+    if (ds && !ds.hasData) {
+      var n = fbProRecentRpeCount();
+      rows.push({
+        icon: '🔄', name: '减载决策',
+        cur: Math.min(n, FB_PRO_RPE_NEED), max: FB_PRO_RPE_NEED,
+        note: '近 7 天 RPE 记录 <b style="color:var(--text);">' + n + '/' + FB_PRO_RPE_NEED + '</b> 条。'
+          + '练完在打卡页给动作打个 RPE（1-10 分）就攒上了 —— 它靠这个判断你累不累。'
+      });
+    }
+  }
+
+  // ⚖️ 部位平衡: 窗口内任一部位练过就出。分母是 0 的时候它会把所有部位判成「偏少」,
+  //    所以门槛卡在「至少一条能识别部位的记录」。
+  if (typeof fbBalanceReport === 'function') {
+    var rep = null;
+    try { rep = fbBalanceReport(); } catch (e) { rep = null; }
+    if (rep && !rep.hasData) {
+      rows.push({
+        icon: '⚖️', name: '部位平衡分析', cur: 0, max: 1,
+        note: '最近 ' + (rep.spanDays || 28) + ' 天里还没有一条能认出部位的训练记录。'
+          + '完成 1 次打卡就出图（动作从计划里选；自己手写的动作名它认不出部位）。'
+      });
+    }
+  }
+
+  // 📈 周期化: 这张卡跟"练多久"无关, 是计划门槛。判据直接用它自己的渲染结果 ——
+  //    牵扯 fbPeriodIntensity 有没有加载 / 目标是不是跑步 / 有没有计划三件事,
+  //    在别处重写一遍判据, 以后改一处就错一处。返回空串是唯一不会骗人的证据。
+  if (typeof renderPeriodEditor === 'function') {
+    var pe = 'x';
+    try { pe = renderPeriodEditor(); } catch (e) { pe = ''; }
+    if (!pe) {
+      var goal = '';
+      try { goal = (typeof fbCurrentGoal === 'function') ? fbCurrentGoal() : ''; } catch (e) {}
+      var peNote;
+      if (typeof fbPeriodIntensity !== 'function') {
+        // 依赖没加载 ≠ 用户没计划。这两种在页面上长得一模一样, 但处置完全不同 ——
+        // 告诉他"去生成计划"是白折腾一趟。
+        peNote = 'planner-core.js 没加载完整（刷新页面或清缓存再试）。这不是你的数据问题。';
+      } else if (goal) {
+        peNote = '当前是跑步/有氧计划（' + goal + '）：它的每周量按分期算死了，改强度对它零作用，'
+          + '所以这张卡对你<b style="color:var(--text);">故意不显示</b>。换成力量/增肌目标才会有。';
+      } else {
+        peNote = '跟练多久无关 —— 先生成一份力量或增肌计划，这张图立刻就有。';
+      }
+      rows.push({ icon: '📈', name: '周期化 · 可编辑', bar: false, note: peNote });
+    }
+  }
+
+  // 📅 月度复盘: 本月 trainlog 或打卡流水有记录才出。月初 1 号打开必然看不到, 这不是 bug。
+  if (typeof fbMonthlyReport === 'function') {
+    var mr = null;
+    try { mr = fbMonthlyReport(0); } catch (e) { mr = null; }
+    if (mr && !mr.hasData) {
+      rows.push({
+        icon: '📅', name: '月度复盘', cur: 0, max: 1,
+        note: '本月（' + mr.label + '）还没有训练记录。练 1 天就出这份报告 —— '
+          + '进步幅度、缺席归因都从这个月的记录里算，所以月初几天它不在是正常的。'
+      });
+    }
+  }
+
+  return rows;
+}
+
+function renderProUnlockGuide() {
+  var rows = [];
+  try { rows = fbProUnlockRows(); } catch (e) { return ''; }
+  if (!rows.length) return '';
+
+  var free = (typeof FB_PRO_FREE_BETA !== 'undefined') ? FB_PRO_FREE_BETA : true;
+
+  var html = '<div class="progress-card">' +
+    '<div class="card-title">🔓 Pro 功能解锁进度' +
+    '<span style="font-size:11px;font-weight:600;color:var(--text3);margin-left:6px;">' +
+    rows.length + ' 项在等数据</span></div>' +
+    '<div style="font-size:12px;color:var(--text3);line-height:1.7;margin-bottom:4px;">' +
+    '这几张卡只在你数据够的时候出现。数据不够时它们算出来的都是假结论' +
+    '（比如每个部位全标成「偏少」，因为分母是 0），所以宁可先不出声。' +
+    (free ? '<br>内测期全部免费，练起来自己解锁，不用任何设置。' : '') +
+    '</div>';
+
+  rows.forEach(function (r, i) {
+    var pct = (r.bar === false || !r.max)
+      ? -1
+      : Math.round(Math.max(0, Math.min(1, r.cur / r.max)) * 100);
+    html += '<div style="padding:9px 0;' +
+      (i < rows.length - 1 ? 'border-bottom:1px dashed var(--border);' : '') + '">' +
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">' +
+        '<span style="font-size:12.5px;font-weight:700;color:var(--text);">' + r.icon + ' ' + r.name + '</span>' +
+        (r.max ? '<span style="font-size:11px;color:var(--text3);flex-shrink:0;">' + r.cur + '/' + r.max + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:11.5px;color:var(--text2);line-height:1.65;margin-top:3px;">' + r.note + '</div>';
+    if (pct >= 0) {
+      html += '<div style="height:4px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden;">' +
+        '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#FF6B35,#F59E0B);border-radius:2px;"></div>' +
+        '</div>';
+    }
+    html += '</div>';
+  });
+
+  html += '</div>';
+  return html;
+}
+
+// 本文件整体裹在 IIFE 里(见第 14 行), 不显式挂 window 外面就摸不到 —— 上面几处
+// 调用都发生在同一个闭包内, 所以功能本身不依赖这两行; 挂出来是为了能在控制台
+// 直接敲 fbProUnlockRows() 看四项各自的判定结果, 不用去猜为什么某张卡没出现。
+try {
+  window.fbProUnlockRows = fbProUnlockRows;
+  window.renderProUnlockGuide = renderProUnlockGuide;
+  window.fbProRecentRpeCount = fbProRecentRpeCount;
+} catch (e) {}
+
 // ============ Pro P2 · 部位平衡与弱点分析 ============
 // 免费版有「部位训练分布」环形图, 只回答"各练了几次";
 // 这张卡回答"练得均不均衡、哪里是短板" —— 从"描述"跨到"判断", 这条线就是收费线。
@@ -447,6 +613,10 @@ function renderMuscleBalance() {
     '对照主流容量区间，再看<b style="color:var(--text);">推/拉、上/下肢</b>有没有练歪。<br>' +
     '<span style="color:var(--text3);">「组」= 单个动作做完一轮算 1 组（3 组 × 10 次就是 3 组）。' +
     '推/拉按<b>动作</b>判：二头算拉、三头算推。<br>' +
+    (rep.planSide
+      ? '判定基准是<b style="color:var(--text);">你当前计划安排的组数</b>（右侧第二个数）：「偏少」= 计划本身给得不够；' +
+        '计划够但完成得少会单独提示，不冒充计划的问题。<br>'
+      : '') +
     '柱状图是摊到每周的平均值，恢复训练头几周会被空窗稀释；「本周已完成」是即时口径，勾完立刻更新。<br>' +
     '更早的老打卡只记了动作个数，已按每动作 3-5 组折算，仍是估算值。</span></div>';
 
@@ -486,24 +656,33 @@ function renderMuscleBalance() {
   });
   maxScale = maxScale * 1.15;
 
-  html += '<div style="font-size:11px;color:var(--text3);margin:2px 0 8px;">阴影段 = 推荐区间</div>';
+  var hasPlanSide = rep.items.some(function (it) { return it.planSide; });
+  html += '<div style="font-size:11px;color:var(--text3);margin:2px 0 8px;">阴影段 = 推荐区间' +
+    (hasPlanSide ? ' · 右侧数字 = 实际/计划安排（组/周）' : '') + '</div>';
   rep.items.forEach(function (it) {
     var curPct = Math.min(100, it.setsPerWeek / maxScale * 100);
     var loPct = Math.min(100, it.target[0] / maxScale * 100);
     var bandW = Math.min(100, it.target[1] / maxScale * 100) - loPct;
-    var color = it.status === 'low' ? '#EF4444' : it.status === 'high' ? '#8B5CF6'
-      : it.status === 'ok' ? '#22C55E' : '#94A3B8';
-    var tag = it.status === 'low' ? '偏少' : it.status === 'high' ? '偏多'
-      : it.status === 'ok' ? '合适' : '没练';
+    var color, tag;
+    if (it.status === 'low') { color = '#EF4444'; tag = '偏少'; }
+    else if (it.status === 'high') {
+      // 计划侧的"高"是刻意设计(进阶背/塑形腿), 灰色弱化, 不吓人; 无计划时保持紫色"偏多"
+      color = it.planSide ? '#94A3B8' : '#8B5CF6'; tag = it.planSide ? '计划内' : '偏多';
+    }
+    else if (it.status === 'ok') { color = '#22C55E'; tag = '合适'; }
+    else if (it.status === 'plan') { color = '#94A3B8'; tag = '计划中'; }
+    else { color = '#94A3B8'; tag = '没练'; }
+    var numTxt = it.planSide
+      ? Math.round(it.setsPerWeek) + '/' + Math.round(it.planSets) + '组'
+      : (it.setsPerWeek > 0 ? Math.round(it.setsPerWeek) + '组/周' : '—');
     html += '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">' +
       '<span style="width:30px;flex:none;font-size:12px;font-weight:600;color:var(--text);">' + ptEsc(it.label) + '</span>' +
       '<div style="flex:1;position:relative;height:10px;border-radius:5px;background:var(--border);overflow:hidden;">' +
         '<div style="position:absolute;top:0;bottom:0;left:' + loPct.toFixed(1) + '%;width:' + bandW.toFixed(1) + '%;background:#22C55E22;"></div>' +
         '<div style="position:absolute;top:0;bottom:0;left:0;width:' + curPct.toFixed(1) + '%;background:' + color + ';border-radius:5px;"></div>' +
       '</div>' +
-      '<span style="width:58px;flex:none;text-align:right;font-size:11px;color:var(--text2);">' +
-        (it.setsPerWeek > 0 ? Math.round(it.setsPerWeek) + '组/周' : '—') + '</span>' +
-      '<span style="width:26px;flex:none;text-align:right;font-size:10px;font-weight:700;color:' + color + ';">' + tag + '</span>' +
+      '<span style="width:66px;flex:none;text-align:right;font-size:11px;color:var(--text2);">' + numTxt + '</span>' +
+      '<span style="width:36px;flex:none;text-align:right;font-size:10px;font-weight:700;color:' + color + ';">' + tag + '</span>' +
     '</div>';
   });
 
@@ -516,14 +695,19 @@ function renderMuscleBalance() {
     if (lows.length) target = lows[0];
   }
   if (target) {
-    var add = Math.max(2, Math.round(target.target[0] - target.setsPerWeek));
+    // v136: 处方缺口对计划侧算。之前拿"实际完成"做基数, 用户照处方加了组、
+    // 但只要没练满, 卡片永远显示还差一截 —— 处方跟着执行情况漂移, 永远补不上。
+    var baseSets = target.planSide ? target.planSets : target.setsPerWeek;
+    var add = Math.max(2, Math.round(target.target[0] - baseSets));
     var aid = (typeof fbBalanceAid === 'function') ? fbBalanceAid(target.muscle) : '';
     // 处方里的组数必须跟着 add 走。写死「3 组 × 10 次」的话, 上面算出要加 9 组、
     // 下面却说做 3 组, 用户照着做永远补不上 —— 而且 3 组没法"分到 2 次训练里"。
     var per = Math.max(1, Math.round(add / 2));
     html += '<div style="margin-top:12px;padding:11px 12px;background:var(--bg);border-radius:10px;">' +
       '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px;">🧭 下一步：' +
-        ptEsc(target.label) + '每周加 ' + add + ' 组</div>' +
+        ptEsc(target.label) + '每周加 ' + add + ' 组' +
+        (target.planSide ? '<span style="font-weight:400;color:var(--text3);">（把计划里的 ' +
+          Math.round(target.planSets) + ' 组补到推荐区间）</span>' : '') + '</div>' +
       '<div style="font-size:12px;color:var(--text2);line-height:1.7;">' +
         (aid ? ('加 <b style="color:var(--text);">' + ptEsc(aid) + ' ' + per + ' 组 × 10 次</b>，' +
                  '安排在 2 次训练里（每次 ' + per + ' 组），排在' +
@@ -1416,6 +1600,11 @@ window.initProToolsProgress = function() {
         // 追加Pro模块HTML
         var proHtml = '<div id="proToolsSection">';
 
+        // 🔓 解锁进度说明: 必须排在所有卡之前 —— 它解释的正是"下面为什么少了几张卡",
+        //    放到末尾等于让用户先困惑再看到答案。四项全解锁时返回空串, 不留空壳,
+        //    所以老用户看到的东西和以前完全一样。
+        proHtml += renderProUnlockGuide();
+
         // 🎯 行动指令优先:先看"下次练多重",再看成就和趋势
         proHtml += rpeSummaryHtml;
 
@@ -1633,6 +1822,9 @@ window.fbProDiag = function () {
     try { return renderRpeRirCard(); } catch (e) { return ''; }
   });
   card('⚖️ 今日能量收支', function () { return renderTodayEnergyCard(); });
+  // 说明卡: 它返回空串 = 四项全解锁(正常), 下面那四张应该都有内容。
+  // 它非空而某张卡也非空 = 说明卡的判据和卡片本身不一致, 那种自相矛盾得立刻看见。
+  card('🔓 解锁进度说明', function () { return renderProUnlockGuide(); });
   card('🔄 减载决策 P3', function () { return renderDeloadDecision(); });
   card('⚖️ 部位平衡 P2', function () { return renderMuscleBalance(); });
   card('📈 周期化 P1', function () { return renderPeriodEditor(); });

@@ -4622,7 +4622,8 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
         '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+
-          (_romTip?'<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">📏 '+_romTip+'</div>':'')+'</div>'+
+          (_romTip?'<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">📏 '+_romTip+'</div>':'')+
+          (_iso && isLiftEx && _exRest && _exRest !== '-' ? '<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">⏱ 后面几组做不满目标次数：先加 15 秒休息，别降重量</div>' : '')+'</div>'+
       '</div>';
 
       // 渐进超负荷输入(在 ex-row 之后,力量动作专属)
@@ -7914,6 +7915,9 @@ function showEx(name) {
   var eqText = ex.eq==="gym"?"健身房":ex.eq==="dumbbell"?"哑铃":ex.eq==="band"?"弹力带":ex.eq==="outdoor"?"户外路跑":ex.eq==="treadmill"?"跑步机":"自重";
   // 📏 执行幅度(与训练卡同一套文案,有氧/跑步不给)
   var _romTip = (ex.m !== '有氧' && typeof fbRomTip === 'function') ? fbRomTip(ex) : '';
+  // ⏱ 孤立动作的组间休息被压短(地板 45 秒), 第 3 组掉次数最常见 —— 给一句怎么办。
+  var _isoTip = (typeof fbIsIsolation === 'function' && fbIsIsolation(ex))
+    ? '后面几组做不满目标次数：先加 15 秒休息，别降重量。重量一降，后面的组只会更打不满' : '';
 
   // GIF动图(优先)
   var gifFile = GIF_MAP[name];
@@ -7945,6 +7949,7 @@ function showEx(name) {
     (ex.desc?'<div class="modal-desc">'+ex.desc+'</div>':'')+
     (ex.tips?'<div class="modal-section-title">✅ 动作要点</div><div class="tips-card">'+ex.tips+'</div>':'')+
     (_romTip?'<div class="modal-section-title">📏 幅度</div><div class="tips-card">'+_romTip+'</div>':'')+
+    (_isoTip?'<div class="modal-section-title">⏱ 组间卡壳</div><div class="tips-card">'+_isoTip+'</div>':'')+
     mediaHtml+
     (ex._custom?'<div style="margin-top:16px;text-align:center;"><button class="btn-generate" style="background:#EF4444;width:100%;" onclick="deleteCustomEx(\''+ex.n.replace(/'/g,"\\'")+'\');closeModal();">🗑 删除此自定义动作</button></div>':'');
   document.getElementById("modalBody").innerHTML = html;
@@ -11960,10 +11965,50 @@ function fbBalanceWindow() {
   return Math.max(14, Math.min(28, span));
 }
 
+// ============ 计划侧的每周组数（平衡卡的判定基准, v136）============
+// 平衡卡之前拿「实际完成」对照通用区间, 但实际完成受漏练/减载/空窗影响很大:
+// 计划本身安排 18 组、用户只执行了 12 组, 卡片对着 12 组喊"偏少",
+// 跟计划页显示的组数直接打架 —— 用户不知道该信哪个。
+// 解法: 计划安排了多少组, 用计划数据自己算一份。
+//   每动作组数 = CONFIGS[level].sets + fbExSetsDelta(动作)  ← 与计划页渲染完全同口径
+// 按动作的 m 归部位求和 = 计划每周安排组数。这是"基准周"口径, 不乘减载/周期系数 ——
+// 减载周的缩量是刻意的临时安排, 不代表计划常态。
+// 跑步/有氧计划处方是时长和配速, 没有组数概念, 返回 null（卡片退回旧的实测口径）。
+function fbPlanMuscleSets() {
+  var plan = null;
+  try { plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null'); } catch (e) { plan = null; }
+  if (!plan || !plan.trainingDays || !plan.trainingDays.length) return null;
+  if (plan.goal === 'cardio' || plan.goal === 'marathon') return null;
+  var base = (typeof CONFIGS !== 'undefined' && CONFIGS[plan.level]) ? CONFIGS[plan.level].sets : 3;
+  var map = {};
+  try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
+  var out = {}, nDays = 0;
+  plan.trainingDays.forEach(function (d) {
+    if (!d || d.isTraining === false || !d.exes || !d.exes.length) return;
+    nDays++;
+    d.exes.forEach(function (ex) {
+      if (!ex || !ex.n) return;
+      var m = ex.m || map[ex.n] || fbMuscleOfName(ex.n);
+      if (!m || m === '有氧') return;
+      var sets = base;
+      try { sets = base + ((typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0); } catch (e) {}
+      out[m] = (out[m] || 0) + sets;
+    });
+  });
+  if (!nDays) return null;
+  return { sets: out, days: nDays, level: plan.level, goal: plan.goal, base: base };
+}
+
 // 汇总各部位容量 + 推拉/上下肢比例 + 失衡结论。
-// 返回的 items 里 status: low=低于区间下限 / ok=在区间内 / high=明显超上限 / none=没练过。
+// 返回的 items 里 status:
+//   planSide 时: low=计划安排低于区间下限 / ok=计划落在区间内 / high=计划高于区间上限(刻意设计, 非问题)
+//                / plan=计划已安排但还没有任何执行数据
+//   无计划时:    low/ok/high 按旧口径用实际完成判 / none=没练过。
+// hasData 仍只看实际打卡数据 —— 解锁门槛("完成 1 次打卡就出图")不能因为有计划就提前。
 function fbBalanceReport() {
   var span = fbBalanceWindow();
+  var planSide = null;
+  try { planSide = fbPlanMuscleSets(); } catch (e) { planSide = null; }
   var items = [];
   var anyData = false;
 
@@ -11971,9 +12016,20 @@ function fbBalanceReport() {
     var load = fbMuscleLoadWin(m, span);
     var tgt = FB_VOLUME_TARGET[m] || [10, 16];
     var spw = load.setsPerWeek;
+    var pSets = planSide ? (planSide.sets[m] || 0) : 0;
     var status = 'none';
-    if (load.sets14 > 0) {
-      // 判定留 15% 缓冲: 容量是按动作数占比摊出来的估算值, 差个一两组是误差不是差距。
+    if (pSets > 0) {
+      // 计划侧判定: 基准 = 计划安排的组数。判定留 15% 缓冲（容量是估算值, 一两组是误差不是差距）。
+      // 「偏少」只在计划本身安排不够时给; 执行不足走 execRate 单独提示, 不冒充计划问题。
+      if (!load.sets14) status = 'plan';
+      else {
+        anyData = true; // hasData 只认实际打卡: 解锁门槛("完成 1 次打卡就出图")不能被计划提前
+        if (pSets < tgt[0] * 0.85) status = 'low';
+        else if (pSets > tgt[1] * 1.25) status = 'high';
+        else status = 'ok';
+      }
+    } else if (load.sets14 > 0) {
+      // 无计划（或跑步计划）退回旧口径: 拿实际完成对照通用区间。
       // 缓冲不能再大 —— 9 组/周对照 12-20 的区间, 明摆着是不足, 判成"合适"就没人当回事了。
       if (spw < tgt[0] * 0.85) status = 'low';
       else if (spw > tgt[1] * 1.25) status = 'high';
@@ -11983,6 +12039,8 @@ function fbBalanceReport() {
     items.push({
       muscle: m, label: MUSCLE_LABELS[m] || m, setsPerWeek: spw,
       daysPerWeek: load.daysPerWeek, target: tgt, status: status,
+      planSide: pSets > 0, planSets: pSets,
+      execRate: pSets > 0 ? (spw / pSets) : 0,
       trained: load.sets14 > 0
     });
   });
@@ -11992,7 +12050,7 @@ function fbBalanceReport() {
   var sum = { push: g.push, pull: g.pull, upper: g.upper, lower: g.lower };
 
   var res = {
-    hasData: anyData, spanDays: span, items: items,
+    hasData: anyData, spanDays: span, items: items, planSide: !!planSide,
     push: sum.push, pull: sum.pull, upper: sum.upper, lower: sum.lower,
     pullPush: 0, lowerUpper: 0, findings: [], weak: null, over: null
   };
@@ -12048,12 +12106,50 @@ function fbBalanceReport() {
     });
   }
 
+  // 计划侧补充结论（有计划才给）:
+  //   · 计划高于区间 = 刻意设计（进阶 6 天背 25-30 组 / 塑形腿 30 组都是留过的编排）,
+  //     主动说明, 不让自家卡片指控自家的计划。
+  //   · 计划够但执行 <75% = 执行不足。阈值 0.75 刻意压低: 4 周窗口里掺 1 个减载周
+  //     (0.74 系数) 平均完成率仍有 ~0.9, 不会误伤正常减载节奏。
+  if (planSide) {
+    var highs = items.filter(function (it) { return it.planSide && it.status === 'high'; });
+    if (highs.length) {
+      highs.sort(function (a, b) { return b.planSets - a.planSets; });
+      var h0 = highs[0];
+      res.findings.push({
+        kind: 'planhigh', color: '#8B5CF6',
+        text: h0.label + '按当前计划每周安排约 ' + Math.round(h0.planSets) + ' 组，高于通用推荐区间（' +
+          h0.target[0] + '-' + h0.target[1] + '）—— 这是计划刻意的设计（重点部位容量优先），照计划练就行，不用砍'
+      });
+    }
+    var shorts = items.filter(function (it) {
+      return it.planSide && it.status !== 'low' && it.trained && it.execRate < 0.75;
+    });
+    if (shorts.length) {
+      shorts.sort(function (a, b) { return a.execRate - b.execRate; });
+      var s0 = shorts[0];
+      res.findings.push({
+        kind: 'exec', color: '#F59E0B',
+        text: s0.label + '按计划应完成约 ' + Math.round(s0.planSets) + ' 组/周，实际只完成约 ' +
+          Math.round(s0.setsPerWeek) + ' 组 —— 计划没问题，是执行没跟上（漏练、减载周、刚恢复的空窗都会拉低这个平均值）'
+      });
+    }
+  }
+
   var lows = items.filter(function (it) { return it.status === 'low'; });
   if (lows.length) {
-    lows.sort(function (a, b) { return (a.setsPerWeek / a.target[0]) - (b.setsPerWeek / b.target[0]); });
+    lows.sort(function (a, b) {
+      var av = (a.planSide ? a.planSets : a.setsPerWeek) / a.target[0];
+      var bv = (b.planSide ? b.planSets : b.setsPerWeek) / b.target[0];
+      return av - bv;
+    });
     res.findings.push({
       kind: 'low', color: '#22C55E',
       text: lows.slice(0, 2).map(function (it) {
+        if (it.planSide) {
+          return it.label + '按计划只有约 ' + Math.round(it.planSets) + ' 组/周（建议 ' +
+            it.target[0] + '-' + it.target[1] + '）—— 是计划安排的缺口，不是你没练';
+        }
         return it.label + '只有约 ' + Math.round(it.setsPerWeek) + ' 组/周（建议 ' +
           it.target[0] + '-' + it.target[1] + '）';
       }).join('，')
@@ -13183,6 +13279,19 @@ function fbDiagnoseStalls() {
 
     var muscle = fbMuscleOfName(name);
     var load = fbMuscleLoad14d(muscle);
+    // v136: 「容量不足」的判定基准换成计划侧 —— 计划安排够了、只是执行没到位的,
+    // 开"加组"处方解决不了漏练, 只会让计划越加越肥。无计划时退回旧的实测口径。
+    var planShort = false;
+    try {
+      var _pm = (typeof fbPlanMuscleSets === 'function') ? fbPlanMuscleSets() : null;
+      if (_pm && _pm.sets[muscle] > 0) {
+        planShort = _pm.sets[muscle] < (FB_VOLUME_TARGET[muscle] || [10, 16])[0] * 0.85;
+      } else {
+        planShort = load.setsPerWeek < (FB_VOLUME_TARGET[muscle] || [10, 16])[0];
+      }
+    } catch (e) {
+      planShort = load.setsPerWeek < (FB_VOLUME_TARGET[muscle] || [10, 16])[0];
+    }
     var fatigueDays = 0;
     try {
       if (typeof checkMuscleFatigue === 'function') {
@@ -13208,11 +13317,12 @@ function fbDiagnoseStalls() {
     var cause;
     if (fatigueDays >= 3 || (dropped && rpeAvg >= 8.5)) cause = 'recovery';
     else if (load.hasData && load.daysPerWeek > 0 && load.daysPerWeek <= 1.2) cause = 'frequency';
-    else if (load.hasData && load.setsPerWeek < (FB_VOLUME_TARGET[muscle] || [10, 16])[0]) cause = 'volume';
+    else if (load.hasData && planShort) cause = 'volume';
     else if (rpeAvg >= 8.8) cause = 'intensity';
     else if (mode === 'weight' && wDrift <= 2.5) cause = 'progression';
     else if (mode === 'reps' && pDrift <= 1) cause = 'progression';
-    else cause = 'volume';
+    // 兜底也要守同一个口径: 计划容量没问题就别再甩"加组"处方, 归到渐进问题
+    else cause = planShort ? 'volume' : 'progression';
 
     items.push({
       name: name, muscle: muscle, mode: mode, unit: u.unit || '次',
