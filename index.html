@@ -1341,12 +1341,32 @@ input,select{font-family:inherit;}
 <script src="feedback.js?v=8" defer></script>
 <script src="contributors.js?v=5" defer></script>
 <script src="onboarding.js?v=3" defer></script>
-<script src="data-constants.js?v=45" defer></script>
+<script src="data-constants.js?v=46" defer></script>
 <script src="persistence.js?v=2" defer></script>
 
-<script src="qrcode-generator.js?v=1" defer></script>
-<script src="planner-core.js?v=136" defer></script>
+<script src="planner-core.js?v=139" defer></script>
   <script src="pro-tools.js?v=43" defer></script>
+<script>
+// qrcode-generator(55KB) 不进首屏 defer 批次:首帧渲染完、浏览器空闲时再拉。
+// 全仓只有分享卡上的二维码用到它(planner-core 两处调用点均有 try/catch 兜底),
+// 空闲预载保证用户点分享时几乎必然已就绪;极端弱网下若还没就绪,二维码留白、其余功能不受影响。
+(function () {
+  var _qrStarted = false;
+  function _qrIdleLoad() {
+    if (_qrStarted) return;
+    _qrStarted = true;
+    var s = document.createElement('script');
+    s.src = 'qrcode-generator.js?v=1';
+    s.defer = true;
+    document.head.appendChild(s);
+  }
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(_qrIdleLoad, { timeout: 3000 });
+  } else {
+    setTimeout(_qrIdleLoad, 2000);
+  }
+})();
+</script>
 <script src="rpe-rir.js?v=2" defer></script>
 <script src="calculator-diet.js?v=5" defer></script>
 <script src="group-qr.js?v=2" defer></script>

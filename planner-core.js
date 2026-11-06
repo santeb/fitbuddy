@@ -4481,6 +4481,14 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var _wkReps = fbCurrentWeekReps(goalCfg.reps);
       var _exReps = (_iso && typeof fbIsoReps === 'function') ? fbIsoReps(_wkReps) : _wkReps;
       var _exPres = (_setsAdj > 0 ? (sets + _setsAdj) : sets) + '组 x ' + _exReps;
+      // v173: 计时动作单独秒处方(方案 b) —— 以前走次数口径, 显示「3组 x 15-17次」而记录
+      // 单位是秒、今日目标报秒, 同屏两个数各吹各的。现在与今日目标共用 fbTimedPrescription。
+      // _iso 的强度/休息偏移照旧(计时动作若同时命中孤立关键词, 休息提示仍适用)。
+      try {
+        if (typeof isTimedEx === 'function' && isTimedEx(ex.n) && typeof fbTimedPrescription === 'function') {
+          _exPres = (_setsAdj > 0 ? (sets + _setsAdj) : sets) + '组 x ' + fbTimedPrescription(ex.n).txt;
+        }
+      } catch (eTimed) {}
 
       // 马拉松专属处方显示
       var exPrescriptionHtml;
@@ -4965,6 +4973,56 @@ function getLogUnit(exName) {
 window.isBodyweightEx = isBodyweightEx;
 window.isTimedEx = isTimedEx;
 window.getLogUnit = getLogUnit;
+
+// ============ 计时动作的秒数处方(v173, 方案 b) ============
+// 背景: TIMED_EX_KEYWORDS 命中的动作(平板支撑/静蹲/悬挂/死虫/鸟狗/侧撑/靠墙, 含用户自建)
+// 记录单位是秒, 但训练卡处方一直走次数口径(v171 后显示「3组 x 15-17次」), 今日目标却如实报秒
+// —— 同屏两个数各吹各的。v172 修了「次」的一半, 计时这半按 san 拍板的方案 b: 单独秒处方,
+// 训练卡与今日目标都从 fbTimedPrescription 这一个真源读。
+// 口径: 基础秒数按动作难度(初级 30 / 中级 40 / 高级 50, 池外/自建默认 30),
+//       周期内爬坡周每周 +5 秒, 减载周按 fbDeloadSeverity 缩(与重量/次数口径同一把尺)。
+//       展示为区间「40-55秒」(上限 = 下限+15): 计时动作做到区间内都算达标。
+// ⚠️ 悬挂举腿/悬挂直腿举/平板支撑转体这类动态动作也被关键词强制记秒 —— 历史记录已经在
+//    秒轴上, 改单位会断趋势图, 所以统一按秒处方处理(按组持续做满区间)。
+function fbTimedExBaseSec(exName) {
+  var base = 30;
+  try {
+    if (typeof EXES !== 'undefined' && Array.isArray(EXES)) {
+      for (var i = 0; i < EXES.length; i++) {
+        if (EXES[i] && EXES[i].n === exName) {
+          var d = String(EXES[i].diff || '');
+          if (d.indexOf('高级') >= 0) base = 50;
+          else if (d.indexOf('中级') >= 0) base = 40;
+          break;
+        }
+      }
+    }
+  } catch (e) {}
+  return base;
+}
+function fbTimedPrescription(exName) {
+  var low = 30;
+  try {
+    var N = (typeof getCycleLength === 'function') ? getCycleLength() : 4;
+    if (!(N > 0)) N = 4;
+    var w = ((parseInt(currentWeek, 10) - 1) % N + N) % N + 1;
+    if (!isFinite(w) || w < 1) w = 1;   // currentWeek 未定义时 parseInt→NaN, 算术 NaN 不抛错, 必须显式兜底回第 1 周
+    low = fbTimedExBaseSec(exName) + (w - 1) * 5;
+    var _dl = false;
+    try {
+      if (typeof isDeloadWeekActive === 'function' && typeof currentCycle !== 'undefined') {
+        _dl = !!isDeloadWeekActive(currentWeek, currentCycle);
+      }
+    } catch (e2) { _dl = false; }
+    if (_dl) {
+      var _sev = 20;
+      try { _sev = fbDeloadSeverity(currentWeek).weight; } catch (e3) { _sev = 20; }
+      low = Math.max(10, Math.round(low * (1 - _sev / 100) / 5) * 5);
+    }
+  } catch (e) { low = 30; }
+  return { low: low, high: low + 15, txt: low + '-' + (low + 15) + '秒' };
+}
+window.fbTimedPrescription = fbTimedPrescription;
 
 // 同一天可能被记录多次(多组各记一次 / 反复修改重复保存)。
 // 趋势图看的是"跨天进步",X 轴每个点应当 = 一天,而不是 = 一条记录。
@@ -6783,19 +6841,70 @@ function fbCalcNextLoad(exName) {
     try { sevPct = fbDeloadSeverity(currentWeek).weight; } catch (e) { sevPct = 15; }
   }
 
+  // ---- 计时动作: 秒处方(v173→v174, 方案 b) ----
+  // v173 首版走「向处方追、单次+5秒」的追赶制, san 实测「秒数还是没对上」—— 同屏
+  // 「今日目标 17秒」对「动作行 40-55秒」视觉上就是两个数, 追赶期要好几周, 不可接受。
+  // v174 改为: 今日目标直接显示与训练卡**完全相同**的处方区间(targetText), 数字必然一致;
+  // RPE/减载信号不改数字, 只进理由栏(太吃力→提示从下限做起; 轻松→提示往区间上限做)。
+  // 进阶由处方本身驱动(爬坡周每周 +5s, 减载周已按 severity 缩)。
+  if (u.mode === 'reps' && String(u.unit || '') === '秒' && typeof fbTimedPrescription === 'function') {
+    var lastSec = parseInt(last.reps, 10) || 0;
+    if (!lastSec) return null;
+    var _tp = fbTimedPrescription(exName);
+    var tWhy;
+    if (deload) {
+      tWhy = '减载周 -' + sevPct + '%,处方已缩,做到区间';
+    } else if (rpe >= 9) {
+      tWhy = '上次太吃力,这周从下限 ' + _tp.low + ' 秒做起';
+    } else if (lastSec > _tp.high) {
+      tWhy = '上周时长已超处方,照区间维持';
+    } else if (lastSec < _tp.low) {
+      tWhy = '本周处方 ' + _tp.txt + ',上到 ' + _tp.low + ' 秒算达标';
+    } else {
+      tWhy = '本周处方 ' + _tp.txt + ',做到区间内就算达标';
+    }
+    if (!deload && rpe && rpe <= 6 && lastSec <= _tp.high) tWhy = '上次很轻松,照处方往区间上限做';
+    return {
+      mode: 'reps', unit: '秒', target: _tp.low, targetText: _tp.txt,
+      lastVal: lastSec, rpe: rpe, delta: 0, deload: deload,
+      reason: tWhy
+    };
+  }
+
   // ---- 自重/计时动作:加量 = 多做几次,而不是加 kg ----
   if (u.mode === 'reps') {
     var reps = parseInt(last.reps, 10) || 0;
     if (!reps) return null;
     var nr = reps;
+    var _isoRaised = false;
     if (rpe && rpe <= 6) nr = reps + 2;
     else if (rpe && rpe >= 9) nr = Math.max(1, reps - 2);
-    if (deload) nr = Math.max(1, Math.round(nr * (1 - sevPct / 100)));
+    if (deload) {
+      nr = Math.max(1, Math.round(nr * (1 - sevPct / 100)));
+    } else if ((!rpe || rpe < 9) && String(u.unit || '次').indexOf('次') >= 0) {
+      // v172: 孤立的次数型自重动作(记录单位是「次」)与训练卡同源 —— 抬到「周处方+5」的下限。
+      // 规则照抄重量分支: 单次至多 +2(防跳变)、RPE≥9 不抬、减载周不抬。
+      // 计时动作(单位「秒」)不参与: 「+5 次」的偏移对计时没有意义, 那类动作的处方口径分裂另案处理。
+      try {
+        if (typeof fbIsIsolation === 'function' && fbIsIsolation({ n: exName }) &&
+            typeof fbIsoReps === 'function' && typeof fbPeriodWeekReps === 'function' && typeof fbRepsLowOf === 'function') {
+          var _lvl2 = (typeof fbCurrentLevel === 'function' ? fbCurrentLevel() : '') || 'beginner';
+          var _glb2 = (typeof fbCurrentGoal === 'function' ? fbCurrentGoal() : '') || 'muscle';
+          var _bReps2 = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lvl2] && CONFIGS[_lvl2][_glb2]) || {}).reps || '';
+          var _isoFloor = fbRepsLowOf(fbIsoReps(fbPeriodWeekReps(currentWeek, _bReps2, false)));
+          var _up2 = Math.min(_isoFloor - nr, 2);
+          if (_up2 > 0) { nr = nr + _up2; _isoRaised = true; }
+        }
+      } catch (eIso2) {}
+    }
+    // 次数真的抬了就必须说出来, 否则显示「+2」配一句「维持」, 又是一处自相矛盾。
+    var _repWhy = deload ? '减载周 -' + sevPct + '%' : (!rpe ? '上次没记 RPE,先按上次次数做'
+      : (rpe <= 6 ? '上次很轻松,加量' : (rpe >= 9 ? '上次太吃力,减量' : '上次强度合适,维持')));
+    if (_isoRaised && !/次数/.test(_repWhy)) _repWhy += ' · 次数按本周台阶加到 ' + nr + ' 次';
     return {
       mode: 'reps', unit: u.unit || '次', target: nr, lastVal: reps, rpe: rpe,
       delta: nr - reps, deload: deload,
-      reason: deload ? '减载周 -' + sevPct + '%' : (!rpe ? '上次没记 RPE,先按上次次数做'
-        : (rpe <= 6 ? '上次很轻松,加量' : (rpe >= 9 ? '上次太吃力,减量' : '上次强度合适,维持')))
+      reason: _repWhy
     };
   }
 
@@ -6841,7 +6950,15 @@ function fbCalcNextLoad(exName) {
         var _lvl = (typeof fbCurrentLevel === 'function' ? fbCurrentLevel() : '') || 'beginner';
         var _glb = (typeof fbCurrentGoal === 'function' ? fbCurrentGoal() : '') || 'muscle';
         var _bReps = ((typeof CONFIGS !== 'undefined' && CONFIGS[_lvl] && CONFIGS[_lvl][_glb]) || {}).reps || '';
-        floorReps = fbRepsLowOf(fbPeriodWeekReps(currentWeek, _bReps, false));
+        var _wkRepsStr = fbPeriodWeekReps(currentWeek, _bReps, false);
+        // v172: 孤立动作的今日目标与训练卡(v171)同源 —— 训练卡动作行显示的次数是「周处方+5」,
+        // 这里不同步的话, 同一屏「今日目标 ×12」对「动作行 15-17次」又是一组对不上的数字。
+        try {
+          if (typeof fbIsIsolation === 'function' && fbIsIsolation({ n: exName }) && typeof fbIsoReps === 'function') {
+            _wkRepsStr = fbIsoReps(_wkRepsStr);
+          }
+        } catch (eIso) {}
+        floorReps = fbRepsLowOf(_wkRepsStr);
       } catch (e8) { floorReps = 0; }
       if (floorReps > targetReps) {
         repsUp = Math.min(floorReps - targetReps, 2);
@@ -6977,12 +7094,14 @@ function fbTodayLoadLines(day) {
     // ⚠️ 目标行的次数用 targetReps(本周台阶, v123) 而不是 reps(上次真实次数):
     //   卡片写「×12」而周信息条写「每组至少 14 次」就是又一组对不上的数字;
     //   "上次 × 12" 那半句仍然必须报真实做过的次数, 所以 lastTxt 保持用 r.reps。
+    //   v174: 计时动作的 targetText 直接显示本周处方区间(与训练卡同一真源), 数字必然一致。
     var _tgtReps = (typeof r.targetReps === 'number' && r.targetReps > 0) ? r.targetReps : r.reps;
     var tgtTxt = r.mode === 'weight'
       ? ('<b>' + r.target + 'kg</b>' + (_tgtReps ? ' × ' + _tgtReps : ''))
-      : ('<b>' + r.target + (r.unit || '次') + '</b>');
-    var dTxt = r.delta > 0 ? ('+' + r.delta + (r.mode === 'weight' ? 'kg' : ''))
-             : (r.delta < 0 ? (r.delta + (r.mode === 'weight' ? 'kg' : '')) : '维持');
+      : (r.targetText ? ('<b>' + r.targetText + '</b>') : ('<b>' + r.target + (r.unit || '次') + '</b>'));
+    var dTxt = r.targetText ? '本周处方'
+      : (r.delta > 0 ? ('+' + r.delta + (r.mode === 'weight' ? 'kg' : ''))
+      : (r.delta < 0 ? (r.delta + (r.mode === 'weight' ? 'kg' : '')) : '维持'));
     rows.push(
       '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:2px 0;">'
       + '<span style="font-size:12px;opacity:0.95;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + ex.n + '</span>'
