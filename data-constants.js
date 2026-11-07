@@ -318,6 +318,7 @@ var CONFIGS = {
     strength: {reps:"8-10次",  rest:"90秒", intensity:"60-70% 1RM", rpe:"RPE 6-7", note:"注意动作规范，不追求大重量"},
     cut:      {reps:"15-20次", rest:"45秒", intensity:"40-55% 1RM", rpe:"RPE 5-6", note:"保持运动节奏，以轻重量高次数燃脂"},
     shape:    {reps:"10-15次", rest:"60秒", intensity:"55-65% 1RM", rpe:"RPE 6-7", note:"臀腿+肩背线条优先，动作标准比重量重要"},
+    cycling:  {reps:"10-15次", rest:"60秒", intensity:"55-70% 1RM", rpe:"RPE 6-7", note:"骑行者的力量补充课：后链+单腿+核心抗旋优先，力量是给踩踏板服务的"},
     cardio:   {reps:"—", totalDuration:"20分钟", hiitPerSet:"20秒工作 + 40秒休息", lissPerSet:"持续进行", rest:"60秒", intensity:"心率 55-65%", rpe:"RPE 4-5", note:"轻松有氧为主，能正常说话的配速"},
     marathon: {weeklyKms:"30-45", longRunMax:30, easyPace:"6:30-7:00", tempoPace:"5:30-6:00", intervalPace:"5:00-5:30", longRunPace:"6:30-7:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：安全完赛（4:30-5:30），享受比赛"}
   },
@@ -327,6 +328,7 @@ var CONFIGS = {
     strength: {reps:"5-8次",   rest:"2分钟",intensity:"75-85% 1RM", rpe:"RPE 8-9", note:"每组接近力竭，记录每次重量"},
     cut:      {reps:"12-15次", rest:"30秒", intensity:"55-65% 1RM", rpe:"RPE 7-8", note:"组间休息别超时；想再压缩时间，可自己把两个互不干扰的动作串成超级组<span class='term-badge' data-term='superset'>?</span>"},
     shape:    {reps:"10-12次", rest:"60秒", intensity:"60-70% 1RM", rpe:"RPE 7-8", note:"力竭前留 1~2 个 RIR（还能再做几次），练完加 15-20 分钟慢速有氧"},
+    cycling:  {reps:"5-8次",   rest:"150秒", intensity:"75-85% 1RM", rpe:"RPE 7-8", note:"骑行者的力量补充课：主项在车上的话，力量课 2-3 次就够，别让腿练到骑不动车。大重量要休息够，动作变形宁可减重量"},
     cardio:   {reps:"—", totalDuration:"30分钟", hiitPerSet:"30秒工作 + 30秒休息", lissPerSet:"持续进行", rest:"45秒", intensity:"心率 65-80%", rpe:"LISS RPE5-6 / HIIT RPE8-9", note:"HIIT与LISS交替进行"},
     marathon: {weeklyKms:"50-70", longRunMax:35, easyPace:"5:30-6:00", tempoPace:"4:45-5:15", intervalPace:"4:15-4:30", longRunPace:"6:00-6:30", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 4:00-4:30，有比赛经验"}
   },
@@ -336,6 +338,7 @@ var CONFIGS = {
     strength: {reps:"3-6次",   rest:"3分钟",intensity:"85%+ 1RM",   rpe:"RPE 8-10", note:"加入RPE评估，追求渐进超负荷"},
     cut:      {reps:"10-12次", rest:"45秒", intensity:"65-75% 1RM", rpe:"RPE 8-9", note:"容量已拉满，密度靠别拖长休息。超级组<span class='term-badge' data-term='superset'>?</span>、递减组<span class='term-badge' data-term='dropset'>?</span>要自己安排 —— 本计划按单动作直上直下排"},
     shape:    {reps:"8-12次",  rest:"75秒", intensity:"70-80% 1RM", rpe:"RPE 8-9", note:"臀腿+肩背双重点；想提密度可自己串超级组<span class='term-badge' data-term='superset'>?</span>，本计划按单动作排"},
+    cycling:  {reps:"4-6次",   rest:"180秒", intensity:"80-88% 1RM", rpe:"RPE 8-9", note:"骑行者的力量补充课：进阶骑友按赛季排，比赛季只保 1-2 次力量课，非赛季再加量"},
     cardio:   {reps:"—", totalDuration:"40分钟", hiitPerSet:"45秒工作 + 15秒休息", lissPerSet:"持续进行", rest:"20秒", intensity:"心率 70-85%", rpe:"LISS RPE6-7 / HIIT RPE9-10", note:"高强度间歇为主，最大化燃脂效果"},
     marathon: {weeklyKms:"70-100", longRunMax:38, easyPace:"4:45-5:15", tempoPace:"4:15-4:30", intervalPace:"3:45-4:00", longRunPace:"5:15-5:45", rpe:"轻松跑RPE4-5/LSD RPE5-6/节奏RPE7-8", note:"目标：sub 3:30，冲击PB"}
   }
@@ -949,6 +952,7 @@ var REST_TIPS = {
   strength: ["轻度散步 20-30 分钟促进血液循环", "进行关节灵活性训练", "充足睡眠是力量恢复的关键"],
   cut: ["低强度散步 30-45 分钟（可选）", "多喝水，保持饱腹感", "控制热量摄入但不要过度节食"],
   cardio: ["拉伸腿部和髋部肌群", "泡热水澡或热敷帮助恢复", "补充电解质和水分"],
+  cycling: ["骑行日当天别再练腿——把力量课和长骑错开 48 小时", "泡沫轴放松股四头、腘绳和髋屈肌（骑行姿势髋屈肌最紧）", "长途骑行后补碳水+电解质，力量课日补蛋白质"],
   marathon: ["完全休息或交叉训练（游泳/骑行/瑜伽 30min）", "泡沫轴放松小腿、大腿前后侧、臀部", "碳水补充（每kg体重 5-7g），修复糖原储备", "检查跑鞋磨损，周跑量>50km需半年换鞋"],
 };
 
@@ -959,6 +963,7 @@ var GOAL_TIPS = {
   cut: ["制造热量缺口是减脂核心，约-300~-500大卡", "训练日保持蛋白质摄入 >= 体重(kg)x1.6g", "有氧推荐在餐后或早晨空腹进行", "减脂期保留力量训练，防止肌肉流失"],
   cardio: ["有氧训练心率目标区间: 最大心率的65-80%", "交替进行LISS（低强度稳态）和HIIT（高强度间歇）", "保持充足水分，每小时至少600ml", "拉伸与恢复和训练本身同等重要"],
   marathon: ["80%跑量应在Zone 2（能完整对话的心率）", "LSD是每周最重要的训练，不要跳过", "赛前3周开始减量(Taper)，跑量降至60%→40%→30%", "比赛日：不要穿新鞋！赛前吃碳水，每5km补水"],
+  cycling: ["骑友最缺的是后链和单腿力量——踩踏板用不上腘绳，得靠力量课补", "核心抗旋（伐木/Pallof）比卷腹有用：稳定躯干，踩踏发力不漏", "力量课排在不骑车或短骑的日子，长骑前一天别练腿", "膝盖不适先查踏频和坐垫高度，再怪力量——多数是车的问题不是腿的问题", "研究过骑手的大重量训练（罗内斯塔德系列研究）：4-8 次的大重量深蹲/硬拉才提升骑行表现，轻重量高次数长的只是体重——爬坡的负担"],
 };
 
 // 饮食建议（按目标区分）
@@ -997,6 +1002,13 @@ var FOOD_GUIDE = {
     fat:     ["坚果","橄榄油","花生酱"],
     snack:   ["香蕉（训前）","电解质饮料","能量胶（长距离）","椰子水"],
     timing:  ["训前 1h：碳水（如 全麦面包+香蕉）","训前 15min：快碳（如 香蕉/能量胶）","训后：碳水+蛋白恢复（如 巧克力奶）","长时间训练途中每小时补充 30-60g 碳水"]
+  },
+  cycling: {
+    protein: ["鸡蛋","鸡胸肉","瘦牛肉","鱼虾","希腊酸奶","乳清蛋白"],
+    carb:    ["米饭/面条","红薯","燕麦","香蕉","全麦面包"],
+    fat:     ["坚果","橄榄油","牛油果"],
+    snack:   ["香蕉（骑前）","电解质饮料（长骑）","能量棒（途中）","巧克力奶（训后恢复）"],
+    timing:  ["骑前 1-2h：碳水为主（如 燕麦+香蕉）","长骑途中每小时 30-60g 碳水（能量胶/能量棒）","骑后 30min：碳水+蛋白 4:1（如 巧克力奶）","力量课日蛋白质提到每kg体重 1.6g"]
   },
   marathon: {
     protein: ["鸡蛋","鱼肉","鸡胸肉","虾仁","牛奶","豆腐"],

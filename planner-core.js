@@ -1245,9 +1245,10 @@ function pickSub(pool, parentPool, count, off) {
 function getFullBody(equip, level, goal, weekOffset, withArm) {
   // shape(塑形/梨形专项): 腿臀占 3 槽, 核心肩各 1 —— 呼应 CONFIGS.shape "臀腿+肩背线条优先"
   var muscles = goal === "cardio" ? ["腿","胸","背","核心","有氧"]
+             : goal === "cycling" ? ["腿","腿","背","核心","核心"]
              : goal === "shape"  ? ["腿","腿","腿","核心","肩"]
              : ["腿","胸","背","肩","核心"];
-  if (withArm && goal !== "cardio") muscles.push("臂");
+  if (withArm && goal !== "cardio" && goal !== "cycling") muscles.push("臂");
   var list = [];
   muscles.forEach(function(m, idx){
     var ex = getExes(m, equip, level);
@@ -2474,7 +2475,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   if (!trainingDays || !Array.isArray(trainingDays) || trainingDays.length === 0) {
     trainingDays = [{day:"第1天",isTraining:true,exes:[{n:"深蹲",m:"腿",p:"腿",s:"初级",eq:"gym",diff:"初级",desc:"徒手深蹲",tips:"脚跟贴地",vid:"aclHkVaku9U",_exId:"squat"}]}];
   }
-  var goalNames  = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",marathon:"马拉松"};
+  var goalNames  = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",cycling:"骑行力量",marathon:"马拉松"};
   var levelNames = {beginner:"新手 🌱",intermediate:"中级 ⚡",advanced:"进阶 🔥"};
   var equipNames = {gym:"健身房 🏟️",dumbbell:"哑铃+自重 🏠",bodyweight:"仅自重 🤸",band:"自重+弹力带 🎀",outdoor:"户外路跑 🌳",treadmill:"跑步机 🖥️"};
   var cycleLen = getCycleLength();
@@ -2862,7 +2863,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
     var title = "FitBuddy - 该训练啦!💪";
     var body = "今天还有训练等着你!打开 FitBuddy 开始打卡 💪";
     if (plan && plan.goal) {
-      var goalNames = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",marathon:"马拉松"};
+      var goalNames = {muscle:"增肌",strength:"力量",cut:"减脂",shape:"塑形",cardio:"心肺",cycling:"骑行力量",marathon:"马拉松"};
       body = "你的" + (goalNames[plan.goal] || plan.goal) + "训练等你来!打开 FitBuddy 打卡 💪";
     }
 
@@ -3182,6 +3183,66 @@ function _padPlanToDays(plan, goal, level, days, equip, wOff) {
   return plan;
 }
 
+// ============ 🚴 骑行者的力量补充计划 ============
+// 定位: 主项在车上(公路/山地/动感单车)的人, 力量是补充课, 不是主课。
+// 专项取舍(为什么槽位和增肌计划完全不同):
+//   · 踩踏是膝主导的固定圆周 → 后链(腘绳/臀)在车上练不到, 力量课重点补;
+//   · 左右腿力量差是骑行常态 → 单腿动作直接修正, 不只练双边;
+//   · 躯干一晃踩踏就漏力 → 核心偏抗旋(伐木/Pallof), 不堆卷腹;
+//   · 推类(胸)对骑行无迁移 → 零槽位, 刻意不排;
+//   · 组数克制: 力量课 2-3 次/周足够, 练到腿骑不动车是本末倒置(REST_TIPS 已提示错开 48h)。
+// 结构照 buildStrengthPlan 的"固定槽位"模板: 每天动作数恒定(均衡优先, v166 教训),
+// 子池被伤病砍空时 pickSub 退回父池, 不会出现某天只有 2 个动作。
+function buildCyclingPlan(level, days, equip, wOff) {
+  var legPool = getExes("腿", equip, level);
+  var backPool = getExes("背", equip, level);
+  var corePool = getExes("核心", equip, level);
+  var shPool = getExes("肩", equip, level);
+  // 髋主导后链: 硬拉族/臀推族/腿弯举(腘绳孤立)
+  var post = legPool.filter(function(e){ return e.n.indexOf("硬拉")>=0 || e.n.indexOf("罗马尼亚")>=0 || e.n.indexOf("臀推")>=0 || e.n.indexOf("臀桥")>=0 || e.n.indexOf("腿弯举")>=0; });
+  // 单腿族: 分腿蹲/箭步蹲/单腿变式 —— 骑行左右腿差的直接解药
+  var uni = legPool.filter(function(e){ return e.n.indexOf("单腿")>=0 || e.n.indexOf("保加利亚")>=0 || e.n.indexOf("分腿")>=0 || e.n.indexOf("箭步")>=0; });
+  // 膝主导(蹲类): 保住基础蹬伸力量即可, 不冲大重量
+  var squat = legPool.filter(function(e){ return e.n.indexOf("深蹲")>=0 || e.n.indexOf("腿举")>=0; });
+  // 抗旋核心: 伐木/Pallof/转体族 —— 稳躯干优先
+  var anti = corePool.filter(function(e){ return e.n.indexOf("伐木")>=0 || e.n.indexOf("抗旋转")>=0 || e.n.indexOf("转体")>=0 || e.n.indexOf("Pallof")>=0; });
+  var antiPool = anti.length ? anti : corePool; // 徒手/弹力带下抗旋动作可能被器材筛空, 退回全核心池
+  // 三天主循环: A 后链+背 / B 单腿+蹲 / C 全身补充。每天固定 4 个动作, wOff+i 错开轮转。
+  // 组数刻意压在增肌计划之下 —— 补充课练到"有力"就够了, 留着腿骑车。
+  function dayA(off) { return { name:"骑行补充 A(后链·背)", exes: dedup(
+    pickSub(post, legPool, 2, off).concat(
+    pickExes(backPool, 1, off),
+    pickExes(antiPool, 1, off))) }; }
+  function dayB(off) { return { name:"骑行补充 B(单腿·核心)", exes: dedup(
+    pickSub(uni, legPool, 2, off).concat(
+    pickExes(squat, 1, off),
+    pickExes(antiPool, 1, off))) }; }
+  function dayC(off) { return { name:"骑行补充 C(全身)", exes: dedup(
+    pickSub(squat, legPool, 1, off).concat(
+    pickSub(post, legPool, 1, off),
+    pickExes(backPool, 1, off),
+    pickExes(corePool, 1, off))) }; }
+  // 按天数递增排: 2天=A,B / 3天=A,B,C / 4天加肩背稳定 / 5天加后链强化 / 6天加单腿强化
+  // (不能先排满 A/B/C 再叠加扩展日 —— 那样 4 天会生成 5 个训练日)
+  var arr = [dayA(wOff)];
+  if (days >= 2) arr.push(dayB(wOff + 1));
+  if (days >= 3) arr.push(dayC(wOff + 2));
+  // 4 天起加肩背稳定日: 骑行姿势(前倾撑把)肩袖/上背持续受力, 面拉类直接对位
+  if (days >= 4) arr.push({ name:"骑行补充 D(肩背稳定)", exes: dedup(
+    pickExes(backPool, 1, wOff + 3).concat(
+    pickExes(shPool, 2, wOff + 3),
+    pickExes(antiPool, 1, wOff + 3))) });
+  if (days >= 5) arr.push({ name:"骑行补充 E(后链强化)", exes: dedup(
+    pickSub(post, legPool, 2, wOff + 4).concat(
+    pickExes(backPool, 1, wOff + 4),
+    pickExes(corePool, 1, wOff + 4))) });
+  if (days >= 6) arr.push({ name:"骑行补充 F(单腿强化)", exes: dedup(
+    pickSub(uni, legPool, 2, wOff + 5).concat(
+    pickExes(squat, 1, wOff + 5),
+    pickExes(corePool, 1, wOff + 5))) });
+  return arr;
+}
+
 function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   var trainingDays = [];
   if (goal === "muscle") trainingDays = buildMusclePlan(level, days, equip, weekOffset);
@@ -3189,6 +3250,7 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   else if (goal === "cut") trainingDays = buildCutPlan(level, days, equip, weekOffset);
   else if (goal === "shape") trainingDays = buildShapePlan(level, days, equip, weekOffset);
   else if (goal === "cardio") trainingDays = buildCardioPlan(level, days, equip, weekOffset);
+  else if (goal === "cycling") trainingDays = buildCyclingPlan(level, days, equip, weekOffset);
   else if (goal === "marathon") trainingDays = buildMarathonPlan(level, days, equip, weekOffset);
   trainingDays = _padPlanToDays(trainingDays, goal, level, days, equip, weekOffset);
   // 仅自重 + 力量类目标:按本周难度档位把动作映射到变式族对应档位(周期升档/降档)
@@ -3730,6 +3792,7 @@ function getSplitInfo(goal, days) {
   if (goal === "cut")     return {name:"力量 + 有氧交替", note:"力量保肌肉，有氧烧脂肪"};
   if (goal === "shape")   return {name:"力量塑形 + 有氧线条", note:"臀腿/肩背重点轮换，线条和体脂两头抓"};
   if (goal === "cardio")  return {name:"LISS / HIIT / 力量轮换", note:"强度高低交错，恢复不欠账"};
+  if (goal === "cycling") return {name:"后链/单腿/抗旋核心", note:"力量为踩踏服务，长骑前一天别排下肢课"};
   return null; // 马拉松等专项有自己的说明面板
 }
 
@@ -10780,7 +10843,7 @@ function fbRenderRmGuide(rm) {
     if (p >= lo && p <= hi) rows[i].classList.add('hit');
   }
 
-  var goalNames = {muscle:'增肌', strength:'力量', cut:'减脂', shape:'塑形'};
+  var goalNames = {muscle:'增肌', strength:'力量', cut:'减脂', shape:'塑形', cardio:'心肺', cycling:'骑行力量', marathon:'马拉松'};
   var lvNames = {beginner:'新手', intermediate:'中级', advanced:'进阶'};
   var gName = goalNames[goal] || '训练', lName = lvNames[level] || level;
   var sets = cfg.sets || 3;
@@ -12097,7 +12160,9 @@ function fbPlanMuscleSets() {
   var plan = null;
   try { plan = JSON.parse(localStorage.getItem('fitbuddy_lastplan') || 'null'); } catch (e) { plan = null; }
   if (!plan || !plan.trainingDays || !plan.trainingDays.length) return null;
-  if (plan.goal === 'cardio' || plan.goal === 'marathon') return null;
+  // cycling 也排除: 补充课的腿/核心组数刻意压在健美区间之下(留腿力骑车),
+  // 拿 FB_VOLUME_TARGET 判会天天喊「腿偏少」, 干扰用户 —— 见 buildCyclingPlan 注释。
+  if (plan.goal === 'cardio' || plan.goal === 'marathon' || plan.goal === 'cycling') return null;
   var base = (typeof CONFIGS !== 'undefined' && CONFIGS[plan.level]) ? CONFIGS[plan.level].sets : 3;
   var map = {};
   try { EXES.forEach(function (ex) { map[ex.n] = ex.m; }); } catch (e) {}
