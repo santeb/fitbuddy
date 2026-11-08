@@ -2548,7 +2548,7 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   html += fbLevelUpCardHtml();
   // 心肺目标:把"心率 55-65%"换成按年龄算出来的具体 bpm,用户照着手表就能对上。
   // 力量目标(50-65% 1RM)fbHrIntensityText 会原样返回,不受影响。
-  var intensityStr = goal === "marathon" ? "LSD最长 " + goalCfg.longRunMax + "km" : fbHrIntensityText(goalCfg.intensity, fbUserAge());
+  var intensityStr = goal === "marathon" ? "LSD最长 " + fbMarathonLsdMax(level) + "km" : fbHrIntensityText(goalCfg.intensity, fbUserAge());
   // 马拉松:动态计算实际周跑量,覆盖静态配置
   if (goal === "marathon" && trainingDays) {
     var actualKm = calcMarathonWeekKm(trainingDays);
@@ -3548,6 +3548,20 @@ function buildCardioPlan(level, days, equip, wOff) {
 }
 
 // ============ 马拉松训练计划 ============
+// 丹尼尔斯口径(v176):长距离跑按**时间**封顶(150分钟/2.5小时),距离由长跑配速折算。
+// 书依据:长距离上限 = min(150分钟, 周跑量的30%/25%),「2.5小时足够长」——距离制上限
+// 会让初级跑者在路上耗 3.5-4 小时,受伤风险大于收益。取配速区间快端折算,偏保守。
+function fbMarathonLsdMax(level) {
+  var cfg = CONFIGS[level] && CONFIGS[level].marathon ? CONFIGS[level].marathon : CONFIGS.beginner.marathon;
+  var lsdMax = cfg.longRunMax;
+  var m = /(\d+):(\d+)/.exec(cfg.longRunPace || '');
+  if (m) {
+    var paceMin = parseInt(m[1], 10) + parseInt(m[2], 10) / 60;
+    if (paceMin > 0) lsdMax = Math.min(lsdMax, Math.floor(150 / paceMin));
+  }
+  return lsdMax;
+}
+
 function buildMarathonPlan(level, days, equip, wOff) {
   // wOff = currentWeek - 1 (0~15),表示实际周数偏移
   var week = wOff + 1; // 当前第几周(1-16)
@@ -3562,7 +3576,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
   // ── LSD距离:线性递进,减量期回退 ──────────────
   var lsdBase = {beginner:12, intermediate:20, advanced:24}[level] || 12;
   var lsdInc  = {beginner:2, intermediate:1.5, advanced:1.3}[level] || 2;
-  var lsdMax  = cfg.longRunMax;
+  var lsdMax  = fbMarathonLsdMax(level); // 时间制封顶(150分钟折算),与 renderMarathonProgress 同源
   var lsdDist;
   if (phase === "taper") {
     // 减量期:从巅峰值按 60%→50%→40%→30% 缩减
@@ -3661,7 +3675,7 @@ function buildMarathonPlan(level, days, equip, wOff) {
         {name:"轻松跑", exes:[mkRun("轻松跑", easyDist, cfg.easyPace+"/km", "初级", "积极恢复,保持跑量积累", "心率 Zone 2,为高强度训练日蓄力")]},
         {name:"间歇跑 (升级)", exes:[mkRun("间歇跑", intervalSpec, cfg.intervalPace+"/km", "高级", "巅峰期速度训练,强化比赛节奏感", "热身2km,全力完成每组,组间完全恢复再跑下一组")]},
         {name:"配速跑 (比赛模拟)", exes:[mkRun("配速跑", tempoDist, cfg.tempoPace+"/km", "高级", "模拟比赛后半段配速,建立配速感", "以目标比赛配速匀速完成,感受心理和生理双重压力")]},
-        {name:"LSD 长距离", exes:[mkRun("LSD 长距离", lsdDist+"km", cfg.longRunPace+"/km", "中级", "本周期LSD峰值,接近全程距离", "全程补给充分,跑后拉伸30分钟,记录心率和配速数据")]}
+        {name:"LSD 长距离", exes:[mkRun("LSD 长距离", lsdDist+"km", cfg.longRunPace+"/km", "中级", "本周期LSD峰值,2.5小时内完成", "全程补给充分,跑后拉伸30分钟,记录心率和配速数据")]}
       ];
     } else { // taper
       plan = [
@@ -3985,7 +3999,7 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
   // LSD 显示与 buildMarathonPlan 保持一致:线性递进,减量期缩减
   var lsdBase = {beginner:12, intermediate:20, advanced:24}[level] || 12;
   var lsdInc  = {beginner:2, intermediate:1.5, advanced:1.3}[level] || 2;
-  var lsdMax  = goalCfg.longRunMax;
+  var lsdMax  = fbMarathonLsdMax(level); // 与 buildMarathonPlan 同源:时间制封顶
   var phase = currentWeek <= 4 ? "base" : currentWeek <= 8 ? "build" : currentWeek <= 12 ? "peak" : "taper";
   var phaseWeek = ((currentWeek - 1) % 4) + 1;
   var lsdNow;
@@ -4001,7 +4015,7 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
 
   var html = '<div class="week-info" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-left:4px solid '+currentPhase.color+';">'+
     '🏃 <strong>第'+currentWeek+'周 - '+currentPhase.name+'</strong>'+
-    ' <span style="float:right;font-weight:700;">LSD: '+lsdNow+'km / 目标 '+goalCfg.longRunMax+'km</span>'+
+    ' <span style="float:right;font-weight:700;">LSD: '+lsdNow+'km / 上限 '+lsdMax+'km(2.5小时封顶)</span>'+
     '<div style="margin-top:6px;font-size:11px;color:var(--text3);">'+(MARATHON_WEEK_NOTES[currentWeek]||'')+
     ' · <strong>'+phaseDesc+'</strong> · 周跑量 '+(goalCfg._weekKm != null ? goalCfg._weekKm : goalCfg.weeklyKms)+'km</div></div>';
 
@@ -4011,13 +4025,14 @@ function renderMarathonProgress(wkInfo, goalCfg, level, currentCfg) {
       '<span>⏱ 配速计算器</span><span class="plan-day-toggle">▼</span>'+
     '</div>'+
     '<div class="pace-calc-body">'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">输入目标完赛时间,自动计算各训练配速</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">输入你最近一次比赛/全力测试的成绩(不是目标),自动算训练配速</div>'+
       '<div class="input-row" style="gap:8px;">'+
         '<input type="number" class="text-input" id="paceH" placeholder="时" min="2" max="6" value="4" style="flex:1;">'+
         '<span style="line-height:42px;color:var(--text2);">:</span>'+
         '<input type="number" class="text-input" id="paceM" placeholder="分" min="0" max="59" value="30" style="flex:1;">'+
         '<button class="btn-generate" style="flex:2;padding:10px;font-size:13px;margin-top:0;" onclick="event.stopPropagation();renderPaceResult()">计算配速</button>'+
       '</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:6px;">配速跟着当前水平走——PB 了记得回来更新</div>'+
       '<div id="paceResult" style="margin-top:10px;"></div>'+
     '</div></div>';
 

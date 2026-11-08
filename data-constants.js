@@ -836,7 +836,7 @@ var MARATHON_PHASES = [
 var MARATHON_WEEK_NOTES = {
   1:"轻松跑适应，建立跑步习惯", 2:"增加LSD至初段距离", 3:"保持跑量，感受节奏", 4:"基础期收尾，准备进入强化",
   5:"首次加入节奏跑", 6:"间歇跑入门，提升速度", 7:"跑量继续递增", 8:"强化期峰值，LSD拉长",
-  9:"巅峰期开始，跑量最大", 10:"LSD接近目标距离", 11:"模拟比赛配速节奏", 12:"巅峰期收尾，最后一次长距离",
+  9:"巅峰期开始，跑量最大", 10:"LSD接近本周期最长距离", 11:"模拟比赛配速节奏", 12:"巅峰期收尾，最后一次长距离",
   13:"减量第一周，跑量降至60%", 14:"继续减量，保持轻松跑", 15:"赛前最后一周，跑量30%", 16:"比赛周！放松跑+碳水加载"
 };
 
@@ -907,19 +907,21 @@ function renderPaceResult() {
   // 实时更新训练卡片上的配速显示
   updateMarathonPaceDisplay(paces);
   var rows = [
-    {label:"🏁 比赛配速",    val:paces.marathon+"/km"},
+    {label:"🏁 预估比赛配速",    val:paces.marathon+"/km"},
     {label:"🟢 轻松跑",     val:paces.easyMin+"-"+paces.easyMax+"/km"},
     {label:"🟡 节奏跑",     val:paces.tempoMin+"-"+paces.tempoMax+"/km"},
     {label:"🔴 间歇跑",     val:paces.interval+"/km"},
     {label:"🔵 LSD长距离",  val:paces.lsdMin+"-"+paces.lsdMax+"/km"}
   ];
   var html = '<div style="background:var(--bg);border-radius:10px;padding:10px 12px;">'+
-    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">目标完赛 '+h+'小时'+m+'分 → 比赛配速 '+paces.marathon+'/km</div>';
+    '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px;">最近成绩 '+h+'小时'+m+'分 → 当前配速 '+paces.marathon+'/km</div>';
   rows.forEach(function(r){
     html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border);">'+
       '<span style="color:var(--text2);">'+r.label+'</span>'+
       '<span style="font-weight:700;color:var(--text);">'+r.val+'</span></div>';
   });
+  // 丹尼尔斯口径:配速锚定最近比赛成绩而非目标成绩(v176)
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;">按你最近的水平算,不是目标成绩——PB 了记得回来更新。</div>';
   html += '</div>';
   document.getElementById('paceResult').innerHTML = html;
 }
