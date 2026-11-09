@@ -219,6 +219,10 @@
     var foot = document.getElementById('cplFoot');
     var st = tplOn() ? '<div style="font-size:11px;color:#059669;font-weight:700;margin-bottom:8px;">✅ 自定义计划已启用中 —— 保存会立即覆盖当前计划</div>' : '';
     foot.innerHTML = st +
+      '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
+      '<button onclick="fbCplShare()" style="flex:1;padding:9px;border-radius:11px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text2,#475569);font-size:12.5px;font-weight:700;cursor:pointer;">📤 分享给学员</button>' +
+      '<button onclick="fbCplImportModal()" style="flex:1;padding:9px;border-radius:11px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text2,#475569);font-size:12.5px;font-weight:700;cursor:pointer;">📥 导入计划码</button>' +
+      '</div>' +
       '<div style="display:flex;gap:8px;">' +
       (tplOn() ? '<button onclick="fbCplDeactivate()" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text2,#475569);font-size:13px;font-weight:700;cursor:pointer;">⏹ 停用，回智能计划</button>' : '') +
       '<button onclick="fbCplSave()" style="flex:2;padding:12px;border-radius:12px;border:0;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:14px;font-weight:800;cursor:pointer;">💾 保存并启用</button>' +
@@ -421,5 +425,259 @@
     } catch (e) { location.reload(); }
   };
 
-  window.FB_CustomPlan = { version: '1.0.0', readTpl: readTpl };
+  // ---------- 分享 / 导入 (v181) ----------
+  // 背景: planner-core 的 7 位计划码只编码 goal/level/days/equip 四个参数, 动作清单不在码里,
+  // 对方导入 = 用你的参数在他的设备上重新 doGenerate() —— 教练手排的定制(膝友好筛选等)全丢。
+  // 这里做完整分享: 方案 B 链接为主(?plan=码, 微信主路径) + 方案 A 长码兜底(粘贴导入)。
+
+  function utf8ToB64(s) {
+    var bytes = new TextEncoder().encode(s);
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function b64ToUtf8(s) {
+    s = String(s).replace(/[\s\-_]/g, '').replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  // 模板 → 分享码(紧凑 JSON + base64url)。t: {name, meta, days:[{name,exes:[{n,sets,reps,rest}]}]}
+  function tplToCode(t) {
+    var c = { v: 1, n: t.name || '', m: t.meta || {}, d: [] };
+    for (var i = 0; i < t.days.length; i++) {
+      var d = t.days[i];
+      var dd = { n: d.name || '', e: [] };
+      for (var j = 0; j < d.exes.length; j++) {
+        var e = d.exes[j];
+        dd.e.push([e.n, parseInt(e.sets, 10) || '', e.reps || '', e.rest || '']);
+      }
+      c.d.push(dd);
+    }
+    return utf8ToB64(JSON.stringify(c));
+  }
+
+  function findEx(n) {
+    try {
+      if (typeof getExByName === 'function') {
+        var x = getExByName(n) || getExByNameFuzzy(n);
+        if (x) return x;
+      }
+    } catch (e) {}
+    try {
+      if (typeof EXES !== 'undefined' && Array.isArray(EXES)) {
+        for (var k = 0; k < EXES.length; k++) { if (EXES[k] && EXES[k].n === n) return EXES[k]; }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // 分享文本(链接或裸码) → 模板。返回 null = 无效。所有字段走同编辑器同款清洗。
+  function parseShareText(txt) {
+    var s = String(txt || '').trim();
+    if (!s) return null;
+    var mm = s.match(/[?&]plan=([A-Za-z0-9\-_+=%]+)/i);
+    if (mm) s = mm[1];
+    try { s = decodeURIComponent(s); } catch (e) {}
+    s = s.replace(/^FBPLAN/i, '').replace(/\s+/g, '');
+    var c;
+    try { c = JSON.parse(b64ToUtf8(s)); } catch (e) { return null; }
+    if (!c || c.v !== 1 || !Array.isArray(c.d) || !c.d.length) return null;
+    var days = [];
+    for (var i = 0; i < c.d.length; i++) {
+      var dd = c.d[i];
+      if (!dd || !Array.isArray(dd.e) || !dd.e.length) return null;
+      var exes = [];
+      for (var j = 0; j < dd.e.length; j++) {
+        var e = dd.e[j];
+        if (!e || !e[0]) return null;
+        var sn = parseInt(e[1], 10);
+        exes.push({
+          n: String(e[0]).slice(0, 40),
+          sets: (sn > 0 && sn <= 10) ? sn : '',
+          reps: String(e[2] || '').replace(/[<>"']/g, '').slice(0, 20),
+          rest: String(e[3] || '').replace(/[<>"']/g, '').slice(0, 20)
+        });
+      }
+      if (!exes.length) return null;
+      days.push({ name: String(dd.n || '').replace(/[<>"']/g, '').slice(0, 24), exes: exes });
+    }
+    if (days.length > 7) return null;
+    var meta = c.m || {};
+    return {
+      name: String(c.n || '好友的手排计划').replace(/[<>"']/g, '').slice(0, 30),
+      meta: { goal: meta.goal || 'muscle', level: meta.level || 'beginner', equip: meta.equip || 'gym' },
+      days: days
+    };
+  }
+
+  // 导入落盘: 覆盖确认 → 动作库校验(名字不在库里=整条数据链断, 拒绝导入) → 写模板 → 生成
+  function applyImportedTpl(tpl) {
+    var cur = readTpl();
+    if (cur && cur.active) {
+      if (!window.confirm('你已经有一份启用的手排计划「' + (cur.name || '') + '」，导入会覆盖它，继续吗？')) return false;
+    }
+    var miss = 0;
+    for (var i = 0; i < tpl.days.length; i++) {
+      for (var j = 0; j < tpl.days[i].exes.length; j++) {
+        if (!findEx(tpl.days[i].exes[j].n)) miss++;
+      }
+    }
+    if (miss > 0) {
+      try { showToast('有 ' + miss + ' 个动作你的动作库里没有，请把 App 更新到最新版再导入'); } catch (e) { window.alert('有 ' + miss + ' 个动作你的动作库里没有，请更新到最新版再导入'); }
+      return false;
+    }
+    var t = { v: 1, active: true, name: tpl.name, meta: tpl.meta, days: tpl.days, savedAt: Date.now() };
+    writeTpl(t);
+    // ⚠️ 同 fbCplSave: 先摘旧快照标记, 否则 doGenerate 复用上一版快照
+    try { if (typeof lastPlan !== 'undefined' && lastPlan) lastPlan._customTpl = false; } catch (e) {}
+    try {
+      if (typeof doGenerate === 'function') doGenerate();
+      else location.reload();
+    } catch (e) { location.reload(); }
+    return true;
+  }
+
+  function fbCopyText(txt, okMsg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () { try { showToast(okMsg); } catch (e) {} })
+        .catch(function () { fbCopyFallback(txt, okMsg); });
+    } else { fbCopyFallback(txt, okMsg); }
+  }
+  function fbCopyFallback(txt, okMsg) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = txt;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      try { showToast(okMsg); } catch (e) {}
+    } catch (e) {}
+  }
+
+  // 分享弹窗(自带壳, 不依赖 planner-core 的 #modal; 链接/码展示区只读, 无输入框)
+  function showShareModal(tpl) {
+    var code = tplToCode(tpl);
+    var link = '';
+    try { link = location.origin + location.pathname + '?plan=' + encodeURIComponent(code); }
+    catch (e) { link = '?plan=' + encodeURIComponent(code); }
+    var ov = document.getElementById('cplShare');
+    if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
+    ov = document.createElement('div');
+    ov.id = 'cplShare';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;';
+    ov.innerHTML =
+      '<div style="background:var(--card,#fff);color:var(--text,#0f172a);width:min(96vw,560px);max-height:85vh;border-radius:18px 18px 0 0;display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,0.25);padding:16px 16px 20px;overflow-y:auto;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><div style="font-size:15px;font-weight:800;">📤 分享「' + esc(tpl.name || '手排计划') + '」</div>' +
+        '<button onclick="document.getElementById(\'cplShare\').remove()" style="margin-left:auto;border:0;background:var(--bg,#f1f5f9);color:var(--text3,#64748b);width:28px;height:28px;border-radius:9px;cursor:pointer;">✕</button></div>' +
+        '<div style="font-size:11.5px;color:var(--text3,#64748b);line-height:1.6;margin-bottom:10px;">链接发给学员，点开自动导入整套计划（动作/组数/次数/休息全带过去）。链接打不开时用下面的计划码兜底。</div>' +
+        '<div style="background:var(--bg,#f1f5f9);border-radius:10px;padding:9px 10px;margin-bottom:8px;word-break:break-all;font-size:11px;line-height:1.5;color:var(--text2,#475569);max-height:88px;overflow-y:auto;">' + esc(link) + '</div>' +
+        '<button onclick="fbCplCopyLink()" style="width:100%;padding:11px;border-radius:11px;border:0;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:13.5px;font-weight:800;cursor:pointer;margin-bottom:12px;">📋 复制链接</button>' +
+        '<div style="font-size:11.5px;color:var(--text3,#64748b);margin-bottom:6px;">计划码（对方在「手排计划 → 导入计划码」粘贴）：</div>' +
+        '<div style="background:var(--bg,#f1f5f9);border-radius:10px;padding:9px 10px;margin-bottom:8px;word-break:break-all;font-family:Consolas,monospace;font-size:10.5px;line-height:1.5;color:var(--text2,#475569);max-height:88px;overflow-y:auto;">' + esc(code) + '</div>' +
+        '<button onclick="fbCplCopyCode()" style="width:100%;padding:10px;border-radius:11px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text2,#475569);font-size:13px;font-weight:700;cursor:pointer;">📋 复制计划码</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    window._cplShareLink = link;
+    window._cplShareCode = code;
+  }
+
+  // 编辑器内分享: 分享当前编辑内容(所见即所得, 不要求先保存)
+  window.fbCplShare = function () {
+    if (!ED || !ED.days || !ED.days.length) return;
+    var empty = true;
+    for (var i = 0; i < ED.days.length; i++) { if (ED.days[i].exes && ED.days[i].exes.length) { empty = false; break; } }
+    if (empty) { try { showToast('先给计划加动作再分享'); } catch (e) {} return; }
+    showShareModal(ED);
+  };
+  window.fbCplCopyLink = function () { fbCopyText(window._cplShareLink || '', '✅ 链接已复制'); };
+  window.fbCplCopyCode = function () { fbCopyText(window._cplShareCode || '', '✅ 计划码已复制'); };
+
+  // 计划页「📤 分享计划码」接管: 手排计划 → 完整分享(链接+码); 算法计划 → 原版 7 位参数码
+  (function () {
+    var orig = window.showPlanShareModal;
+    window.showPlanShareModal = function () {
+      var isC = false;
+      try { isC = typeof lastPlan !== 'undefined' && lastPlan && !!lastPlan._customTpl; } catch (e) {}
+      var t = isC ? readTpl() : null;
+      if (t && t.active && Array.isArray(t.days) && t.days.length) { showShareModal(t); return; }
+      if (orig) { orig(); return; }
+      try { showToast('请先生成训练计划再分享'); } catch (e) {}
+    };
+  })();
+
+  // 导入弹窗(长码兜底入口)。⚠️ 教训(v180): 有输入框的弹层绝不能整体销毁重建
+  window.fbCplImportModal = function () {
+    if (document.getElementById('cplImp')) return;
+    var ov = document.createElement('div');
+    ov.id = 'cplImp';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;';
+    ov.innerHTML =
+      '<div style="background:var(--card,#fff);color:var(--text,#0f172a);width:min(96vw,560px);border-radius:18px 18px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,0.25);padding:16px 16px 20px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><div style="font-size:15px;font-weight:800;">📥 导入好友计划</div>' +
+        '<button onclick="document.getElementById(\'cplImp\').remove()" style="margin-left:auto;border:0;background:var(--bg,#f1f5f9);color:var(--text3,#64748b);width:28px;height:28px;border-radius:9px;cursor:pointer;">✕</button></div>' +
+        '<div style="font-size:11.5px;color:var(--text3,#64748b);margin-bottom:8px;">粘贴好友发的<b>链接</b>或<b>计划码</b>，导入后整套计划（动作/组数/次数/休息）原样过来。</div>' +
+        '<textarea id="cplImpTxt" placeholder="粘贴链接或计划码" style="width:100%;box-sizing:border-box;height:84px;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text,#0f172a);font-size:12px;resize:none;margin-bottom:10px;"></textarea>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button onclick="fbCplImportApply()" style="flex:2;padding:11px;border-radius:11px;border:0;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:13.5px;font-weight:800;cursor:pointer;">🚀 导入并启用</button>' +
+          '<button onclick="document.getElementById(\'cplImp\').remove()" style="flex:1;padding:11px;border-radius:11px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text2,#475569);font-size:13px;font-weight:700;cursor:pointer;">取消</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+  };
+  window.fbCplImportApply = function () {
+    var ta = document.getElementById('cplImpTxt');
+    if (!ta) return;
+    var tpl = parseShareText(ta.value);
+    if (!tpl) { try { showToast('❌ 码无效，检查是否复制完整（链接或纯码都行）'); } catch (e) {} return; }
+    if (applyImportedTpl(tpl)) {
+      var ov = document.getElementById('cplImp');
+      if (ov) ov.remove();
+      try { showToast('✅ 已导入「' + tpl.name + '」'); } catch (e) {}
+    }
+  };
+
+  // 链接路径: 页面带 ?plan= 时自动导入(方案 B 主路径)。读完即清参数, 刷新不重复导入。
+  (function () {
+    var raw = '';
+    try { raw = new URLSearchParams(location.search).get('plan') || ''; } catch (e) { raw = ''; }
+    if (!raw) return;
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    var tpl = parseShareText(raw);
+    if (!tpl) { setTimeout(function () { try { showToast('分享链接无效或不完整，请让好友重新发'); } catch (e) {} }, 600); return; }
+    var cur = readTpl();
+    var go = true;
+    if (cur && cur.active) {
+      go = window.confirm('收到好友分享的手排计划「' + tpl.name + '」。\n导入会覆盖你当前启用的手排计划「' + (cur.name || '') + '」，继续吗？');
+    }
+    if (!go) return;
+    // 复用 applyImportedTpl 但跳过二次确认(上面已确认过)
+    var miss = 0;
+    for (var i = 0; i < tpl.days.length; i++) {
+      for (var j = 0; j < tpl.days[i].exes.length; j++) { if (!findEx(tpl.days[i].exes[j].n)) miss++; }
+    }
+    if (miss > 0) { setTimeout(function () { try { showToast('有 ' + miss + ' 个动作你的动作库里没有，请更新到最新版再打开链接'); } catch (e) {} }, 600); return; }
+    writeTpl({ v: 1, active: true, name: tpl.name, meta: tpl.meta, days: tpl.days, savedAt: Date.now() });
+    try { if (typeof lastPlan !== 'undefined' && lastPlan) lastPlan._customTpl = false; } catch (e) {}
+    try {
+      if (typeof doGenerate === 'function') {
+        doGenerate();
+        setTimeout(function () { try { showToast('✅ 已导入好友的手排计划「' + tpl.name + '」'); } catch (e) {} }, 600);
+      } else { location.reload(); }
+    } catch (e) { location.reload(); }
+  })();
+
+  window.FB_CustomPlan = {
+    version: '1.1.0',
+    readTpl: readTpl,
+    // v181 分享/导入(测试与外部复用)
+    tplToCode: tplToCode,
+    parseShareText: parseShareText,
+    applyImportedTpl: applyImportedTpl
+  };
 })();
