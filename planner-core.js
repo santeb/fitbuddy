@@ -2976,6 +2976,23 @@ function doGenerate() {
       // GA4: 计划生成
       if (typeof track === 'function') track('generate_plan', { goal: goal, level: level, days: days, equip: equip, week: currentWeek });
 
+      // v177 自定义计划: 模板激活时, 目标/水平/器材/天数一律以模板存的 meta 为准 ——
+      // 模板是教练排好的整体, 表单改了参数会跟模板打架。goal/level 顺手同步 radio
+      // (同下方校准的先例), equip 只改变量不动面板; days 不动 chip, 渲染按模板天数走。
+      var _cpl = (typeof fbCustomTplActive === 'function') ? fbCustomTplActive() : null;
+      if (_cpl && _cpl.meta) {
+        goal = _cpl.meta.goal || goal;
+        level = _cpl.meta.level || level;
+        equip = _cpl.meta.equip || equip;
+        if (Array.isArray(_cpl.days) && _cpl.days.length) days = _cpl.days.length;
+        try {
+          var _gr = document.querySelector('input[name="goal"][value="' + goal + '"]');
+          var _lvr = document.querySelector('input[name="level"][value="' + level + '"]');
+          if (_gr) _gr.checked = true;
+          if (_lvr) _lvr.checked = true;
+        } catch (eCplSync) {}
+      }
+
       // 🧠 P1-1 训练水平自动校准:读 trainlog 估 1RM → 体重倍数 → 档位(只升不降 / 数据不足不干预 / 可撤销)
       // ⚠️ 顺序铁律:必须先读上周完成率,再改 level。
       //    doneKey 前缀形如 fitbuddy_done_<goal>_<level>_<days>_c<cycle>_w<week>,
@@ -2986,7 +3003,7 @@ function doGenerate() {
         var cal = estimateLevelFromLog();
         // v108:周结束已经问过用户了(卡片还挂着 / 本周刚答「先不加」) → 这里不许抢先改档,
         //   等用户自己点。否则卡片弹出时档位早被改掉了,「先不加」这个选项等于不存在。
-        if (cal && LEVEL_RANK[cal.level] > LEVEL_RANK[level] && !fbLevelUpSuppressed(cal.level)) {
+        if (cal && LEVEL_RANK[cal.level] > LEVEL_RANK[level] && !fbLevelUpSuppressed(cal.level) && !_cpl) {
           cal.from = level;
           level = cal.level;
           _lastLevelCalibration = cal;
@@ -3018,7 +3035,26 @@ function doGenerate() {
       var weekOffset = goal === "marathon" ? (currentWeek - 1) : getWeekOffset(((currentWeek - 1) % _cycleLenNow) + 1, _cycleLenNow);
       var trainingDays;
       var pearFixedUsed = false;
-      if (_forcePearFixed) {
+      var customTplUsed = false;
+      if (_cpl && Array.isArray(_cpl.days) && _cpl.days.length && typeof fbBuildCustomTrainingDays === 'function') {
+        // v177 自定义计划(独立路径): 模板快照即真源 —— 激活/保存时 fbBuildCustomTrainingDays
+        // 已把模板解析成 trainingDays(动作带 _tplSets/_tplReps/_tplRest)存进 lastPlan。
+        // 之后每次渲染/跳周直接复用快照, 完全不走 buildPlan —— 算法领土和人的领土分开。
+        // 用户换动作(confirmSub)直接改快照, 天然跨周存活; 周期化在渲染层照常生效(见动作行)。
+        if (lastPlan && lastPlan._customTpl && lastPlan.trainingDays && lastPlan.trainingDays.length) {
+          trainingDays = lastPlan.trainingDays;
+          customTplUsed = true;
+        } else {
+          var _tplDays = fbBuildCustomTrainingDays(_cpl);
+          if (_tplDays) {
+            trainingDays = _tplDays;
+            customTplUsed = true;
+          } else {
+            // 模板解析失败(动作库变了等) → 整体退回算法计划, 绝不渲染半残模板
+            trainingDays = fbApplyExSwaps(buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset));
+          }
+        }
+      } else if (_forcePearFixed) {
         // 🍐 梨形固定计划(独立路径): 完全跳过 buildPlan(含 applyBwProgression 全部共用链路)
         // 与小红书宣传卡「梨形身材·完整周计划」一一对应,杜绝"图上承诺 ≠ 计划实际"
         if (_skipRebuild && lastPlan && lastPlan.trainingDays) {
@@ -3056,6 +3092,7 @@ function doGenerate() {
       // 用户之后改了 chip 但还没生成时, 界面读的是这里的值而不是表单 —— 长度和内容同源。
       lastPlan = { goal:goal, level:level, days:days, equip:equip, cycleLength:_cycleLenNow, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
       lastPlan._pearFixed = pearFixedUsed; // 🍐 当前计划是否为梨形固定计划(渲染/统计用)
+      lastPlan._customTpl = customTplUsed; // 📝 当前计划是否为手排模板(custom-plan.js)
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄,用于心率 Zone 计算
       var ageVal = parseInt(document.getElementById('bodyAge').value) || 0;
@@ -3822,6 +3859,9 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
     presTag = sets + '组 x ' + fbCurrentWeekReps(goalCfg.reps);
   }
   var split = getSplitInfo(goal, days);
+  // v177: 手排计划必须有可辨识标记, 否则用户分不清"这是算法排的还是我自己排的"
+  var _cplTag = (typeof lastPlan !== 'undefined' && lastPlan && lastPlan._customTpl)
+    ? '<span class="summary-tag" style="background:rgba(255,255,255,0.30);">📝 自定义计划</span>' : '';
   return '<div class="summary-card">'+
     '<div class="summary-label">你的专属计划已生成</div>'+
     '<div class="summary-title">'+goalName+' · '+days+'天/周</div>'+
@@ -3832,6 +3872,7 @@ function renderSummary(goalName, levelName, equipName, days, goalCfg, sets, inte
       '<span class="summary-tag">'+presTag+'</span>'+
       '<span class="summary-tag">'+intensity+'</span>'+
       (goalCfg.rest && goalCfg.rest !== '-' ? '<span class="summary-tag">休息 '+goalCfg.rest+'</span>' : '')+
+      _cplTag+
     '</div></div>';
 }
 
@@ -4546,6 +4587,19 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var done = localStorage.getItem(doneKey(checkId)) === "1";
       var isInjuredEx = ex._injured || false;
 
+      // v177 自定义计划: 模板动作带教练定的绝对基准(_tplSets/_tplReps/_tplRest)。
+      // ⚠️ 绝对基准不能拿来就用 —— 仍要走同一套周期化: 组数喂 fbPeriodSetsFrom
+      //    (减载 floor 砍量+保底减1, 与生成路径同一把尺), 次数喂 fbCurrentWeekReps
+      //    (爬坡台阶照常进阶)。教练排骨架, 渐进系统管 —— 直接用原始值会出现
+      //    "减载周手排计划不缩量"的假处方, 那是安全问题。
+      var _exBaseSets = sets;
+      if (ex._tplSets > 0 && !isMarathon && goal !== 'cardio' && ex.m !== '有氧') {
+        try {
+          _exBaseSets = (typeof fbPeriodSetsFrom === 'function')
+            ? fbPeriodSetsFrom(ex._tplSets, currentWeek, !!(wkInfo && wkInfo.deload))
+            : ex._tplSets;
+        } catch (eTplS) { _exBaseSets = ex._tplSets; }
+      }
       // v103 组数手动偏移:诊断处方给的「每周 +N 组」摊到每次训练。
       // 有氧/马拉松不参与 —— 它们的处方是时长和配速,不是组数。
       var _setsAdj = 0;
@@ -4556,15 +4610,19 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       //    「力量·进阶 3-6 次 @85%+ 歇 3 分钟」直接套到侧平举上不成立。
       //    次数 +5 / 强度 -10 个点 / 休息 -30 秒 / RPE 不动(做到同 RPE, 重量自然轻)。
       var _iso = (typeof fbIsIsolation === 'function') ? fbIsIsolation(ex) : false;
-      var _wkReps = fbCurrentWeekReps(goalCfg.reps);
-      var _exReps = (_iso && typeof fbIsoReps === 'function') ? fbIsoReps(_wkReps) : _wkReps;
-      var _exPres = (_setsAdj > 0 ? (sets + _setsAdj) : sets) + '组 x ' + _exReps;
+      // 模板次数: 教练定的次数字符串喂同一个周进阶函数(空 = 跟随计划默认)。
+      // 教练显式定了次数就不叠加孤立偏移 —— 他的值是刻意定的, 不是系统算漏了。
+      var _wkReps = (ex._tplReps && !isMarathon && ex.m !== '有氧')
+        ? fbCurrentWeekReps(ex._tplReps)
+        : fbCurrentWeekReps(goalCfg.reps);
+      var _exReps = (!ex._tplReps && _iso && typeof fbIsoReps === 'function') ? fbIsoReps(_wkReps) : _wkReps;
+      var _exPres = (_exBaseSets + _setsAdj) + '组 x ' + _exReps;
       // v173: 计时动作单独秒处方(方案 b) —— 以前走次数口径, 显示「3组 x 15-17次」而记录
       // 单位是秒、今日目标报秒, 同屏两个数各吹各的。现在与今日目标共用 fbTimedPrescription。
       // _iso 的强度/休息偏移照旧(计时动作若同时命中孤立关键词, 休息提示仍适用)。
       try {
         if (typeof isTimedEx === 'function' && isTimedEx(ex.n) && typeof fbTimedPrescription === 'function') {
-          _exPres = (_setsAdj > 0 ? (sets + _setsAdj) : sets) + '组 x ' + fbTimedPrescription(ex.n).txt;
+          _exPres = (_exBaseSets + _setsAdj) + '组 x ' + fbTimedPrescription(ex.n).txt;
         }
       } catch (eTimed) {}
 
@@ -4630,7 +4688,9 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           (cardioCfg.rest && cardioCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+cardioCfg.rest+'\')">⏱ '+cardioCfg.rest+'</button>' : '');
       } else {
         var _exIntensity = (_iso && typeof fbIsoIntensity === 'function') ? fbIsoIntensity(goalCfg.intensity) : goalCfg.intensity;
-        var _exRest = (_iso && typeof fbIsoRest === 'function') ? fbIsoRest(goalCfg.rest) : goalCfg.rest;
+        // 休息: 教练显式定的优先(孤立偏移同理不叠加), 空则照旧走默认/孤立偏移
+        var _exRest = ex._tplRest ? ex._tplRest
+          : ((_iso && typeof fbIsoRest === 'function') ? fbIsoRest(goalCfg.rest) : goalCfg.rest);
         exPrescriptionHtml =
           // 可解释:多出来的组必须有出处。不然用户看到「怎么变 5 组了」只会以为是 bug。
           (_setsAdj > 0 ? '<div style="font-size:10.5px;color:var(--primary);opacity:0.9;margin-bottom:3px;">➕ 含你上次加的 ' + _setsAdj + ' 组</div>' : '')+
@@ -4699,7 +4759,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
 
       // data-sets: 这个动作安排了几组(v109 起打卡按"组"记, 不按"动作个数")。
       // 有氧/马拉松没有组的概念, 不挂 —— 挂了会把「跑 10km」记成 3 组力量容量。
-      var setsData = isLiftEx ? ' data-sets="'+Math.max(1, sets + _setsAdj)+'"' : '';
+      var setsData = isLiftEx ? ' data-sets="'+Math.max(1, _exBaseSets + _setsAdj)+'"' : '';
 
       html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+'>'+
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
@@ -12189,8 +12249,8 @@ function fbPlanMuscleSets() {
       if (!ex || !ex.n) return;
       var m = ex.m || map[ex.n] || fbMuscleOfName(ex.n);
       if (!m || m === '有氧') return;
-      var sets = base;
-      try { sets = base + ((typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0); } catch (e) {}
+      var sets = (ex._tplSets > 0) ? ex._tplSets : base;   // v177: 手排模板按教练定的组数算
+      try { sets = sets + ((typeof fbExSetsDelta === 'function') ? (fbExSetsDelta(ex.n) || 0) : 0); } catch (e) {}
       out[m] = (out[m] || 0) + sets;
     });
   });

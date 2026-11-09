@@ -1105,6 +1105,8 @@ input,select{font-family:inherit;}
       </div>
 
       <button class="btn-generate" id="genBtn" onclick="doGenerate()">✨ 生成我的计划</button>
+      <!-- v177 手排计划入口(教练模式): 选动作/定组数次数休息, 减载爬坡照常生效 -->
+      <button onclick="fbOpenCustomPlanEditor()" aria-label="手排计划,教练模式" style="width:100%;margin-top:10px;padding:12px;border-radius:14px;background:var(--card);color:var(--text2);border:1.5px dashed var(--border);font-size:13.5px;font-weight:700;cursor:pointer;">📝 手排计划 · 教练模式</button>
       </div>
     </div>
 
@@ -1342,10 +1344,11 @@ input,select{font-family:inherit;}
 <script src="feedback.js?v=8" defer></script>
 <script src="contributors.js?v=5" defer></script>
 <script src="onboarding.js?v=3" defer></script>
-<script src="data-constants.js?v=48" defer></script>
+<script src="data-constants.js?v=50" defer></script>
 <script src="persistence.js?v=2" defer></script>
 
-<script src="planner-core.js?v=141" defer></script>
+<script src="planner-core.js?v=142" defer></script>
+  <script src="custom-plan.js?v=4" defer></script>
   <script src="pro-tools.js?v=43" defer></script>
 <script>
 // qrcode-generator(55KB) 不进首屏 defer 批次:首帧渲染完、浏览器空闲时再拉。
