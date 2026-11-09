@@ -297,15 +297,14 @@
     }
     return pool;
   }
-  function renderPicker() {
-    var old = document.getElementById('cplPick');
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-    // 臀放第二位: 臀日排课是高频场景, 不该藏在「腿」里翻 45 个动作
+  function tabBtnsHtml() {
     var MUSCLES = ['全部', '臀', '腿', '胸', '背', '肩', '臂', '核心', '有氧', '康复'];
-    var tabs = MUSCLES.map(function (m) {
+    return MUSCLES.map(function (m) {
       var on = m === _pickMuscle;
       return '<button onclick="fbCplTab(\'' + m + '\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid ' + (on ? 'var(--primary,#6366f1)' : 'var(--border,#e2e8f0)') + ';background:' + (on ? 'rgba(99,102,241,0.10)' : 'transparent') + ';color:' + (on ? 'var(--primary,#6366f1)' : 'var(--text2,#475569)') + ';font-size:12px;font-weight:700;cursor:pointer;flex:none;">' + m + '</button>';
     }).join('');
+  }
+  function listHtml() {
     var pool = pickerPool();
     // 器材筛完不足 8 个时会放开兜底(见 pickerPool), 所以列表里可能混着别的器材。
     // 这里把「本器材」的排前面 + 每行标出器材, 教练一眼知道要什么家伙, 不至于排完才发现没法做
@@ -324,7 +323,14 @@
         '<div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:700;color:var(--text,#0f172a);' + (off ? 'opacity:.72;' : '') + '">' + esc(e.n) + '</div>' +
         '<div style="font-size:10.5px;color:var(--text3,#94a3b8);">' + esc(e.m || '') + ' · ' + esc(e.diff || '') + (eqTxt ? ' · ' + esc(eqTxt) : '') + '</div></div>' +
         '<div style="flex:none;color:var(--primary,#6366f1);font-size:16px;font-weight:800;">＋</div></div>';
-    }).join('') || '<div style="padding:16px;text-align:center;font-size:12px;color:var(--text3,#94a3b8);">没匹配的动作，换个关键词</div>';
+    }).join('');
+    return list || '<div style="padding:16px;text-align:center;font-size:12px;color:var(--text3,#94a3b8);">没匹配的动作，换个关键词</div>';
+  }
+  // ⚠️ 这个只在「打开选择器」时走。搜索/切 tab 绝不能整个重建弹层:
+  // 输入框会被销毁 → 打一个字焦点就没了(线上实测搜不了)。后续只刷 cplList/cplTabs。
+  function renderPicker() {
+    var old = document.getElementById('cplPick');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
     var ov = document.createElement('div');
     ov.id = 'cplPick';
     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;';
@@ -334,14 +340,29 @@
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-size:14px;font-weight:800;">选动作 → 加到 Day ' + (_pickDay + 1) + '</div>' +
           '<button onclick="fbCplPickClose()" style="margin-left:auto;border:0;background:var(--bg,#f1f5f9);color:var(--text3,#64748b);width:28px;height:28px;border-radius:9px;cursor:pointer;">✕</button></div>' +
           '<input id="cplSearch" placeholder="🔍 搜索动作名" oninput="fbCplSearch(this.value)" style="width:100%;padding:8px 12px;border-radius:9px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text,#0f172a);font-size:13px;">' +
-          '<div style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:2px;">' + tabs + '</div>' +
+          '<div id="cplTabs" style="display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:2px;">' + tabBtnsHtml() + '</div>' +
         '</div>' +
-        '<div style="overflow-y:auto;flex:1;">' + list + '</div>' +
+        '<div id="cplList" style="overflow-y:auto;flex:1;">' + listHtml() + '</div>' +
       '</div>';
     document.body.appendChild(ov);
   }
-  window.fbCplTab = function (m) { _pickMuscle = m; renderPicker(); };
-  window.fbCplSearch = function (v) { _pickKw = String(v || '').trim(); renderPicker(); };
+  function renderPickerList() {
+    var el = document.getElementById('cplList');
+    if (el) el.innerHTML = listHtml();
+  }
+  window.fbCplTab = function (m) {
+    _pickMuscle = m;
+    _pickKw = '';   // 换部位 = 清搜索, 框里的字和过滤状态必须同步(原来整层重建, 框清了但 _pickKw 还在偷偷过滤)
+    var si = document.getElementById('cplSearch');
+    if (si) si.value = '';
+    var tb = document.getElementById('cplTabs');
+    if (tb) tb.innerHTML = tabBtnsHtml();
+    renderPickerList();
+  };
+  window.fbCplSearch = function (v) {
+    _pickKw = String(v || '').trim();
+    renderPickerList();   // 只刷列表, 输入框不动——焦点保得住, 中文输入法才打得了
+  };
   window.fbCplPickClose = function () {
     var ov = document.getElementById('cplPick');
     if (ov && ov.parentNode) ov.parentNode.removeChild(ov);
