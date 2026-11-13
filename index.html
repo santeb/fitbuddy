@@ -1401,7 +1401,7 @@ input,select{font-family:inherit;}
 <!-- footer 在 .app 之外, 拿不到 .app 的 padding-bottom:72px;
      底部必须自己留出 tab bar 的高度(56px)+呼吸空间(safe-area-inset-bottom 只在真机有值) -->
 <footer style="text-align:center;padding:24px 16px calc(80px + env(safe-area-inset-bottom, 0px));color:var(--text3);font-size:12px;line-height:1.8;">
-  <div>FitBuddy v2.1 · 周期化训练引擎 + Pro Tools + 补水/补给</div>
+  <div>FitBuddy v2.1 <span id="fbBuild"></span>· 周期化训练引擎 + Pro Tools + 补水/补给</div>
   <div>Made with 🧡 · 免费开源 · 无需注册</div>
   <div style="margin-top:8px;opacity:0.6;">你的训练，你的节奏</div>
   <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
@@ -1409,6 +1409,15 @@ input,select{font-family:inherit;}
     <button onclick="goBugHunt()" style="background:none;border:1.5px solid var(--primary);color:var(--primary);font-size:12px;padding:6px 16px;border-radius:16px;cursor:pointer;">🐞 找 Bug · 荣誉墙</button>
   </div>
 </footer>
+<script>
+// 页脚 build 号: 直接从 planner-core.js 的 ?v= 读, 发版 bump 版本号这里自动跟着变,
+// 手机上排查"到底拿到的是哪个版本"不用再截图猜。
+try {
+  var _s = (document.querySelector('script[src*="planner-core.js"]') || {}).src || '';
+  var _v = (_s.match(/v=(\d+)/) || [])[1];
+  if (_v) document.getElementById('fbBuild').textContent = 'build ' + _v + ' ';
+} catch(e) {}
+</script>
 
 <script>
 // PWA Service Worker 注册 + 版本自救
