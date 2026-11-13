@@ -259,12 +259,39 @@
     });
   }
 
+  // ---------- 恢复码接管云端身份（跨设备迁移核心） ----------
+  // 换手机后用恢复码恢复时，backup-code.js 会把原设备的匿名会话传进来。
+  // setSession 接管 → 之后的推送/拉取都落在原云端名下，云端数据无缝续上。
+  // 失败（token 被撤销/过期）→ 抛错，backup-code.js 按本地身份继续恢复，数据不丢。
+  function adoptSession(p) {
+    if (!client) return Promise.reject(new Error('云同步未就绪'));
+    if (!p || !p.t || !p.r || !p.u) return Promise.reject(new Error('恢复码中无云端身份'));
+    if (userId === p.u) return Promise.resolve({ adopted: false, same: true });
+    return client.auth.setSession({ access_token: p.t, refresh_token: p.r }).then(function (res) {
+      if (res && res.error) throw res.error;
+      var user = res.data && res.data.user;
+      if (!user || user.id !== p.u) throw new Error('身份校验失败');
+      // 切身份前清掉攒在旧身份名下的待推数据，防串号
+      dirty = {};
+      clearTimeout(pushTimer);
+      userId = user.id;
+      ready = true;
+      setStatus('☁ 已接管原云端身份');
+      console.log('[cloud-sync] adopted cloud identity:', user.id);
+      return { adopted: true, userId: user.id };
+    }).catch(function (e) {
+      console.warn('[cloud-sync] 接管失败, 按本地身份恢复:', e && (e.message || e));
+      throw e;
+    });
+  }
+
   // ---------- API ----------
   window.FB_cloud = {
     init: init,
     syncNow: syncNow,
+    adoptSession: adoptSession,
     status: function () { return { ready: ready, userId: userId, statusText: statusText, dirty: Object.keys(dirty).length }; },
-    version: '1.0.0'
+    version: '1.1.0'
   };
 
   // 立即装钩子（拦住启动阶段的一切写入），登录拉取异步进行

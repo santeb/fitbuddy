@@ -57,6 +57,8 @@
     if (!keys.length) return null;
     data._exportKeys = keys;
     data._exportTime = new Date().toISOString();
+    var cl = collectCloudSession();
+    if (cl) data._cloud = cl;   // 云端匿名会话,恢复时接管用
     return data;
   }
 
@@ -130,6 +132,39 @@
   // ---------- 备份提醒 / 恢复链接 ----------
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+
+  // ---------- 云端身份（配合 cloud-sync.js v1.1+ 的恢复码跨设备迁移） ----------
+  // 生成恢复码时把 Supabase 匿名会话一起打包；恢复时接管原云端身份，
+  // 云同步自动续上（否则新设备是全新匿名身份，云端数据认领不了）。
+  // 恢复码里本来就有全部训练数据，多带一份会话不增加泄露面。
+  function collectCloudSession() {
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (/^sb-.+-auth-token$/.test(k)) {
+          var s = JSON.parse(localStorage.getItem(k) || 'null');
+          if (s && s.access_token && s.refresh_token && s.user && s.user.id) {
+            return { t: s.access_token, r: s.refresh_token, u: s.user.id };
+          }
+          return null;
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  // 恢复前接管云端身份：成功 → 后续写入全部落在原云端名下；失败 → 保持本地身份继续恢复
+  async function adoptCloudIdentity(data) {
+    var p = data && data._cloud;
+    if (!p || !window.FB_cloud || typeof window.FB_cloud.adoptSession !== 'function') return false;
+    try {
+      var r = await window.FB_cloud.adoptSession(p);
+      if (r && r.adopted) {
+        toast('☁ 已接管原云端身份，数据会同步回云端');
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
 
   function hasRealData() {
     return REAL_DATA_KEYS.some(function (k) {
@@ -302,10 +337,11 @@
     document.getElementById('fbLinkCancelBtn').addEventListener('click', function () {
       closeModal(); reloadClean();
     });
-    document.getElementById('fbLinkRestoreBtn').addEventListener('click', function () {
+    document.getElementById('fbLinkRestoreBtn').addEventListener('click', async function () {
       var btn = this;
       btn.disabled = true; btn.textContent = '恢复中…';
       try {
+        await adoptCloudIdentity(data);   // 先接管云端身份,再落数据
         var count = applyData(data);
         trackEvent('backup_link_restore');
         toast('✅ 已恢复 ' + count + ' 条数据,即将刷新…');
@@ -368,7 +404,7 @@
       'color:var(--primary,#FF6B35);background:transparent;">🔗 复制恢复链接(存微信收藏)</button>' +
       '<div style="font-size:11px;opacity:.55;margin-top:7px;line-height:1.5;color:var(--text,#333);">' +
       '链接 = 网址 + 恢复码。存到微信收藏后,<b>换手机 / 清了缓存</b>点开它就能自动恢复,' +
-      '不用手抄上面那一大段码。<br>⚠️ 链接里含你的训练数据,自己存就好,别转发给别人。</div>');
+      '不用手抄上面那一大段码。<br>⚠️ 码/链接里含你的训练数据和云端身份,自己存就好,别转发给别人。</div>');
     var dlBtn = document.getElementById('fbDlBtn');
     if (!window.exportData) dlBtn.style.display = 'none';
     dlBtn.addEventListener('click', function () {
@@ -437,11 +473,13 @@
       btn.disabled = true; btn.textContent = '解析中…';
       try {
         var data = await parseCode(code);
-        var count = applyData(data);
-        if (!confirm('✅ 恢复码有效,共 ' + count + ' 条数据。\n\n确定覆盖当前数据并刷新吗?')) {
+        var est = (data && data._exportKeys) ? data._exportKeys.length : Object.keys(data || {}).length;
+        if (!confirm('✅ 恢复码有效,共 ' + est + ' 条数据。\n\n确定覆盖当前数据并刷新吗?')) {
           btn.disabled = false; btn.textContent = '🔄 恢复我的进度';
           return;
         }
+        await adoptCloudIdentity(data);   // 先接管云端身份,再落数据
+        var count = applyData(data);
         trackEvent('backup_code_restore');
         toast('✅ 已恢复 ' + count + ' 条数据,即将刷新…');
         setTimeout(function () { location.reload(); }, 1200);
