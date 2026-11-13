@@ -4948,7 +4948,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       //    不想跳绳 / 波比跳伤膝盖时,只能整周硬着头皮练,或者改计划参数碰运气换一批。
       var subBtnHtml = '';
       if ((isLiftEx || ex.m === '有氧') && !isMarathon && !isInjuredEx) {
-        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\')" title="'+(ex.m === '有氧' ? '换个有氧动作' : '替换动作')+'">🔄 换</button>';
+        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\','+dayIdx+','+idx+')" title="'+(ex.m === '有氧' ? '换个有氧动作' : '替换动作')+'">🔄 换</button>';
       }
 
       var injuryClass = isInjuredEx ? ' injury-skipped' : '';
@@ -4964,7 +4964,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var ssRowStyle = _ss > 0 ? ' style="border-left:3px solid #8B5CF6;padding-left:8px;"' : '';
       html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+ssRowStyle+'>'+
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
-        '<div class="ex-left" onclick="'+(!isInjuredEx?'fbExLeftTap(event,\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
+        '<div class="ex-left" onclick="'+(!isInjuredEx?'fbExLeftTap(event,\''+ex.n.replace(/'/g,"\\'")+'\','+dayIdx+','+idx+')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
           '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(_ssTag?' <span style="font-size:10px;font-weight:700;color:#7C3AED;background:#F5F3FF;border:1px solid #C4B5FD;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">'+_ssTag+'</span>':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
@@ -5710,9 +5710,21 @@ function logProg(exName, progId) {
   fbRefreshWeekCloseBar();
 }
 
-// 动作替换入口(找到 dayIdx/exIdx 然后打开替换弹窗)
-function openSubModalForEx(exName) {
+// 动作替换入口。v191: 点击处必须带 dayIdx/exIdx 精确落位 —— 同名动作会出现在多天
+//   (如 杠铃深蹲 D1 主项 + D3 超级组成员), 以前只按名字从 D0 找第一个同名,
+//   用户点 D3 超级组里的深蹲, 实际替换掉的是 D1 的主项深蹲, 超级组纹丝不动,
+//   用户视角就是"我换的是超级组动作, 改的却是别的动作"。
+//   dayIdx/exIdx 缺省时(动作详情弹窗的"换个动作"入口)走名字扫描兜底。
+function openSubModalForEx(exName, dayIdx, exIdx) {
   if (!lastPlan || !lastPlan.trainingDays) return;
+  if (dayIdx !== undefined && exIdx !== undefined) {
+    var d = lastPlan.trainingDays[dayIdx];
+    if (d && d.exes && d.exes[exIdx] && d.exes[exIdx].n === exName) {
+      openSubModal(dayIdx, exIdx, exName);
+      return;
+    }
+    // 位置校验失败(计划被重建过) → 落回名字扫描, 不静默换错位置
+  }
   for (var di=0; di<lastPlan.trainingDays.length; di++) {
     var day = lastPlan.trainingDays[di];
     if (!day.exes) continue;
@@ -8374,9 +8386,13 @@ function renderLib() {
 // v189: 动作行左侧点击的统一出口。手指按在 🔄 替换按钮上的点击,
 //   无论如何都不许再触发 showEx —— 真机上出现过"点替换却打开详情"的反馈,
 //   不确定是 webview 冒泡拦截失效还是手指偏移, 按事件落点兜底最稳。
-function fbExLeftTap(e, name) {
+// v191: 顺手记下点击位置(dayIdx/exIdx)。详情弹窗里的"🔄 换个动作"要用它 ——
+//   否则同样会踩"按名字找到别天的同名动作"的坑(杠铃深蹲 D1 主项/D3 超级组)。
+var _fbTapPos = null;
+function fbExLeftTap(e, name, dayIdx, exIdx) {
   var t = e && e.target;
   if (t && t.closest && t.closest('.sub-btn')) return;
+  _fbTapPos = (dayIdx !== undefined && exIdx !== undefined) ? { di: dayIdx, ei: exIdx, n: name } : null;
   showEx(name);
 }
 
@@ -8422,7 +8438,7 @@ function showEx(name) {
     }));
   } catch(e0) {}
   var _swapHtml = (_inPlan && lastPlan.goal !== 'marathon')
-    ? '<div style="margin-top:16px;"><button class="btn-generate" style="width:100%;" onclick="closeModal();openSubModalForEx(\''+name.replace(/'/g,"\\'")+'\')">🔄 换个动作</button></div>'
+    ? '<div style="margin-top:16px;"><button class="btn-generate" style="width:100%;" onclick="closeModal();(function(n){var p=window._fbTapPos||{};openSubModalForEx(n,p.di,p.ei)})(\''+name.replace(/'/g,"\\'")+'\')">🔄 换个动作</button></div>'
     : '';
 
   var html = '<div class="modal-handle"></div>'+
