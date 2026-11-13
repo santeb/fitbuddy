@@ -1051,8 +1051,12 @@ function confirmSub() {
     if (newEx) {
       var oldEx = lastPlan.trainingDays[subTarget.dayIdx].exes[subTarget.exIdx];
       // v103:写替换偏好表。只改 lastPlan 的话,跳周重建(buildPlan)会把换过的
-      // 动作冲回默认 —— 换动作只在当周有效。存档后每次 buildPlan 都会 replay。
-      if (oldEx && oldEx.n && oldEx.n !== selectedSubName) fbSetExSwap(oldEx.n, selectedSubName);
+      //   动作冲回默认 —— 换动作只在当周有效。存档后每次 buildPlan 都会 replay。
+      // v192:记档带 scope。以前按名字全局重放, 深蹲同时出现在 D1 主项和 D3 超级组时,
+      //   换超级组里那个, 下周 D1 主项也被悄悄换成同一个动作 —— 又是"改了别的动作"。
+      //   规则: 0 号位是主项(全项目约定, fbAutoSuperSets 同款) → 全局换(不想练它);
+      //         非主项位置 → 只换非主项出现处, 主项纹丝不动。同一动作被再次换时以最后一次为准。
+      if (oldEx && oldEx.n && oldEx.n !== selectedSubName) fbSetExSwap(oldEx.n, selectedSubName, subTarget.exIdx === 0 ? 'global' : 'nonmain');
       lastPlan.trainingDays[subTarget.dayIdx].exes[subTarget.exIdx] = newEx;
       // 兜底去重:候选里已经排除了当天在练的动作,但换周/跳周重放 swap 表时仍可能撞名
       // (fbApplyExSwaps 那边同样 dedup),一天出现两次同一个动作看着就像 bug。
@@ -7672,21 +7676,36 @@ var FB_EXSWAP_KEY = 'fitbuddy_exswap';
 function fbGetExSwaps() {
   try { return JSON.parse(localStorage.getItem(FB_EXSWAP_KEY) || '{}') || {}; } catch (e) { return {}; }
 }
-function fbSetExSwap(fromName, toName) {
+// v192: fromName → { to: 新动作名, scope: 'global'|'nonmain' }。
+//   global = 所有出现处都换(主项入口, "我不想练这个动作");
+//   nonmain = 只换非主项位置(exIdx>0), 0 号主项不动(超级组/非主项入口)。
+//   旧版存的是纯字符串 {from: to}, 读的时候按 global 兼容。
+function fbSetExSwap(fromName, toName, scope) {
   if (!fromName || !toName || fromName === toName) return;
   var m = fbGetExSwaps();
-  m[fromName] = toName;
+  m[fromName] = { to: toName, scope: (scope === 'nonmain') ? 'nonmain' : 'global' };
   try { localStorage.setItem(FB_EXSWAP_KEY, JSON.stringify(m)); } catch (e) {}
 }
+// v192: 重放把当天动作撞名去重后变少 → toast 说一声, 别让用户自己发现"计划里少了个动作"。
+//   每次会话只提示一次, 否则每次刷新都弹同一条, 烦。
+var _fbSwapShrinkToasted = false;
 function fbApplyExSwaps(trainingDays) {
   var m = fbGetExSwaps();
   if (!trainingDays || !m || !Object.keys(m).length) return trainingDays;
+  var _shrink = 0;
   trainingDays.forEach(function (day) {
     if (!day || !day.exes) return;
-    day.exes = day.exes.map(function (ex) {
+    var _before = day.exes.length;
+    day.exes = day.exes.map(function (ex, exIdx) {
       if (!ex || !ex.n) return ex;
-      var to = m[ex.n];
-      if (!to) return ex;
+      var rule = m[ex.n];
+      if (!rule) return ex;
+      // 兼容旧格式(纯字符串) → 按 global 处理
+      var to = (typeof rule === 'string') ? rule : rule.to;
+      var scope = (typeof rule === 'string') ? 'global' : (rule.scope || 'global');
+      // nonmain scope: 0 号位是主项, 全项目约定(与 fbAutoSuperSets "0 号是主项" 同款),
+      //   超级组里换的动作绝不波及主项
+      if (scope === 'nonmain' && exIdx === 0) return ex;
       var nx = null;
       try { nx = EXES.find(function (e) { return e.n === to; }); } catch (e) {}
       return nx || ex;
@@ -7694,7 +7713,12 @@ function fbApplyExSwaps(trainingDays) {
     // 替换后可能跟当天已有动作撞名 → 去重。空出的槽位不补:宁可少一个动作,
     // 也不要为了凑数把用户刚换掉的动作塞回来。
     try { day.exes = dedup(day.exes).filter(function (e) { return !!e; }); } catch (e) {}
+    _shrink += Math.max(0, _before - day.exes.length);
   });
+  if (_shrink > 0 && !_fbSwapShrinkToasted && typeof showToast === 'function') {
+    _fbSwapShrinkToasted = true;
+    try { showToast('⚡ 换过的动作与当天动作撞名，去重后少了 ' + _shrink + ' 个动作'); } catch (e0) {}
+  }
   return trainingDays;
 }
 window.fbApplyExSwaps = fbApplyExSwaps;
@@ -8431,7 +8455,19 @@ function showEx(name) {
 
   // 🔄 详情弹窗里的换动作入口(v189): 计划页手指偏一点落在动作名上, 打开的是详情不是替换弹窗。
   //   与其让用户退出去找那个小按钮, 不如在详情里给个直达入口 —— 只要这个动作在当前计划里就能换。
+  // v192: 位置记忆先校验再使用。_fbTapPos 只在计划页点动作行时写入, 从动作库/收藏等
+  //   其他入口打开详情时它是空的或还留着上一次点的旧位置 —— 拿旧位置去开替换弹窗,
+  //   位置校验失败会落回按名字扫描, 又变回"找到第一个同名"的老坑。过期就清掉。
   var _inPlan = false;
+  try {
+    if (_fbTapPos && (_fbTapPos.n !== name
+        || !lastPlan || !lastPlan.trainingDays
+        || !lastPlan.trainingDays[_fbTapPos.di]
+        || !(lastPlan.trainingDays[_fbTapPos.di].exes || [])[_fbTapPos.ei]
+        || lastPlan.trainingDays[_fbTapPos.di].exes[_fbTapPos.ei].n !== name)) {
+      _fbTapPos = null;
+    }
+  } catch(e2) { _fbTapPos = null; }
   try {
     _inPlan = !!(lastPlan && lastPlan.trainingDays && lastPlan.trainingDays.some(function(d){
       return (d.exes||[]).some(function(e){ return e.n===name; });
