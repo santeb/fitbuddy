@@ -183,7 +183,7 @@ input,select{font-family:inherit;}
 .plan-day-body{padding:0 14px;}
 .ex-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
 .ex-row:last-child{border-bottom:none;}
-.ex-left{display:flex;align-items:center;gap:8px;flex:1;}
+.ex-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0;}
 .ex-badge{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
 .ex-name{font-size:14px;font-weight:500;}
 .ex-diff{font-size:11px;color:var(--text3);margin-top:1px;}
@@ -192,6 +192,11 @@ input,select{font-family:inherit;}
 .ex-intensity{font-size:11px;color:var(--blue);}
 .ex-rest{font-size:11px;color:var(--text3);}
 .ex-note{font-size:10px;color:var(--amber);margin-top:1px;max-width:120px;}
+/* ⚡ 超级组连接条(v186): 组内"不歇"提示独立成行。
+   以前塞在 .ex-prescription 里, 而它是 flex-shrink:0 —— 中文长句在 375px 屏上把整行撑爆 69px,
+   再被 .plan-day{overflow:hidden} 一刀裁掉右半边, 用户看到的就是"右边显示不全"。 */
+.ss-link{display:flex;align-items:center;gap:4px;margin-top:-1px;padding:2px 0 5px 8px;border-left:3px solid #8B5CF6;font-size:11px;font-weight:700;color:#7C3AED;line-height:1.45;letter-spacing:0.2px;}
+[data-theme="dark"] .ss-link{color:#A78BFA;}
 
 /* Warmup section */
 .warmup-section{background:var(--warmup-bg);border-radius:10px;padding:8px 12px;margin:10px 0;}
@@ -1359,7 +1364,7 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=50" defer></script>
 <script src="persistence.js?v=2" defer></script>
 
-<script src="planner-core.js?v=145" defer></script>
+<script src="planner-core.js?v=146" defer></script>
   <script src="custom-plan.js?v=9" defer></script>
   <script src="pro-tools.js?v=44" defer></script>
 <script>

@@ -4749,10 +4749,11 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       // 休息按钮统一出口: 超级组里"不是最后一个"的动作不许休息, 换成"接下一个"的提示。
       // 三处分支(力量/有氧/心肺)都走它, 免得改一处漏两处。
       var _restBtn = function(restStr){
+        // 组内非末位: 右侧留空, "不歇"提示改走下面的 .ss-link 独立行(v186)。
+        // 以前这里返回一个 inline-block 长条, .ex-prescription 是 flex-shrink:0,
+        // 中文长句在 375px 屏上把整行撑爆 69px, 被 .plan-day{overflow:hidden} 裁掉右半边。
+        if (_ssNext) return '';
         if (!restStr || restStr === '-') return '';
-        if (_ssNext) {
-          return '<span style="display:inline-block;font-size:11px;font-weight:700;color:#7C3AED;background:#F5F3FF;border:1px solid #C4B5FD;border-radius:8px;padding:2px 8px;margin-left:4px;">⚡ 不歇，直接做下一个</span>';
-        }
         return '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+restStr+'\')">⏱ '+restStr+(_ss ? ' 组间' : '')+'</button>';
       };
 
@@ -4942,6 +4943,14 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           (_romTip?'<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">📏 '+_romTip+'</div>':'')+
           (_iso && isLiftEx && _exRest && _exRest !== '-' ? '<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">⏱ 后面几组做不满目标次数：先加 15 秒休息，别降重量</div>' : '')+'</div>'+
       '</div>';
+
+      // ⚡ 组内"不歇"提示(v186): 独立成一行, 挂在两个动作之间。
+      //   紫色竖线沿用动作行的 border-left, 视觉上把这一对连起来 —— 比挤在右侧处方列更像
+      //   "这两个是连着做的"。宽度也彻底安全: 整行文字短于卡片宽度, 不会再被 overflow:hidden 裁掉。
+      if (_ssNext) {
+        html += '<div class="ss-link">⚡ 不歇，直接做下一个</div>';
+      }
+
 
       // 渐进超负荷输入(在 ex-row 之后,力量动作专属)
       if (progInputsHtml && !isInjuredEx) {
