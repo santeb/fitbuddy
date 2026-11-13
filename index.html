@@ -1262,6 +1262,11 @@ input,select{font-family:inherit;}
       </div>
       <!-- 🧯 没备份码时的最后手段: 扫 localStorage / IndexedDB / window.name 三层残留。
            微信和 Safari 是两个互不相通的容器,换地方打开会以为"数据没了",其实在另一边。 -->
+      <!-- ☁️ 云同步：匿名登录 + LWW 合并，换设备数据自动跟上。详情见 cloud-sync.js -->
+      <div class="data-mgmt-row" style="margin-top:8px;align-items:center;gap:8px">
+        <button class="data-mgmt-btn code" onclick="FB_cloud.syncNow()">☁️ 立即同步</button>
+        <span id="fbCloudStatus" style="font-size:11px;opacity:.7;">初始化…</span>
+      </div>
       <button class="data-mgmt-btn rescue" onclick="location.href='?fbrescue=1'">🧯 数据救援（扫描残留副本）</button>
       <div id="fbBackupHint" style="font-size:11px;color:var(--text,#999);opacity:.55;margin-top:8px;text-align:center;"></div>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
@@ -1397,6 +1402,8 @@ input,select{font-family:inherit;}
 <script src="deeplink.js?v=1" defer></script>
 <script src="install-banner.js?v=1" defer></script>
 <script src="backup-code.js?v=3" defer></script>
+<!-- ☁️ 云同步层：必须在 persistence.js 之后加载（链式包装 Storage.prototype） -->
+<script src="cloud-sync.js?v=1" defer></script>
 
 <!-- footer 在 .app 之外, 拿不到 .app 的 padding-bottom:72px;
      底部必须自己留出 tab bar 的高度(56px)+呼吸空间(safe-area-inset-bottom 只在真机有值) -->
