@@ -4935,7 +4935,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var ssRowStyle = _ss > 0 ? ' style="border-left:3px solid #8B5CF6;padding-left:8px;"' : '';
       html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+ssRowStyle+'>'+
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
-        '<div class="ex-left" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
+        '<div class="ex-left" onclick="'+(!isInjuredEx?'fbExLeftTap(event,\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
           '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(_ssTag?' <span style="font-size:10px;font-weight:700;color:#7C3AED;background:#F5F3FF;border:1px solid #C4B5FD;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">'+_ssTag+'</span>':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
@@ -8342,6 +8342,15 @@ function renderLib() {
   document.getElementById("libList").innerHTML = html;
 }
 
+// v189: 动作行左侧点击的统一出口。手指按在 🔄 替换按钮上的点击,
+//   无论如何都不许再触发 showEx —— 真机上出现过"点替换却打开详情"的反馈,
+//   不确定是 webview 冒泡拦截失效还是手指偏移, 按事件落点兜底最稳。
+function fbExLeftTap(e, name) {
+  var t = e && e.target;
+  if (t && t.closest && t.closest('.sub-btn')) return;
+  showEx(name);
+}
+
 // ============ 动作详情弹窗(GIF动图 + B站备选)============
 function showEx(name) {
   var ex = EXES.find(function(e){ return e.n===name; });
@@ -8375,6 +8384,18 @@ function showEx(name) {
       '<a class="video-link" href="'+searchUrl+'" target="_blank">📺 在 B站 搜索「'+name+'」教学视频</a>';
   }
 
+  // 🔄 详情弹窗里的换动作入口(v189): 计划页手指偏一点落在动作名上, 打开的是详情不是替换弹窗。
+  //   与其让用户退出去找那个小按钮, 不如在详情里给个直达入口 —— 只要这个动作在当前计划里就能换。
+  var _inPlan = false;
+  try {
+    _inPlan = !!(lastPlan && lastPlan.trainingDays && lastPlan.trainingDays.some(function(d){
+      return (d.exes||[]).some(function(e){ return e.n===name; });
+    }));
+  } catch(e0) {}
+  var _swapHtml = (_inPlan && lastPlan.goal !== 'marathon')
+    ? '<div style="margin-top:16px;"><button class="btn-generate" style="width:100%;" onclick="closeModal();openSubModalForEx(\''+name.replace(/'/g,"\\'")+'\')">🔄 换个动作</button></div>'
+    : '';
+
   var html = '<div class="modal-handle"></div>'+
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">'+
       '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';width:38px;height:38px;border-radius:10px;font-size:15px;">'+bt+'</div>'+
@@ -8388,6 +8409,7 @@ function showEx(name) {
     (_romTip?'<div class="modal-section-title">📏 幅度</div><div class="tips-card">'+_romTip+'</div>':'')+
     (_isoTip?'<div class="modal-section-title">⏱ 组间卡壳</div><div class="tips-card">'+_isoTip+'</div>':'')+
     mediaHtml+
+    _swapHtml+
     (ex._custom?'<div style="margin-top:16px;text-align:center;"><button class="btn-generate" style="background:#EF4444;width:100%;" onclick="deleteCustomEx(\''+ex.n.replace(/'/g,"\\'")+'\');closeModal();">🗑 删除此自定义动作</button></div>':'');
   document.getElementById("modalBody").innerHTML = html;
   document.getElementById("modal").classList.add("show");
