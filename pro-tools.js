@@ -228,6 +228,24 @@ function fbEntryIsDeloadSafe(log, i, exName) {
   return log[i].deload === true;
 }
 
+// ⚡ 超级组感知(v155): 该动作在当前计划里是否真的是组内成员(挂了 ⚡ 标签)。
+//   只认 lastPlan 里的真实标记 —— 开关开着但本次计划没插进组的动作不算,
+//   主项(0号位永不进组)自然也不算。planner-core 先加载, lastPlan 是它的全局;
+//   typeof 保护: 单独引入本文件时不至于报错, 退化为"不感知"。
+function fbExeIsSSMember(exName) {
+  try {
+    if (typeof lastPlan === 'undefined' || !lastPlan || !lastPlan.trainingDays) return false;
+    for (var d = 0; d < lastPlan.trainingDays.length; d++) {
+      var exes = (lastPlan.trainingDays[d] || {}).exes || [];
+      for (var i = 0; i < exes.length; i++) {
+        var e = exes[i];
+        if (e && e.n === exName && (parseInt(e._ss, 10) || 0) > 0) return true;
+      }
+    }
+  } catch (err) {}
+  return false;
+}
+
 function getAvgRPE(exName) {
   if (!trainingLog || !trainingLog[exName] || !trainingLog[exName].length) return null;
   var log = trainingLog[exName];
@@ -254,6 +272,14 @@ function getRPEAdjustment(exName) {
   var avgRPE = getAvgRPE(exName);
   if (!avgRPE) return null;
 
+  // ⚡ 超级组感知(v155): 组内不歇做的动作, 同样 RPE 对应的实际疲劳更高 ——
+  //   组间休息被砍掉, 后一组是在前一组没恢复的状态下完成的。
+  //   处理方式: 有效 RPE = 实报 RPE + 0.5, 整体收紧半档 ——
+  //     - "太轻松加 5%"的门槛从 RPE ≤ 6 收到 ≤ 5.5 (组里还觉得轻才是真轻);
+  //     - "太吃力减 5%"的门槛从 RPE ≥ 9 提前到 ≥ 8.5 (组里报 8.5 已经到顶了);
+  //   显示的 RPE 仍是实报值, 用户看到的数字不撒谎, 只调决策不调展示。
+  var _eff = fbExeIsSSMember(exName) ? Math.round((avgRPE + 0.5) * 10) / 10 : avgRPE;
+
   // ⚠️ 基准重量也要跳过测试成绩：1RM 测试用的是"能做几次就用多重"的极限重量，
   //   拿它当"上次练了多少"去加减，等于把测量的极限当成常规训练量。
   // ⚠️ 同样要跳过减载周：减载周的重量是刻意降下来的，拿它当基准去算 ±5%，
@@ -271,11 +297,11 @@ function getRPEAdjustment(exName) {
   if (u.mode === 'reps') {
     var reps = parseInt(last.reps) || 0;
     if (!reps) return null;
-    if (avgRPE >= 9) {
+    if (_eff >= 9) {
       return { action: 'decrease', rpe: avgRPE, text: '↓建议' + Math.max(1, reps - 2) + u.unit + '(太吃力)' };
-    } else if (avgRPE <= 6) {
+    } else if (_eff <= 6) {
       return { action: 'increase', rpe: avgRPE, text: '↑建议' + (reps + 2) + u.unit + '(很轻松)' };
-    } else if (avgRPE >= 7.5 && avgRPE <= 8.5) {
+    } else if (_eff >= 7.5 && _eff <= 8.5) {
       return { action: 'maintain', rpe: avgRPE, text: '✓维持' + reps + u.unit + '(状态好)' };
     }
     return null;
@@ -283,16 +309,16 @@ function getRPEAdjustment(exName) {
 
   if (!last.weight) return null;
 
-  if (avgRPE >= 9) {
-    // RPE ≥ 9:太难,建议-5%重量
+  if (_eff >= 9) {
+    // 有效RPE ≥ 9:太难,建议-5%重量
     var newWeight = Math.round(last.weight * 0.95 / 2.5) * 2.5;
     return { action: 'decrease', weight: newWeight, oldWeight: last.weight, rpe: avgRPE, text: '↓建议' + newWeight + 'kg(-5%)' };
-  } else if (avgRPE <= 6) {
-    // RPE ≤ 6:太轻松,建议+5%重量
+  } else if (_eff <= 6) {
+    // 有效RPE ≤ 6:太轻松,建议+5%重量
     var newWeight2 = Math.round(last.weight * 1.05 / 2.5) * 2.5;
     return { action: 'increase', weight: newWeight2, oldWeight: last.weight, rpe: avgRPE, text: '↑建议' + newWeight2 + 'kg(+5%)' };
-  } else if (avgRPE >= 7.5 && avgRPE <= 8.5) {
-    // RPE 7-8:甜蜜区,维持
+  } else if (_eff >= 7.5 && _eff <= 8.5) {
+    // 有效RPE 7-8:甜蜜区,维持
     return { action: 'maintain', weight: last.weight, oldWeight: last.weight, rpe: avgRPE, text: '✓维持' + last.weight + 'kg(状态好)' };
   }
   return null;

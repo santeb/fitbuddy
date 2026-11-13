@@ -381,7 +381,82 @@ function applyTemplate(i) {
   } else {
     showToast('已填入「' + t.name + '」参数，可微调后点生成 ✨');
   }
+  // 🔔 提醒开关前置:生成成功后主动推一次「开启每日提醒」。
+  // 延迟 3.6s:避开上面 toast 的展示窗口(3s),两条不叠在同屏同位置。
+  setTimeout(function(){ try { promptReminderOptin(); } catch (e) {} }, 3600);
   // 不再展开 planCard、不再滚到表单:表单已经从"必经之路"降级为"可选设置"
+}
+
+// ============ 🔔 提醒开关前置(留存改造):生成计划后主动推一次开启提醒 ============
+// 由来:「每日训练提醒」开关埋在默认收起的「手动调参数」卡片最底部,新用户开启率≈0;
+//   而提醒是用户离开后唯一的召回机制,不开提醒 = 用户一走就彻底失联。
+// 策略:快速模板生成成功后弹一条可点横幅(开启 / 不打扰):
+//   - 点「开启」:走 requestPermission,授权后复用 saveReminderSettings 的落盘链路
+//     (localStorage → IDB → 排下一次提醒),和手动开开关完全等效;
+//   - 点「不打扰」:永久记旗,不再弹(惹人烦比没提醒更伤);
+//   - 浏览器不支持 Notification / 权限已被拒:静默跳过。
+// 没点也没关系:横幅 15s 自动收起且不记旗,下次生成计划还会温和地问一次。
+var FB_REM_PROMPT_KEY = "fitbuddy_reminder_prompt";
+
+function fbRemPromptDismiss() {
+  try { localStorage.setItem(FB_REM_PROMPT_KEY, "dismissed"); } catch (e) {}
+  var el = document.getElementById("fbRemPromptBar");
+  if (el) el.remove();
+}
+
+function fbRemPromptEnable() {
+  var bar = document.getElementById("fbRemPromptBar");
+  if (bar) bar.remove();
+  if (!("Notification" in window)) { showToast("这个浏览器不支持通知，换个浏览器试试 🔔"); return; }
+  Notification.requestPermission(function(result) {
+    if (result !== "granted") {
+      // 权限被拒的浏览器里再弹也没用,一并永久记旗
+      try { localStorage.setItem(FB_REM_PROMPT_KEY, "dismissed"); } catch (e) {}
+      showToast("没关系，想开随时在「手动调参数」里找 🔔");
+      if (typeof track === 'function') { try { track('reminder_prompt', { r: 'denied' }); } catch (e) {} }
+      return;
+    }
+    // 复用设置面板的落盘逻辑:开开关 → 存 localStorage → 同步 IDB → 排下一次提醒
+    var toggle = document.getElementById("reminderToggle");
+    if (toggle) toggle.checked = true;
+    if (typeof saveReminderSettings === "function") {
+      saveReminderSettings();
+    } else {
+      // 兜底:设置面板逻辑不可用时手动落盘,保证提醒真的生效
+      var rem = { enabled: true, time: (document.getElementById("reminderTime") || {}).value || "20:00", snoozedUntil: null };
+      try { localStorage.setItem("fitbuddy_reminder", JSON.stringify(rem)); } catch (e) {}
+      try { syncReminderToIDB(rem); } catch (e) {}
+      try { scheduleNextReminder(); } catch (e) {}
+    }
+    showToast("🔔 已开启，每天 " + ((document.getElementById("reminderTime") || {}).value || "20:00") + " 提醒你训练 💪");
+    if (typeof track === 'function') { try { track('reminder_prompt', { r: 'granted' }); } catch (e) {} }
+    try {
+      new Notification("FitBuddy 训练提醒已开启!", {
+        body: "到点我会在你的训练日叫你 💪",
+        icon: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="%23FF6B35"/><text y=".9em" font-size="60" text-anchor="middle" x="50" fill="white">🏋️</text></svg>')
+      });
+    } catch (e) {}
+  });
+}
+
+function promptReminderOptin() {
+  if (!("Notification" in window)) return;       // iOS Safari 非PWA 下没有 Notification API,静默跳过
+  if (Notification.permission === "denied") return;
+  try {
+    var rem = JSON.parse(localStorage.getItem("fitbuddy_reminder") || "null");
+    if (rem && rem.enabled) return;              // 已开启的不打扰
+  } catch (e) {}
+  try { if (localStorage.getItem(FB_REM_PROMPT_KEY)) return; } catch (e) {}  // 点过「不打扰」的永不弹
+  if (document.getElementById("fbRemPromptBar")) return;                      // 幂等
+  var bar = document.createElement("div");
+  bar.id = "fbRemPromptBar";
+  bar.style.cssText = "position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:#1A1A2E;color:#fff;padding:12px 16px;border-radius:14px;font-size:14px;z-index:500;box-shadow:0 4px 20px rgba(0,0,0,0.3);display:flex;align-items:center;gap:12px;max-width:92vw;white-space:nowrap;";
+  bar.innerHTML = '<span style="font-weight:600;">🔔 每天到点叫你练？</span>'
+    + '<button onclick="fbRemPromptEnable()" style="flex-shrink:0;padding:7px 14px;border:none;border-radius:10px;background:#FF6B35;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">开启</button>'
+    + '<button onclick="fbRemPromptDismiss()" style="flex-shrink:0;padding:7px 10px;border:none;border-radius:10px;background:transparent;color:rgba(255,255,255,.6);font-size:13px;cursor:pointer;">不打扰</button>';
+  document.body.appendChild(bar);
+  // 没点也自动收起:不记旗,下次生成计划还会再问一次(温和提示,不永久骚扰)
+  setTimeout(function(){ var el = document.getElementById("fbRemPromptBar"); if (el) el.remove(); }, 15000);
 }
 (function initTheme(){
   var saved = localStorage.getItem("fitbuddy_theme");
@@ -984,8 +1059,10 @@ function openSubModal(dayIdx, exIdx, exName) {
     }
   } catch (err0) {}
   if (_ssPartner) {
+    // v193: 重货黑名单同样作用于替换候选 —— 否则换进去一个不进组的重货,
+    //   下次刷新 fbAutoSuperSets 重排时这对超级组又悄悄解散(v190 同款 bug)。
     var _pairScored = allowed.map(function(c){ return { e:c, s:ssPairScore(c, _ssPartner) }; })
-      .filter(function(x){ return x.s > 0; })
+      .filter(function(x){ return x.s > 0 && !ssHeavyCompound(x.e.n); })
       .sort(function(a,b){ return b.s - a.s; });
     if (_pairScored.length) {
       _ssPairable = _pairScored.map(function(x){ return x.e; });
@@ -3415,6 +3492,8 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
  *   ① 0 号动作永不进组 —— 那是当天的主项(深蹲/卧推/硬拉), 组内不歇会毁掉后面几组的质量;
  *   ② 力量目标不插 —— 5RM 做超级组等于自残, 省的那点时间换不来中枢疲劳;
  *   ③ 减载周不插 —— 减载的目的是降疲劳, 超级组加的是心肺和代谢压力, 方向正好相反。
+ *   ④ 重货自由动作不进组 —— 配对只看肌群不看强度, 非主项位置的罗马尼亚硬拉/前蹲这类
+ *      大重量自由动作被拉进组, 组后紧接下一个动作会掉表现(和主项同款待遇, v193)。
  * ========================================================================== */
 var SS_MUSCLE_SET = { '腿':1, '胸':1, '背':1, '肩':1, '臂':1, '核心':1 };
 
@@ -3458,6 +3537,17 @@ function ssPairScore(a, b) {
   return 0;   // 纯同肌群不自动配: 那是复合组, 留给手排编辑器里的开关
 }
 
+// ⚡ 重货黑名单(v193): 非主项位置的大重量自由动作不进超级组。
+// 超级组按肌群配对, 不管动作多重 —— 但硬拉类/前蹲类这种自由重量大件,
+// 组内不歇做完再接一个动作, 后面那组的重量和动作质量都会塌。
+// ⚠️ 刻意收窄(宁可少配不配错): 杠铃大件才拦, 哑铃/器械/自重不拦 ——
+//   高脚杯深蹲(哑铃)可以进组, 杠铃深蹲不行; 腿举(器械有靠背)可以进组, 硬拉不行。
+// v190 的替换候选过滤也走这个函数, 保证换动作弹窗不会把重货列回搭档位。
+function ssHeavyCompound(name) {
+  var n = String(name || '');
+  return /(硬拉|前蹲|杠铃深蹲|哈克深蹲|保加利亚|箭步蹲|臀推|杠铃划船|杠铃(卧推|推举|肩推|上斜)|借力推|高翻|抓举|挺举)/.test(n);
+}
+
 function fbSuperSetPref() {
   try {
     var p = JSON.parse(localStorage.getItem('fitbuddy_prefs') || '{}');
@@ -3492,6 +3582,8 @@ function fbAutoSuperSets(trainingDays, goal, level) {
     for (var i = 1; i < n - 1; i++) {
       var a = exes[i], b = exes[i + 1];
       if (!a || !b || a._injured || b._injured) continue;
+      // ④ 重货不进组(v193): 罗马尼亚硬拉/前蹲这类大重量自由动作, 组后接动作必掉表现
+      if (ssHeavyCompound(a.n) || ssHeavyCompound(b.n)) continue;
       var sc = ssPairScore(a, b);
       if (sc > 0) cands.push({ i: i, score: sc });
     }
@@ -9655,7 +9747,25 @@ document.querySelectorAll("#ssChips .chip").forEach(function(c){
     savePrefs();
     var on = c.dataset.ss === "1";
     var cur = (lastPlan && lastPlan._ssPairs) || 0;
-    if (on && !cur) { try { showToast('已开启超级组，下次生成 / 进入下周时排进计划 ⚡'); } catch (e) {} }
+    if (on && !cur) {
+      // v155 首次开启提示(只弹一次): 超级组是省时间换疲劳的练法,
+      //   不打招呼容易有人拿主项重量硬做组内动作。文案按水平分两档 ——
+      //   新手多讲两句怎么降重量, 老手一行防大意。
+      var _firstSS = false;
+      try { _firstSS = !localStorage.getItem("fitbuddy_ss_hint"); } catch (e) {}
+      if (_firstSS) {
+        try { localStorage.setItem("fitbuddy_ss_hint", "1"); } catch (e) {}
+        var _lvlEl = document.querySelector('input[name="level"]:checked');
+        var _lvl = _lvlEl ? _lvlEl.value : "beginner";
+        if (_lvl === "beginner") {
+          showToast("⚡ 超级组已开启：组内第二个动作重量主动降 10-20%，觉得动作变形就马上停。下次生成 / 进入下周时生效", 5600);
+        } else {
+          showToast("⚡ 超级组已开启，组内动作重量降 10-20%，下次生成 / 进入下周时生效", 4200);
+        }
+      } else {
+        showToast('已开启超级组，下次生成 / 进入下周时排进计划 ⚡');
+      }
+    }
     else if (!on && cur) { try { showToast('已关闭超级组，下次生成恢复普通组'); } catch (e) {} }
   });
 });
@@ -11079,12 +11189,12 @@ function resetAllData() {
   setTimeout(function(){ location.reload(); }, 1500);
 }
 
-function showToast(msg) {
+function showToast(msg, ms) {
   var t = document.createElement("div");
   t.textContent = msg;
   t.style.cssText = "position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:#1A1A2E;color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;z-index:500;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeIn 0.2s ease;max-width:90vw;text-align:center;";
   document.body.appendChild(t);
-  setTimeout(function(){ t.remove(); }, 3000);
+  setTimeout(function(){ t.remove(); }, ms || 3000);
 }
 
 // ============ 训练计算器：tab 切换(1RM / 热身组 / 杠铃片) ============
