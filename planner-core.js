@@ -287,6 +287,17 @@ function toggleTheme() {
   if (btn) { btn.textContent = next === "dark" ? "🌙" : "☀️"; btn.setAttribute("aria-pressed", next === "dark"); }
   localStorage.setItem("fitbuddy_theme", next);
 }
+// ⚡ 超级组开关只在力量训练类目标下出现。力量和跑步类一律隐藏:
+//   力量日 5RM 组内不歇会毁掉后面几组, 心肺/马拉松/骑行是间歇不是超级组。
+//   隐藏而不是"显示但点了没效果"——后者用户会以为坏了。
+function fbSyncSuperSetVisibility() {
+  var el = document.getElementById("ssGroup");
+  if (!el) return;
+  var g = document.querySelector('input[name="goal"]:checked');
+  var gv = g ? g.value : "muscle";
+  el.style.display = (gv === "muscle" || gv === "cut" || gv === "shape") ? "" : "none";
+}
+
 function toggleEquip() {
   var goal = document.querySelector('input[name="goal"]:checked');
   var isMarathon = goal && goal.value === "marathon";
@@ -307,6 +318,7 @@ function toggleEquip() {
       activeChip.classList.remove("active");
     }
   }
+  fbSyncSuperSetVisibility();
   savePrefs();
 }
 
@@ -2505,6 +2517,11 @@ function doGenerateInternal(goal, level, days, equip, trainingDays, schedule, cf
   } catch (e) {}
   var warmup = getWarmup(level, goal);
   var tips = (GOAL_TIPS[goal] || []).slice();   // ⚠️ 必须复制:下面会 unshift,直接改会永久污染 GOAL_TIPS
+  // ⚡ 超级组(v185): 必须点明"组内第二个动作降重量"—— 不降是超级组最常见的翻车点
+  //    (硬撑原重量 → 第二动作次数腰斩 → 练两天放弃)。数字取自计划快照, 不在这里重算。
+  if (lastPlan && lastPlan._ssPairs > 0) {
+    tips.unshift('⚡ 本周 ' + lastPlan._ssPairs + ' 组超级组：一对动作之间不歇，做完一对才休息；组内第二个动作重量主动降 10-20%');
+  }
   // 器械不够时的解释(v169):自重/弹力带用户全程看不到"重量"两个字,很容易以为"没重量 = 白练"。
   //   证据口径:30-60% 1RM 这种低负荷,只要每组做到接近力竭(还能再做 1-2 次),增肌效果与大重量接近。
   //   只在器械少的组合里插这句话 —— 健身房用户看到反而是噪音。
@@ -3078,6 +3095,15 @@ function doGenerate() {
       }
       // 伤病过滤(清标记 → 打标记 → 整天被清空时兜底换成康复日)
       applyInjuryFilter(trainingDays);
+      // ⚡ 超级组自动编排(v185): 放在伤病过滤之后 —— 配对要基于"最终上场的动作",
+      //   过滤前配好、过滤后动作被换掉, 组里就剩一对不相干的组合了。
+      //   手排模板和梨形固定计划的编排是用户(或宣传卡)定死的, 一律不碰。
+      var _ssPairs = 0;
+      try {
+        if (!customTplUsed && !pearFixedUsed) {
+          _ssPairs = fbAutoSuperSets(trainingDays, goal, level);
+        }
+      } catch (e) { _ssPairs = 0; }
       // 保存到 lastPlan
       // v103b:顺手记下「这次升档了」。放在这里而不是校准分支里,是为了把两条升档
       //   路径一起覆盖 —— 自动校准(只在升的那次渲染出现)和用户自己在表单里改档。
@@ -3093,6 +3119,7 @@ function doGenerate() {
       lastPlan = { goal:goal, level:level, days:days, equip:equip, cycleLength:_cycleLenNow, trainingDays:trainingDays, schedule:schedule, date:Date.now(), week: currentWeek, maxWeek: Math.max(maxWeek, currentWeek) };
       lastPlan._pearFixed = pearFixedUsed; // 🍐 当前计划是否为梨形固定计划(渲染/统计用)
       lastPlan._customTpl = customTplUsed; // 📝 当前计划是否为手排模板(custom-plan.js)
+      lastPlan._ssPairs = _ssPairs;        // ⚡ 本周插了几组超级组(0 = 没插/不适用)
       if (currentCycle) lastPlan.cycle = currentCycle;
       // 保存用户年龄,用于心率 Zone 计算
       var ageVal = parseInt(document.getElementById('bodyAge').value) || 0;
@@ -3343,6 +3370,116 @@ function buildPlan(goal, level, days, equip, cfg, goalCfg, weekOffset) {
   }
   return trainingDays;
 }
+
+/* ============================================================================
+ * ⚡ 超级组自动编排 (v185)
+ * ----------------------------------------------------------------------------
+ * 只在用户自己打开表单里的「⚡ 超级组」时执行 —— 这个函数会改计划内容,
+ * 而本项目的铁律是「绝不悄悄改计划」: 没开关就不许跑, 开关关着时零副作用。
+ * 渲染层 (v184) 已经认得 _ss 组号, 这里只负责"谁和谁配一对", 不碰渲染。
+ *
+ * 三条硬约束(都是踩过/想过之后定的, 别随手放宽):
+ *   ① 0 号动作永不进组 —— 那是当天的主项(深蹲/卧推/硬拉), 组内不歇会毁掉后面几组的质量;
+ *   ② 力量目标不插 —— 5RM 做超级组等于自残, 省的那点时间换不来中枢疲劳;
+ *   ③ 减载周不插 —— 减载的目的是降疲劳, 超级组加的是心肺和代谢压力, 方向正好相反。
+ * ========================================================================== */
+var SS_MUSCLE_SET = { '腿':1, '胸':1, '背':1, '肩':1, '臂':1, '核心':1 };
+
+// "臂"和"腿"在动作库里只有一个肌肉名, 不分二头/三头、前链/后链。
+// 不细分的话「杠铃弯举 + 锤式弯举」会被当成对抗肌配对 —— 其实同肌群连做,
+// 泵感是强, 但那是复合组(预疲劳)的用法, 自动塞进来容易把人练垮。
+function ssSideOf(name) {
+  var n = String(name || '');
+  if (/腿弯举/.test(n)) return 'legBack';        // 先排掉, 不然会命中下面的"弯举"
+  if (/弯举|锤式|反握|curl/i.test(n)) return 'bi';
+  if (/下压|三头|窄距俯卧撑|钻石俯卧撑|臂屈伸|extension/i.test(n)) return 'tri';
+  if (/深蹲|腿举|腿屈伸|弓步|箭步|哈克|保加利亚|前蹲/.test(n)) return 'legFront';
+  if (/硬拉|臀桥|臀推|罗马尼亚|髋|早安/.test(n)) return 'legBack';
+  return '';
+}
+
+// 对抗肌优先级。⚠️ 必须写成显式映射: 之前用 [ma,mb].sort().join('') 拼 key,
+// 中文字符串按 UTF-16 码点排序(胸 80F8 > 背 80CC), 拼出来是「背胸」不是「胸背」,
+// 结果每一条都没命中, 全部落到兜底 55 分 —— 优先级形同不存在, 实测第一天的
+// 蝴蝶机夹胸+绳索面拉(胸背, 该是最高分)被 55 分的「肩推+三头下压」挤掉了。
+var SS_PAIR_SCORE = {
+  '胸|背': 100,     // 一推一拉, 教科书级搭配
+  '肩|背': 85,      // 推举 + 面拉/划船
+  '胸|肩': 75,
+  '腿|核心': 60,
+  '臂|腿': 60
+};
+
+// 分数 = 这一对动作"连着做"值不值。0 分 = 不配。
+function ssPairScore(a, b) {
+  var ma = a.m, mb = b.m;
+  if (!SS_MUSCLE_SET[ma] || !SS_MUSCLE_SET[mb]) return 0;   // 有氧/康复没有超级组这回事
+  if (ma !== mb) {
+    var s = SS_PAIR_SCORE[ma + '|' + mb];
+    if (s === undefined) s = SS_PAIR_SCORE[mb + '|' + ma];
+    return (s === undefined) ? 55 : s;   // 其他不同肌群: 省时本身就是收益
+  }
+  var sa = ssSideOf(a.n), sb = ssSideOf(b.n);
+  if (ma === '臂' && ((sa === 'bi' && sb === 'tri') || (sa === 'tri' && sb === 'bi'))) return 95;
+  if (ma === '腿' && ((sa === 'legFront' && sb === 'legBack') || (sa === 'legBack' && sb === 'legFront'))) return 90;
+  return 0;   // 纯同肌群不自动配: 那是复合组, 留给手排编辑器里的开关
+}
+
+function fbSuperSetPref() {
+  try {
+    var p = JSON.parse(localStorage.getItem('fitbuddy_prefs') || '{}');
+    return !!p.superset;
+  } catch (e) { return false; }
+}
+
+// 返回实际插入的组数(渲染和提示都要这个数)
+function fbAutoSuperSets(trainingDays, goal, level) {
+  if (!trainingDays || !trainingDays.length) return 0;
+  // 先清旧标记: 复用快照/刷新/跳周都会再跑一遍, 不清就会在旧组号上叠出孤儿组
+  trainingDays.forEach(function(day){
+    if (day && Array.isArray(day.exes)) {
+      day.exes.forEach(function(ex){ if (ex && ex._ss) delete ex._ss; });
+    }
+  });
+  if (goal === 'strength') return 0;
+  if (goal === 'cardio' || goal === 'cycling' || goal === 'marathon') return 0;
+  // 减载周的判定走全项目唯一真源, 不自己再算一套(手标减载/关掉自动化都要能读到)
+  try { if (fbPeriodWeekDeloadState(currentWeek).deload) return 0; } catch (e) {}
+  if (!fbSuperSetPref()) return 0;
+
+  var inserted = 0, seq = 0;
+  trainingDays.forEach(function(day){
+    if (!day || !Array.isArray(day.exes)) return;
+    var exes = day.exes;
+    var n = exes.length;
+    if (n < 4) return;                            // 3 个以下凑不出对, 硬凑会把主项拉进组
+    var maxPairs = (n >= 6) ? 2 : 1;
+    var cands = [];
+    // 从 1 开始: 0 号是主项, 永远单独做
+    for (var i = 1; i < n - 1; i++) {
+      var a = exes[i], b = exes[i + 1];
+      if (!a || !b || a._injured || b._injured) continue;
+      var sc = ssPairScore(a, b);
+      if (sc > 0) cands.push({ i: i, score: sc });
+    }
+    // 高分优先; 同分取靠后的 —— 末尾动作更轻, 组内掉重量的代价最小
+    cands.sort(function(x, y){ return (y.score - x.score) || (y.i - x.i); });
+    var used = {}, pairs = 0;
+    for (var c = 0; c < cands.length && pairs < maxPairs; c++) {
+      var idx = cands[c].i;
+      if (used[idx] || used[idx + 1]) continue;   // 一个动作只能在一组里
+      seq++;
+      // 必须拷贝: exes 里的元素可能是动作库对象的引用, 直接挂 _ss 会污染全局 EXES
+      exes[idx] = Object.assign({}, exes[idx], { _ss: seq });
+      exes[idx + 1] = Object.assign({}, exes[idx + 1], { _ss: seq });
+      used[idx] = used[idx + 1] = 1;
+      pairs++; inserted++;
+    }
+  });
+  return inserted;
+}
+window.fbAutoSuperSets = fbAutoSuperSets;
+window.fbSuperSetPref = fbSuperSetPref;
 
 function buildMusclePlan(level, days, equip, wOff) {
   var exCnt = level === "beginner" ? 3 : level === "intermediate" ? 4 : 5;
@@ -4579,6 +4716,22 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
     html += '</div>';
   }
 
+  // ⚡ 超级组(v184): 同一天里相同 _ss 的连续动作是一组, 组内不休息、组末才休息。
+  // 这里先给每组分配一个字母(A/B/C), 渲染时拿来当标签 —— 用户看"超级组B"比看"组号2"直观。
+  var _ssLetters = {};
+  if (day.exes) {
+    (function(){
+      var k = 0;
+      day.exes.forEach(function(e){
+        var g = parseInt(e && e._ss, 10) || 0;
+        if (g > 0 && !_ssLetters[g]) {
+          k++;
+          _ssLetters[g] = (k <= 26) ? String.fromCharCode(64 + k) : String(k);
+        }
+      });
+    })();
+  }
+
   if (day.exes) {
     day.exes.forEach(function(ex, idx){
       var bc = BADGE_COLORS[ex.m] || ["#888","#F5F5F5"];
@@ -4586,6 +4739,22 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       var checkId = dayId + "_ex" + idx;
       var done = localStorage.getItem(doneKey(checkId)) === "1";
       var isInjuredEx = ex._injured || false;
+      // ⚡ 超级组状态: _ss>0 = 在组里; _ssNext = 下一个还在同一组 → 这个动作做完不歇
+      var _ss = parseInt(ex._ss, 10) || 0;
+      var _ssNext = false;
+      if (_ss > 0 && idx + 1 < day.exes.length) {
+        _ssNext = (parseInt(day.exes[idx + 1] && day.exes[idx + 1]._ss, 10) || 0) === _ss;
+      }
+      var _ssTag = _ss > 0 ? ('⚡ 超级组' + (_ssLetters[_ss] ? ' ' + _ssLetters[_ss] : '')) : '';
+      // 休息按钮统一出口: 超级组里"不是最后一个"的动作不许休息, 换成"接下一个"的提示。
+      // 三处分支(力量/有氧/心肺)都走它, 免得改一处漏两处。
+      var _restBtn = function(restStr){
+        if (!restStr || restStr === '-') return '';
+        if (_ssNext) {
+          return '<span style="display:inline-block;font-size:11px;font-weight:700;color:#7C3AED;background:#F5F3FF;border:1px solid #C4B5FD;border-radius:8px;padding:2px 8px;margin-left:4px;">⚡ 不歇，直接做下一个</span>';
+        }
+        return '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+restStr+'\')">⏱ '+restStr+(_ss ? ' 组间' : '')+'</button>';
+      };
 
       // v177 自定义计划: 模板动作带教练定的绝对基准(_tplSets/_tplReps/_tplRest)。
       // ⚠️ 绝对基准不能拿来就用 —— 仍要走同一套周期化: 组数喂 fbPeriodSetsFrom
@@ -4679,13 +4848,13 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
         if (cdDist > 0) distData = ' data-dist="'+cdDist+'"';
         exPrescriptionHtml = '<div class="ex-sets">'+presDisplay+'</div>'+
           '<div class="ex-intensity">'+fbHrIntensityText(goalCfg.intensity, fbUserAge())+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
-          (goalCfg.rest && goalCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+goalCfg.rest+'\')">⏱ '+goalCfg.rest+'</button>' : '');
+          _restBtn(goalCfg.rest);
       } else if (ex.m === '有氧') {
         // 非心肺目标中的有氧动作 - 显示时长,不显示组×次
         var cardioCfg = (levelCfg && levelCfg.cardio) || {totalDuration:"30分钟", lissPerSet:"持续进行", rest:"30秒", intensity:"心率 Zone 2", rpe:"RPE 5-6"};
         exPrescriptionHtml = '<div class="ex-sets">🫁 ' + (cardioCfg.totalDuration || '有氧') + ' · ' + (cardioCfg.lissPerSet || '持续进行') + '</div>'+
           '<div class="ex-intensity">' + fbHrIntensityText(cardioCfg.intensity, fbUserAge()) + '</div><span class="rpe-badge">' + (cardioCfg.rpe || '') + '</span>'+
-          (cardioCfg.rest && cardioCfg.rest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+cardioCfg.rest+'\')">⏱ '+cardioCfg.rest+'</button>' : '');
+          _restBtn(cardioCfg.rest);
       } else {
         var _exIntensity = (_iso && typeof fbIsoIntensity === 'function') ? fbIsoIntensity(goalCfg.intensity) : goalCfg.intensity;
         // 休息: 教练显式定的优先(孤立偏移同理不叠加), 空则照旧走默认/孤立偏移
@@ -4696,7 +4865,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
           (_setsAdj > 0 ? '<div style="font-size:10.5px;color:var(--primary);opacity:0.9;margin-bottom:3px;">➕ 含你上次加的 ' + _setsAdj + ' 组</div>' : '')+
           '<div class="ex-sets">'+_exPres+(_iso ? ' <span style="font-size:10px;color:var(--text3);font-weight:600;" title="孤立动作：次数调高、重量调轻、休息缩短">孤立</span>' : '')+'</div>'+
           '<div class="ex-intensity">'+_exIntensity+'</div>'+'<span class="rpe-badge">'+goalCfg.rpe+'</span>'+
-          (_exRest && _exRest !== '-' ? '<button class="rest-btn" onclick="event.stopPropagation();startRestTimer(\''+_exRest+'\')">⏱ '+_exRest+'</button>' : '');
+          _restBtn(_exRest);
       }
 
       // 渐进超负荷:上次记录
@@ -4761,11 +4930,13 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       // 有氧/马拉松没有组的概念, 不挂 —— 挂了会把「跑 10km」记成 3 组力量容量。
       var setsData = isLiftEx ? ' data-sets="'+Math.max(1, _exBaseSets + _setsAdj)+'"' : '';
 
-      html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+'>'+
+      // 超级组成员挂左竖线: 折叠状态下也能一眼看出哪几个动作是连在一起做的
+      var ssRowStyle = _ss > 0 ? ' style="border-left:3px solid #8B5CF6;padding-left:8px;"' : '';
+      html += '<div class="ex-row'+(done?' done':'')+injuryClass+'" id="'+checkId+'"'+distData+setsData+ssRowStyle+'>'+
         '<div class="ex-check'+(done?' done':'')+(isInjuredEx?' injury-skipped':'')+'" onclick="'+(!isInjuredEx?'toggleDone(\''+checkId+'\')':'')+'">'+(done?'✓':(isInjuredEx?'⚠':''))+'</div>'+
         '<div class="ex-left" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+
           '<div class="ex-badge" style="background:'+bc[1]+';color:'+bc[0]+';">'+bt+'</div>'+
-          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
+          '<div><div class="ex-name">'+ex.n+(isInjuredEx?' ⚠️':'')+(_ssTag?' <span style="font-size:10px;font-weight:700;color:#7C3AED;background:#F5F3FF;border:1px solid #C4B5FD;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">'+_ssTag+'</span>':'')+(ex._challengeUp?' <span style="font-size:10px;font-weight:700;color:#F97316;background:#FFF7ED;border:1px solid #FDBA74;border-radius:6px;padding:1px 6px;vertical-align:1px;white-space:nowrap;">🔥 挑战上探</span>':'')+'</div><div class="ex-diff">'+fbExMetaLine(ex)+(isInjuredEx?' · 已跳过(伤病限制)':'')+(ex._caution?' · <span style="color:#C2410C;">⚠️ 伤处会参与，轻重量试</span>':'')+(ex._challengeUp?' · 做不动可退回上一档':'')+'</div></div>'+subBtnHtml+
         '</div>'+
         '<div class="ex-prescription" onclick="'+(!isInjuredEx?'showEx(\''+ex.n.replace(/'/g,"\\'")+'\')':'')+'">'+exPrescriptionHtml+
           (_romTip?'<div style="font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.45;">📏 '+_romTip+'</div>':'')+
@@ -9234,12 +9405,14 @@ function savePrefs() {
   var levelEl = document.querySelector('input[name="level"]:checked');
   var genderEl = document.querySelector('input[name="gender"]:checked');
   var cycleChip = document.querySelector('#cycleLenChips .chip.active');
+  var ssChip = document.querySelector('#ssChips .chip.active');
   var prefs = {
     goal: goal ? goal.value : "muscle",
     level: levelEl ? levelEl.value : "beginner",
     days: daysChip ? parseInt(daysChip.dataset.days) : 4,
     equip: equipEl ? equipEl.value : "gym",
     runEquip: runEquipEl ? runEquipEl.value : "outdoor",
+    superset: ssChip ? ssChip.dataset.ss === "1" : false,
     gender: genderEl ? genderEl.value : "male",
     weight: document.getElementById('bodyWeight').value,
     height: document.getElementById('bodyHeight').value,
@@ -9264,6 +9437,13 @@ function loadPrefs() {
       if (re) re.checked = true;
     }
     if (p.gender) { var el = document.querySelector('input[name="gender"][value="'+p.gender+'"]'); if (el) el.checked = true; }
+    // ⚡ 超级组开关: 老存档没有这个字段 → 保持默认「普通组」, 行为完全不变
+    if (p.superset) {
+      var ssOn = document.querySelector('#ssChips .chip[data-ss="1"]');
+      var ssOff = document.querySelector('#ssChips .chip[data-ss="0"]');
+      if (ssOn && ssOff) { ssOn.classList.add("active"); ssOff.classList.remove("active"); }
+    }
+    fbSyncSuperSetVisibility();
     if (p.days) {
       document.querySelectorAll('#daysGroup .chip').forEach(function(c){ c.classList.remove("active"); });
       var chip = document.querySelector('#daysGroup .chip[data-days="'+p.days+'"]');
@@ -9351,6 +9531,20 @@ document.querySelectorAll("#daysGroup .chip").forEach(function(c){
   c.addEventListener("click", function(){
     document.querySelectorAll("#daysGroup .chip").forEach(function(x){ x.classList.remove("active"); });
     c.classList.add("active");
+  });
+});
+
+// ⚡ 超级组 chip(v185): 改的是「下一份计划」的编排, 屏幕上这份不会跟着变 ——
+//    不说清楚用户会以为点了没反应(和周期长度 chip 是同一类问题)。
+document.querySelectorAll("#ssChips .chip").forEach(function(c){
+  c.addEventListener("click", function(){
+    document.querySelectorAll("#ssChips .chip").forEach(function(x){ x.classList.remove("active"); });
+    c.classList.add("active");
+    savePrefs();
+    var on = c.dataset.ss === "1";
+    var cur = (lastPlan && lastPlan._ssPairs) || 0;
+    if (on && !cur) { try { showToast('已开启超级组，下次生成 / 进入下周时排进计划 ⚡'); } catch (e) {} }
+    else if (!on && cur) { try { showToast('已关闭超级组，下次生成恢复普通组'); } catch (e) {} }
   });
 });
 

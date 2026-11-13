@@ -1455,6 +1455,82 @@ function renderFatigueWarning() {
   return html;
 }
 
+// ============ 9. 退训提醒 (v184) ============
+// 和 8 是同一枚硬币的两面: 8 防"同一个部位练太频", 9 防"某个部位被练漏了"。
+// 阈值 14 天: 一周练一次的肌群漏掉一整周正好 14 天 —— 那是真漏了, 不是排课周期长。
+// 28 天以上换措辞(3-4 周无刺激, 肌力和肌量开始有可见流失, 得从轻重量找回来)。
+var DETRAIN_DAYS = 14;
+var DETRAIN_SEVERE_DAYS = 28;
+
+function checkMuscleDetrain() {
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem('fitbuddy_history') || '[]'); } catch (e) { return null; }
+  if (!hist || !hist.length) return null;
+
+  var exMuscleMap = {};
+  if (typeof EXES !== 'undefined' && Array.isArray(EXES)) {
+    EXES.forEach(function (ex) { if (ex && ex.n) exMuscleMap[ex.n] = ex.m; });
+  }
+
+  var todayStr = new Date().toISOString().slice(0, 10);
+  var todayTs = Date.parse(todayStr + 'T00:00:00Z');
+  if (!isFinite(todayTs)) return null;
+
+  // 每个部位最后一次被练到的日期。只看力量动作 —— 有氧/康复不算数,
+  // 跑了 5km 不代表腿部做过抗阻训练(这正是"跑者腿细"的成因)。
+  var lastByMuscle = {};
+  for (var i = 0; i < hist.length; i++) {
+    var h = hist[i];
+    if (!h || !h.date) continue;
+    var ts = Date.parse(h.date + 'T00:00:00Z');
+    if (!isFinite(ts) || ts > todayTs) continue;
+    var names = Array.isArray(h.exercises) ? h.exercises
+              : (h.setMap && typeof h.setMap === 'object') ? Object.keys(h.setMap) : [];
+    var seen = {};
+    for (var j = 0; j < names.length; j++) {
+      var m = exMuscleMap[names[j]] || '';
+      if (!m || m === '有氧' || m === '康复' || seen[m]) continue;
+      seen[m] = 1;
+      if (!lastByMuscle[m] || lastByMuscle[m].ts < ts) lastByMuscle[m] = { ts: ts, date: h.date };
+    }
+  }
+
+  var out = [];
+  Object.keys(lastByMuscle).forEach(function (m) {
+    var gap = Math.round((todayTs - lastByMuscle[m].ts) / 86400000);
+    // 只提醒"曾经练过、现在漏了"的部位 —— 一次没练过的部位不是退训, 是还没开始,
+    // 提醒它等于对新手说"你腿部退训了", 纯属嘲讽。
+    if (gap >= DETRAIN_DAYS) out.push({ muscle: m, days: gap, last: lastByMuscle[m].date });
+  });
+
+  if (!out.length) return null;
+  out.sort(function (a, b) { return b.days - a.days; });
+  return out.slice(0, 3);   // 最多 3 条, 再多就成了骂人清单
+}
+
+function renderDetrainWarning() {
+  var list = checkMuscleDetrain();
+  if (!list || !list.length) return '';
+  var labels = { '腿': '腿部', '胸': '胸部', '背': '背部', '肩': '肩部', '臂': '手臂', '核心': '核心' };
+  var emoji = { '腿': '🦵', '胸': '🫸', '背': '🪝', '肩': '🤸', '臂': '💪', '核心': '🧘' };
+
+  var html = '<div id="detrainWarning" style="background:linear-gradient(135deg,#FEF3C7,#FDE68A);border:1px solid #F59E0B;border-radius:12px;padding:12px 14px;margin-bottom:14px;">' +
+    '<div style="font-size:13px;font-weight:700;color:#B45309;display:flex;align-items:center;gap:6px;">🕸️ 有部位掉队了</div>';
+
+  list.forEach(function (w) {
+    var label = labels[w.muscle] || w.muscle;
+    var ic = emoji[w.muscle] || '⏳';
+    var tail = w.days >= DETRAIN_SEVERE_DAYS
+      ? '已经 ' + w.days + ' 天没练了 —— 这个间隔力量会明显回落，回来时先用原重量的 60-70% 找几周，别直接冲原数。'
+      : '已经 ' + w.days + ' 天没练了 —— 排一次进去，掉的这点两三周就能练回来，越拖越费劲。';
+    html += '<div style="font-size:12px;color:#92400E;margin-top:6px;line-height:1.55;">' + ic + ' <b>' + label + '</b>' + tail + '</div>';
+  });
+
+  html += '<div style="font-size:10.5px;color:#B45309;opacity:0.8;margin-top:7px;">只看力量动作：跑步、拉伸不算练到某个部位。</div>';
+  html += '</div>';
+  return html;
+}
+
 // ============ 初始化 & 集成钩子 ============
 
 // 暴露到全局
@@ -1481,6 +1557,8 @@ window.renderRescheduleBanner = renderRescheduleBanner;
 window.checkMissedDays = checkMissedDays;
 window.renderFatigueWarning = renderFatigueWarning;
 window.checkMuscleFatigue = checkMuscleFatigue;
+window.renderDetrainWarning = renderDetrainWarning;
+window.checkMuscleDetrain = checkMuscleDetrain;
 
 // 渲染热身组+杠铃片计算器到动作库页顶部的「训练计算器」区块
 // 幂等:已渲染过的面板不重复覆盖,避免用户已输入的数值被清空
@@ -1706,6 +1784,9 @@ window.initProToolsPlan = function() {
 
         // 部位疲劳监控
         proHtml += renderFatigueWarning();
+
+        // 退训提醒(和疲劳监控互补: 一个防练太频, 一个防练漏了)
+        proHtml += renderDetrainWarning();
 
         // 智能补课重排
         if (!localStorage.getItem('fitbuddy_reschedule_dismiss_w' + currentWeek)) {

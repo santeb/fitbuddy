@@ -49,6 +49,9 @@
         var d = tpl.days[i];
         if (!d || !Array.isArray(d.exes) || !d.exes.length) return null;
         var exes = [];
+        // ⚡ 超级组: 模板里存的是链式标记(ss=1 表示与上一个动作连在一起),
+        // 到了渲染层要的是显式组号(_ss), 因为渲染层只拿到平铺的 exes, 没法回看模板。
+        var ssSeq = 0, ssCur = 0, ssChain = false;
         for (var j = 0; j < d.exes.length; j++) {
           var te = d.exes[j];
           if (!te || !te.n) return null;
@@ -67,6 +70,23 @@
           if (parseInt(te.sets, 10) > 0) e2._tplSets = parseInt(te.sets, 10);
           if (te.reps) e2._tplReps = String(te.reps);
           if (te.rest) e2._tplRest = String(te.rest);
+          // 链式 → 组号。第一个动作带 ss 属坏数据(没有"上一个"), 忽略而不是报错:
+          // 分享码被别人手改过也不能让整套计划退回算法版。
+          var inSS = !!te.ss && j > 0;
+          if (inSS) {
+            if (!ssChain) {
+              ssSeq++; ssCur = ssSeq;
+              // 开新链时「上一个动作」也要进这一组 —— 模板里的 ss 是挂在后一个动作上的
+              // (它声明"我和前面那个连"), 渲染层要的是双方都带同一个组号。
+              // 漏这一步的后果: 组里只有一个人, 既没人"不歇"也没有配对, 界面看着像标记失灵。
+              if (exes.length) exes[exes.length - 1]._ss = ssCur;
+            }
+            e2._ss = ssCur;
+            ssChain = true;
+          } else {
+            ssChain = false;
+            ssCur = 0;
+          }
           exes.push(e2);
         }
         if (!exes.length) return null;
@@ -122,10 +142,15 @@
           // 已是自定义计划: 从快照导入, 保留教练定的组数/次数/休息
           lp.trainingDays.forEach(function (d) {
             if (!d || d.isTraining === false) return;
+            var prevSS = 0;
             days.push({
               name: d.name || '',
               exes: (d.exes || []).map(function (ex) {
-                return { n: ex.n, sets: ex._tplSets || baseSetsOf(), reps: ex._tplReps || '', rest: ex._tplRest || '' };
+                // 快照里是组号 _ss, 编辑器里是链式标记: 同组第二个起都标 1
+                var ss = (parseInt(ex._ss, 10) || 0);
+                var chain = (ss > 0 && ss === prevSS) ? 1 : 0;
+                prevSS = ss;
+                return { n: ex.n, sets: ex._tplSets || baseSetsOf(), reps: ex._tplReps || '', rest: ex._tplRest || '', ss: chain };
               })
             });
           });
@@ -188,6 +213,7 @@
     var html = '';
     html += '<div style="font-size:11.5px;color:var(--text3,#64748b);line-height:1.6;background:var(--bg,#f1f5f9);border-radius:10px;padding:8px 10px;margin-bottom:10px;">' +
       '环境：<b>' + esc(metaText()) + '</b>（跟随当前计划，组数/次数留空 = 用计划默认值）。<br>' +
+      '⚡ = 和上一个动作连成<b>超级组</b>：两个动作之间不休息，一组做完再歇。<br>' +
       '⚠️ 减载周和爬坡会照常作用在你排的组数/次数上 —— 你排骨架，系统管渐进。</div>';
     html += '<div style="margin-bottom:10px;"><input id="cplName" value="' + esc(ED.name) + '" placeholder="计划名称" oninput="fbCplUpdName(this.value)" style="width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text,#0f172a);font-size:14px;font-weight:700;"></div>';
 
@@ -200,8 +226,13 @@
         html += '<div style="font-size:12px;color:var(--text3,#94a3b8);padding:6px 2px;">还没动作，点下面「➕ 加动作」从动作库选。</div>';
       }
       d.exes.forEach(function (ex, ei) {
-        html += '<div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--border,#e2e8f0);flex-wrap:wrap;">' +
-          '<div style="flex:1;min-width:110px;font-size:12.5px;font-weight:700;color:var(--text,#0f172a);">' + esc(ex.n) + '</div>' +
+        // ⚡ 超级组: 链式标记(和上一个动作连在一起, 中间不休息)。
+        // 第一个动作没有"上一个", 按钮置灰 —— 点它会提示, 而不是默默无效。
+        var ssOn = !!ex.ss;
+        var ssFirst = (ei === 0);
+        html += '<div style="display:flex;gap:6px;align-items:center;padding:6px 0 6px ' + (ssOn ? '8px' : '0') + ';border-bottom:1px dashed var(--border,#e2e8f0);flex-wrap:wrap;' + (ssOn ? 'border-left:3px solid #8B5CF6;' : '') + '">' +
+          '<div style="flex:1;min-width:110px;font-size:12.5px;font-weight:700;color:var(--text,#0f172a);">' + esc(ex.n) + (ssOn ? '<span style="font-size:9.5px;font-weight:700;color:#7C3AED;margin-left:5px;white-space:nowrap;">⚡组内不歇</span>' : '') + '</div>' +
+          '<button onclick="fbCplToggleSS(' + di + ',' + ei + ')" title="' + (ssFirst ? '第一个动作没有上一个动作' : (ssOn ? '取消超级组' : '和上一个动作连成超级组（中间不休息）')) + '" aria-label="切换超级组" style="flex:none;border:1.5px solid ' + (ssOn ? '#8B5CF6' : 'var(--border,#e2e8f0)') + ';background:' + (ssOn ? '#F5F3FF' : 'transparent') + ';color:' + (ssOn ? '#7C3AED' : (ssFirst ? 'var(--text3,#cbd5e1)' : 'var(--text3,#94a3b8)')) + ';width:26px;height:26px;border-radius:8px;font-size:12px;cursor:pointer;opacity:' + (ssFirst && !ssOn ? '.5' : '1') + ';">⚡</button>' +
           '<label style="font-size:10.5px;color:var(--text3,#64748b);">组</label>' +
           '<input type="number" inputmode="numeric" min="1" max="10" value="' + esc(ex.sets || '') + '" placeholder="默认" onchange="fbCplUpdEx(' + di + ',' + ei + ',\'sets\',this.value)" style="width:46px;padding:5px 6px;border-radius:8px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text,#0f172a);font-size:12px;text-align:center;">' +
           '<input value="' + esc(ex.reps || '') + '" placeholder="次数如 8-12次" onchange="fbCplUpdEx(' + di + ',' + ei + ',\'reps\',this.value)" style="width:92px;padding:5px 8px;border-radius:8px;border:1.5px solid var(--border,#e2e8f0);background:var(--bg,#f1f5f9);color:var(--text,#0f172a);font-size:12px;">' +
@@ -256,6 +287,29 @@
   window.fbCplDelEx = function (di, ei) {
     if (!ED || !ED.days[di]) return;
     ED.days[di].exes.splice(ei, 1);
+    renderEditor();
+  };
+
+  // 超级组是链式标记: ss=1 = 「和上一个动作连成一组, 中间不休息」。
+  // 用链式而不是组号, 是因为增删动作时组号要对齐/重排, 链式天然跟着顺序走。
+  // 上限 3 个: 4 个以上已经是巨型组/循环训练, 休息规则会失控(而且教练手排里极少见)。
+  window.fbCplToggleSS = function (di, ei) {
+    if (!ED || !ED.days[di] || !ED.days[di].exes[ei]) return;
+    var exes = ED.days[di].exes;
+    if (ei === 0) {
+      try { showToast('第一个动作没有「上一个」，往前排一个动作再连'); } catch (e) {}
+      return;
+    }
+    if (exes[ei].ss) { exes[ei].ss = 0; }
+    else {
+      var cnt = 1, k = ei - 1;
+      while (k >= 0 && exes[k].ss) { cnt++; k--; }
+      if (cnt > 3) {
+        try { showToast('一组超级组最多 3 个动作，再多就是循环训练了'); } catch (e) {}
+        return;
+      }
+      exes[ei].ss = 1;
+    }
     renderEditor();
   };
 
@@ -379,7 +433,7 @@
       if (day.exes[i].n === name) { try { showToast('这天已经有「' + name + '」了，想加量直接改组数'); } catch (e) {} return; }
     }
     if (day.exes.length >= 10) { try { showToast('一天最多 10 个动作，再多恢复不过来'); } catch (e) {} return; }
-    day.exes.push({ n: name, sets: baseSetsOf(), reps: '', rest: '' });
+    day.exes.push({ n: name, sets: baseSetsOf(), reps: '', rest: '', ss: 0 });
     window.fbCplPickClose();
     renderEditor();
   };
@@ -397,7 +451,8 @@
       var exes = [];
       for (var j = 0; j < d.exes.length; j++) {
         var te = d.exes[j];
-        exes.push({ n: te.n, sets: parseInt(te.sets, 10) || 0, reps: te.reps || '', rest: te.rest || '' });
+        // ss: 1 = 和上一个动作连成超级组(链式标记, 同 FB 分享码第 5 位)
+        exes.push({ n: te.n, sets: parseInt(te.sets, 10) || 0, reps: te.reps || '', rest: te.rest || '', ss: te.ss ? 1 : 0 });
       }
       days.push({ name: (d.name || ('Day ' + (i + 1))).slice(0, 24), exes: exes });
     }
@@ -445,19 +500,63 @@
     return new TextDecoder().decode(bytes);
   }
 
-  // 模板 → 分享码(紧凑 JSON + base64url)。t: {name, meta, days:[{name,exes:[{n,sets,reps,rest}]}]}
-  function tplToCode(t) {
+  // 模板 → 紧凑 JSON(v1/v2 分享码共用)。t: {name, meta, days:[{name,exes:[{n,sets,reps,rest}]}]}
+  function tplToCompact(t) {
     var c = { v: 1, n: t.name || '', m: t.meta || {}, d: [] };
     for (var i = 0; i < t.days.length; i++) {
       var d = t.days[i];
       var dd = { n: d.name || '', e: [] };
       for (var j = 0; j < d.exes.length; j++) {
         var e = d.exes[j];
-        dd.e.push([e.n, parseInt(e.sets, 10) || '', e.reps || '', e.rest || '']);
+        var arr = [e.n, parseInt(e.sets, 10) || '', e.reps || '', e.rest || ''];
+        // 第 5 位只在是超级组时写: 老码解析器只读前 4 位, 多一位不影响;
+        // 没人用超级组时码长度和以前一模一样。
+        if (e.ss) arr.push(1);
+        dd.e.push(arr);
       }
       c.d.push(dd);
     }
-    return utf8ToB64(JSON.stringify(c));
+    return JSON.stringify(c);
+  }
+  // v1 分享码(明文 base64) —— 老链接兼容, 保留不动
+  function tplToCode(t) { return utf8ToB64(tplToCompact(t)); }
+
+  // ---------- v2 压缩分享码(v183): FB2 前缀 + deflate-raw + base64url ----------
+  // 动机: 长链接在微信有截断风险。中文名重复字多, deflate 压缩率好;
+  // base64url 无 +/= 字符, encodeURIComponent 不再膨胀。
+  function cplCan() {
+    return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+  }
+  function bytesToB64url(bytes) {
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlToBytes(s) {
+    var b = String(s).replace(/-/g, '+').replace(/_/g, '/');
+    while (b.length % 4) b += '=';
+    var bin = atob(b);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  async function pipeBytes(bytes, Ctor, fmt) {
+    var stream = new Blob([bytes]).stream().pipeThrough(new Ctor(fmt));
+    var buf = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  var C2_PREFIX = 'FB2'; // v1 码首字符恒为 'eyJ'({ 的 base64), 不会撞
+  // 最优分享码: 能压缩且确实更短 → v2, 否则原样落回 v1。编码失败也落回 v1。
+  async function tplToCode2(t) {
+    var v1 = tplToCode(t);
+    if (cplCan()) {
+      try {
+        var packed = await pipeBytes(new TextEncoder().encode(tplToCompact(t)), CompressionStream, 'deflate-raw');
+        var code2 = C2_PREFIX + bytesToB64url(packed);
+        if (code2.length < v1.length) return code2;
+      } catch (e) { /* 落回 v1 */ }
+    }
+    return v1;
   }
 
   function findEx(n) {
@@ -475,16 +574,19 @@
     return null;
   }
 
-  // 分享文本(链接或裸码) → 模板。返回 null = 无效。所有字段走同编辑器同款清洗。
-  function parseShareText(txt) {
+  // 分享文本(链接或裸码) → 裸码。链接里抠 plan= 参数, 其余原样。
+  function shareTextToCode(txt) {
     var s = String(txt || '').trim();
-    if (!s) return null;
+    if (!s) return '';
     var mm = s.match(/[?&]plan=([A-Za-z0-9\-_+=%]+)/i);
     if (mm) s = mm[1];
     try { s = decodeURIComponent(s); } catch (e) {}
     s = s.replace(/^FBPLAN/i, '').replace(/\s+/g, '');
-    var c;
-    try { c = JSON.parse(b64ToUtf8(s)); } catch (e) { return null; }
+    return s;
+  }
+
+  // 紧凑 JSON 对象 → 模板(校验+清洗, v1/v2 共用)。返回 null = 无效。
+  function compactToTpl(c) {
     if (!c || c.v !== 1 || !Array.isArray(c.d) || !c.d.length) return null;
     var days = [];
     for (var i = 0; i < c.d.length; i++) {
@@ -499,7 +601,9 @@
           n: String(e[0]).slice(0, 40),
           sets: (sn > 0 && sn <= 10) ? sn : '',
           reps: String(e[2] || '').replace(/[<>"']/g, '').slice(0, 20),
-          rest: String(e[3] || '').replace(/[<>"']/g, '').slice(0, 20)
+          rest: String(e[3] || '').replace(/[<>"']/g, '').slice(0, 20),
+          // 第 5 位: 1 = 与上一个动作组成超级组。老码没这一位 → 0, 行为完全不变
+          ss: (e[4] === 1 || e[4] === true || e[4] === '1') ? 1 : 0
         });
       }
       if (!exes.length) return null;
@@ -512,6 +616,29 @@
       meta: { goal: meta.goal || 'muscle', level: meta.level || 'beginner', equip: meta.equip || 'gym' },
       days: days
     };
+  }
+
+  // v1 同步解析(老码/老链接)。FB2 压缩码走 parseShareTextAsync, 这里直接拒绝。
+  function parseShareText(txt) {
+    var s = shareTextToCode(txt);
+    if (!s || /^FB2/.test(s)) return null;
+    var c;
+    try { c = JSON.parse(b64ToUtf8(s)); } catch (e) { return null; }
+    return compactToTpl(c);
+  }
+
+  // v2 异步解析: FB2 压缩码解压还原; v1 码原样兼容(老链接不受影响)。
+  async function parseShareTextAsync(txt) {
+    var s = shareTextToCode(txt);
+    if (!s) return null;
+    if (/^FB2/.test(s)) {
+      if (!cplCan()) return null;
+      try {
+        var raw = await pipeBytes(b64urlToBytes(s.slice(C2_PREFIX.length)), DecompressionStream, 'deflate-raw');
+        return compactToTpl(JSON.parse(new TextDecoder().decode(raw)));
+      } catch (e) { return null; }
+    }
+    try { return compactToTpl(JSON.parse(b64ToUtf8(s))); } catch (e) { return null; }
   }
 
   // 导入落盘: 覆盖确认 → 动作库校验(名字不在库里=整条数据链断, 拒绝导入) → 写模板 → 生成
@@ -561,8 +688,8 @@
   }
 
   // 分享弹窗(自带壳, 不依赖 planner-core 的 #modal; 链接/码展示区只读, 无输入框)
-  function showShareModal(tpl) {
-    var code = tplToCode(tpl);
+  // code 由 fbCplShare 预生成(v2 压缩码, 压不动自动落 v1)
+  function showShareModal(tpl, code) {
     var link = '';
     try { link = location.origin + location.pathname + '?plan=' + encodeURIComponent(code); }
     catch (e) { link = '?plan=' + encodeURIComponent(code); }
@@ -587,13 +714,16 @@
     window._cplShareCode = code;
   }
 
-  // 编辑器内分享: 分享当前编辑内容(所见即所得, 不要求先保存)
-  window.fbCplShare = function () {
+  // 编辑器内分享: 分享当前编辑内容(所见即所得, 不要求先保存)。v2 压缩码生成是异步的。
+  window.fbCplShare = async function () {
     if (!ED || !ED.days || !ED.days.length) return;
     var empty = true;
     for (var i = 0; i < ED.days.length; i++) { if (ED.days[i].exes && ED.days[i].exes.length) { empty = false; break; } }
     if (empty) { try { showToast('先给计划加动作再分享'); } catch (e) {} return; }
-    showShareModal(ED);
+    var code;
+    try { code = await tplToCode2(ED); } catch (e) { code = tplToCode(ED); }
+    if (!code) { try { showToast('分享码生成失败，请重试'); } catch (e) {} return; }
+    showShareModal(ED, code);
   };
   window.fbCplCopyLink = function () { fbCopyText(window._cplShareLink || '', '✅ 链接已复制'); };
   window.fbCplCopyCode = function () { fbCopyText(window._cplShareCode || '', '✅ 计划码已复制'); };
@@ -630,10 +760,11 @@
       '</div>';
     document.body.appendChild(ov);
   };
-  window.fbCplImportApply = function () {
+  window.fbCplImportApply = async function () {
     var ta = document.getElementById('cplImpTxt');
     if (!ta) return;
-    var tpl = parseShareText(ta.value);
+    var tpl = null;
+    try { tpl = await parseShareTextAsync(ta.value); } catch (e) { tpl = null; }
     if (!tpl) { try { showToast('❌ 码无效，检查是否复制完整（链接或纯码都行）'); } catch (e) {} return; }
     if (applyImportedTpl(tpl)) {
       var ov = document.getElementById('cplImp');
@@ -643,12 +774,14 @@
   };
 
   // 链接路径: 页面带 ?plan= 时自动导入(方案 B 主路径)。读完即清参数, 刷新不重复导入。
-  (function () {
+  // v183: 改走 parseShareTextAsync —— FB2 压缩链接和 v1 老链接都能进
+  (async function () {
     var raw = '';
     try { raw = new URLSearchParams(location.search).get('plan') || ''; } catch (e) { raw = ''; }
     if (!raw) return;
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
-    var tpl = parseShareText(raw);
+    var tpl = null;
+    try { tpl = await parseShareTextAsync(raw); } catch (e) { tpl = null; }
     if (!tpl) { setTimeout(function () { try { showToast('分享链接无效或不完整，请让好友重新发'); } catch (e) {} }, 600); return; }
     var cur = readTpl();
     var go = true;
@@ -673,11 +806,14 @@
   })();
 
   window.FB_CustomPlan = {
-    version: '1.1.0',
+    version: '1.3.0',
     readTpl: readTpl,
     // v181 分享/导入(测试与外部复用)
     tplToCode: tplToCode,
+    // v183 压缩分享码(v2): FB2 前缀 + deflate-raw + base64url
+    tplToCode2: tplToCode2,
     parseShareText: parseShareText,
+    parseShareTextAsync: parseShareTextAsync,
     applyImportedTpl: applyImportedTpl
   };
 })();
