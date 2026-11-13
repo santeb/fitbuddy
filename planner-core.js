@@ -972,6 +972,34 @@ function openSubModal(dayIdx, exIdx, exName) {
   var allowed = getExes(muscle, equip, poolLevel).filter(function(e){
     return e.n !== exName && !isInjured(e.n) && sameDayNames.indexOf(e.n) < 0;
   });
+  // v190: 超级组内替换 → 候选只留能跟搭档重新配成对的(ssPairScore>0), 按"配得多好"排序。
+  //   之前的候选只按同肌群过滤, 用户换进去一个配不上分的动作, 下次刷新 fbAutoSuperSets
+  //   重新编排时这对超级组就悄悄解散了 —— 用户视角是"我明明开着超级组, 紫色行没了"。
+  var _ssPartner = null, _ssPairable = allowed, _ssNoteHtml = '';
+  try {
+    var _dayExes = (lastPlan && lastPlan.trainingDays && lastPlan.trainingDays[dayIdx]) ? (lastPlan.trainingDays[dayIdx].exes || []) : [];
+    var _tgt = _dayExes[exIdx];
+    if (_tgt && _tgt._ss !== undefined) {
+      _dayExes.forEach(function(e){ if (e && e !== _tgt && e._ss === _tgt._ss) _ssPartner = e; });
+    }
+  } catch (err0) {}
+  if (_ssPartner) {
+    var _pairScored = allowed.map(function(c){ return { e:c, s:ssPairScore(c, _ssPartner) }; })
+      .filter(function(x){ return x.s > 0; })
+      .sort(function(a,b){ return b.s - a.s; });
+    if (_pairScored.length) {
+      _ssPairable = _pairScored.map(function(x){ return x.e; });
+      _ssNoteHtml = '<div style="margin:8px 0 2px;padding:8px 10px;border-radius:10px;background:var(--bg);'+
+        'font-size:11.5px;line-height:1.6;color:var(--text3);">⚡ 超级组替换：只列出能和「'+_ssPartner.n+
+        '」继续配成对的动作（排前面的配得更好）。</div>';
+    } else {
+      // 配不上的候选一个都没有: 不拦死, 但明说后果, 让用户知情选择
+      _ssNoteHtml = '<div style="margin:8px 0 2px;padding:8px 10px;border-radius:10px;'+
+        'background:#FFF7ED;font-size:11.5px;line-height:1.6;color:#C2410C;">⚠️ 当前设备/水平下没有能和「'+
+        _ssPartner.n+'」配成对的替代动作 —— 换任何一个都会让这对超级组解散。</div>';
+    }
+    allowed = _ssPairable;
+  }
   if (!allowed.length) {
     alert('没有可用替代动作(相同肌群+设备+不触发伤病限制)');
     return;
@@ -988,6 +1016,7 @@ function openSubModal(dayIdx, exIdx, exName) {
   }
   // v103b:这个动作加过量的话,换完那笔加量就静默没了 —— 换之前先说清楚
   html += (typeof fbSwapAdjNoticeHtml === 'function') ? fbSwapAdjNoticeHtml(exName) : '';
+  html += _ssNoteHtml;
   allowed.slice(0, 10).forEach(function(e, i){
     // 有氧动作标一下 LISS / HIIT(与 buildCardioPlan 的分组口径一致:初级=LISS, 中级/高级=HIIT),
     // 否则用户在一堆名字里看不出哪个是慢速有氧、哪个是冲刺间歇。
