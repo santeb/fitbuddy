@@ -639,8 +639,11 @@ input,select{font-family:inherit;}
 .prog-quick2 button{min-height:34px;padding:0 10px;font-size:12px;}
 .qk-lb{font-size:10px;color:var(--text3);margin-right:-2px;}
 
-/* Exercise substitute button */
-.sub-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;background:var(--bg);color:var(--text3);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
+/* Exercise substitute button
+   v187: 以前 padding:2px 8px + 10px 字号, 实际高度只有 ~20px —— 手机触控目标是 44px,
+   手指稍微偏一点就落进 .ex-left(整行点击=看动作详情), 用户"点替换却打开了详情"。 */
+.sub-btn{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;min-height:32px;margin-left:4px;flex-shrink:0;border-radius:8px;font-size:12px;font-weight:600;background:var(--bg);color:var(--primary);border:1px solid var(--border);cursor:pointer;transition:all .15s;}
+.sub-btn:active{background:var(--primary);color:#fff;}
 .sub-btn:hover{color:var(--primary);border-color:var(--primary);}
 
 /* Injury warning banner */
@@ -1364,7 +1367,7 @@ input,select{font-family:inherit;}
 <script src="data-constants.js?v=50" defer></script>
 <script src="persistence.js?v=2" defer></script>
 
-<script src="planner-core.js?v=146" defer></script>
+<script src="planner-core.js?v=147" defer></script>
   <script src="custom-plan.js?v=9" defer></script>
   <script src="pro-tools.js?v=44" defer></script>
 <script>

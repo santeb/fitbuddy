@@ -4919,7 +4919,7 @@ function renderDayCard(dayLabel, day, sets, goalCfg, warmup, wkInfo, goal, dayCa
       //    不想跳绳 / 波比跳伤膝盖时,只能整周硬着头皮练,或者改计划参数碰运气换一批。
       var subBtnHtml = '';
       if ((isLiftEx || ex.m === '有氧') && !isMarathon && !isInjuredEx) {
-        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\')" title="'+(ex.m === '有氧' ? '换个有氧动作' : '替换动作')+'">🔄</button>';
+        subBtnHtml = '<button class="sub-btn" onclick="event.stopPropagation();openSubModalForEx(\''+ex.n.replace(/'/g,"\\'")+'\')" title="'+(ex.m === '有氧' ? '换个有氧动作' : '替换动作')+'">🔄 换</button>';
       }
 
       var injuryClass = isInjuredEx ? ' injury-skipped' : '';
